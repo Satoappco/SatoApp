@@ -1,0 +1,24 @@
+[project]
+name = "sato"
+version = "0.1.0"
+description = "SATO using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai-tools>=0.62.3",
+    "crewai[tools]>=0.165.1,<1.0.0",
+]
+
+[project.scripts]
+sato = "sato.main:run"
+run_crew = "sato.main:run"
+train = "sato.main:train"
+replay = "sato.main:replay"
+test = "sato.main:test"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"
