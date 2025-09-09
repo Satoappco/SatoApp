@@ -1,43 +1,95 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import traceback
+from datetime import datetime
+import os
 
-app = FastAPI()
+app = FastAPI(
+    title="Sato AI Crew API",
+    description="Multi-agent AI system powered by CrewAI for research and reporting",
+    version="1.0.0"
+)
 
 # Health check
 @app.get("/")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok", 
+        "service": "Sato AI Crew API",
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
-# Request schema
+# Request schemas
 class CrewRequest(BaseModel):
-    prompt: str
+    topic: str
+    current_year: str = str(datetime.now().year)
 
-# Crew endpoint
-@app.post("/crew")
-def run_crew(req: CrewRequest):
+class CrewResponse(BaseModel):
+    result: str
+    topic: str
+    execution_time: float
+    timestamp: str
+
+# Sato Crew endpoint - uses your actual crew configuration
+@app.post("/crew", response_model=CrewResponse)
+def run_sato_crew(req: CrewRequest):
+    """
+    Run the Sato AI crew with your configured agents and tasks
+    """
+    start_time = datetime.utcnow()
+    
     try:
-        # Lazy import so startup never fails if CrewAI isn't present/ready
-        from crewai import Agent, Crew, Process
-
-        # Minimal, valid agent (include required fields like backstory)
-        researcher = Agent(
-            name="Researcher",
-            role="Research",
-            goal="Answer user queries with useful information",
-            backstory="An experienced analyst who writes concise, helpful answers.",
-            verbose=True,
+        # Import your actual Sato crew
+        from src.sato.crew import Sato
+        
+        # Create inputs for the crew
+        inputs = {
+            'topic': req.topic,
+            'current_year': req.current_year
+        }
+        
+        # Initialize and run your actual Sato crew
+        sato_crew = Sato()
+        result = sato_crew.crew().kickoff(inputs=inputs)
+        
+        # Calculate execution time
+        end_time = datetime.utcnow()
+        execution_time = (end_time - start_time).total_seconds()
+        
+        return CrewResponse(
+            result=str(result),
+            topic=req.topic,
+            execution_time=execution_time,
+            timestamp=end_time.isoformat()
         )
-
-        crew = Crew(
-            agents=[researcher],
-            process=Process.sequential  # optional; keep it simple
-        )
-
-        result = crew.kickoff(inputs={"topic": req.prompt})
-        return {"result": str(result)}
 
     except Exception as e:
         # Don't crash the container—return a 500 with the error
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Crew execution failed: {str(e)}"
+        )
+
+# Alternative endpoint for simple prompts (backward compatibility)
+@app.post("/crew/simple")
+def run_crew_simple(req: CrewRequest):
+    """
+    Simple crew endpoint that returns just the result string
+    """
+    try:
+        from src.sato.crew import Sato
+        
+        inputs = {
+            'topic': req.topic,
+            'current_year': req.current_year
+        }
+        
+        sato_crew = Sato()
+        result = sato_crew.crew().kickoff(inputs=inputs)
+        
+        return {"result": str(result)}
+
+    except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
