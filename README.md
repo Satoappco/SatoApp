@@ -20,10 +20,10 @@ crewai install
 ```
 ### Customizing
 
-**Add your `OPENAI_API_KEY` into the `.env` file**
+**Add your `GEMINI_API_KEY` into the `.env` file**
 
-- Modify `src/sato/config/agents.yaml` to define your agents
-- Modify `src/sato/config/tasks.yaml` to define your tasks
+- Agents are managed through the database via the web interface
+- Tasks are defined in the database with dynamic placeholders
 - Modify `src/sato/crew.py` to add your own logic, tools and specific args
 - Modify `src/sato/main.py` to add custom inputs for your agents and tasks
 
@@ -41,7 +41,7 @@ This example, unmodified, will run the create a `report.md` file with the output
 
 ## Understanding Your Crew
 
-The SATO Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+The SATO Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents are dynamically loaded from the PostgreSQL database and collaborate on tasks defined with dynamic placeholders, leveraging their collective skills to achieve complex objectives. Agent configurations are managed through the web interface and stored in the database.
 
 ## Support
 

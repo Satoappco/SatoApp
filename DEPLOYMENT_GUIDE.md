@@ -38,7 +38,7 @@ For Google Cloud Run deployment, set these environment variables:
 gcloud run services update sato-app \
   --set-env-vars \
   OPENAI_API_KEY=your_openai_api_key,\
-  API_KEY=your_secure_webhook_key,\
+  API_TOKEN=your_secure_webhook_key,\
   DB_HOST=your_postgresql_instance_ip,\
   DB_PORT=5432,\
   DB_NAME=sato_db,\
@@ -53,7 +53,7 @@ gcloud run services update sato-app \
   --set-env-vars \
   DATABASE_URL=postgresql://sato_user:password@host:5432/sato_db,\
   OPENAI_API_KEY=your_openai_api_key,\
-  API_KEY=your_secure_webhook_key
+  API_TOKEN=your_secure_webhook_key
 ```
 
 ### Step 3: Deploy to Google Cloud Run
@@ -131,7 +131,7 @@ gcloud run logs read sato-app --region=us-central1
 ## 🔐 Security Best Practices
 
 1. **Use strong passwords** for database users
-2. **Set secure API_KEY** (not the default "SatoLogos")
+2. **Set secure API_TOKEN** (not the default "SatoLogos")
 3. **Use Google Cloud Secret Manager** for sensitive data:
    ```bash
    # Store secrets

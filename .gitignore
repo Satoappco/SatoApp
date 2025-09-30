@@ -1,3 +1,27 @@
 .env
 __pycache__/
 .DS_Store
+
+# Service account keys and sensitive files
+service-account-key.json
+*-key.json
+cloud-sql-connection.yaml
+connection-payload.json
+update-connector-payload.json
+
+# Environment files
+.env*
+!.env.example
+
+# SSL certificates and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Development files
+.venv/
+__pycache__/
+*.pyc
+.next/

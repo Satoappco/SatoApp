@@ -1,22 +1,33 @@
-# 1. Use a lightweight official Python image
+# Optimized Sato AI Backend Dockerfile
 FROM python:3.11-slim
 
-# 2. Set working directory inside the container
+# Set working directory
 WORKDIR /app
 
-# 3. Install system dependencies (optional, useful for some Python libs)
-# RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
-# 4. Copy requirements file and install dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
-# 5. Copy the rest of your app’s code into the image
-COPY . .
+# Copy application code
+COPY app/ ./app/
+COPY alembic.ini ./
+COPY app/db/migrations/ ./alembic/
 
-# 6. Tell Cloud Run which port to use (default 8080)
+# Set environment variables
 ENV PORT=8080
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
-# 7. Start the app with Gunicorn + Uvicorn workers
-# 'server:app' means: import server.py and look for 'app' inside it
-CMD exec gunicorn -k uvicorn.workers.UvicornWorker --bind :$PORT --workers 1 --threads 8 --timeout 0 server:app
+# Start the application
+CMD exec gunicorn -k uvicorn.workers.UvicornWorker \
+    --bind :$PORT \
+    --workers 1 \
+    --threads 8 \
+    --timeout 0 \
+    app.main:app
