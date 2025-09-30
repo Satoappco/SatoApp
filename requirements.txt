@@ -1,4 +1,5 @@
 crewai
+crewai-tools
 fastapi
 uvicorn[standard]
 gunicorn
@@ -6,3 +7,32 @@ python-dotenv
 sqlmodel
 psycopg2-binary
 alembic
+email-validator
+langchain-google-genai
+pydantic-settings
+# Authentication dependencies
+python-jose[cryptography]
+python-multipart
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+passlib[bcrypt]
+
+# Google Analytics dependencies
+google-analytics-data
+google-analytics-admin
+google-auth-oauthlib
+cryptography
+
+# Google Ads dependencies
+google-ads
+
+# DialogCX dependencies - using REST API instead of heavy client library
+PyJWT[crypto]
+
+# Admin interface dependencies
+httpx
+
+# Facebook dependencies
+facebook-sdk
+requests-oauthlib
