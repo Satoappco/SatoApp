@@ -4,7 +4,7 @@ Handles Google Ads data fetching and analysis
 """
 
 import os
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
@@ -41,6 +41,12 @@ class GoogleAdsConnectionResponse(BaseModel):
     success: bool
     message: str
     connection_id: int
+    customer_id: str
+    customer_name: str
+    account_email: str
+    is_active: bool
+    expires_at: Optional[str] = None
+    last_used_at: Optional[str] = None
 
 
 class GoogleAdsConnectionListResponse(BaseModel):
@@ -55,6 +61,7 @@ class CreateAdsConnectionRequest(BaseModel):
     access_token: str
     refresh_token: str
     expires_in: int = 3600
+    subclient_id: int  # Required: which subclient owns this connection
 
 
 @router.post("/data", response_model=GoogleAdsDataResponse)
@@ -105,10 +112,11 @@ async def get_google_ads_data(
 
 @router.get("/connections", response_model=GoogleAdsConnectionListResponse)
 async def get_google_ads_connections(
+    subclient_id: int = Query(None, description="Filter connections by subclient ID"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get all Google Ads connections for the current authenticated user
+    Get Google Ads connections for the current authenticated user, optionally filtered by subclient
     """
     try:
         from app.config.database import get_session
@@ -116,28 +124,39 @@ async def get_google_ads_connections(
         from sqlmodel import select, and_
         
         with get_session() as session:
-            # Get all Google Ads connections
+            # Build query conditions
+            conditions = [
+                DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                DigitalAsset.provider == "Google",
+                Connection.revoked == False,
+                Connection.user_id == current_user.id
+            ]
+            
+            # Add subclient filter if provided
+            if subclient_id is not None:
+                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            
+            # Get Google Ads connections
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                and_(
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    DigitalAsset.provider == "Google",
-                    Connection.revoked == False,
-                    Connection.user_id == current_user.id
-                )
-            )
+            ).where(and_(*conditions))
             
             results = session.exec(statement).all()
             print(f"DEBUG: Found {len(results)} Google Ads connections")
             
             connections = []
             for connection, asset in results:
-                print(f"DEBUG: Google Ads connection: {connection.id} - {asset.name}")
+                print(f"DEBUG: Google Ads connection: {connection.id} - {asset.name} - Active: {asset.is_active}")
                 connections.append(GoogleAdsConnectionResponse(
                     success=True,
                     message=f"Connected to {asset.name}",
-                    connection_id=connection.id
+                    connection_id=connection.id,
+                    customer_id=asset.external_id,
+                    customer_name=asset.name,
+                    account_email=connection.account_email,
+                    is_active=asset.is_active,
+                    expires_at=connection.expires_at.isoformat() if connection.expires_at else None,
+                    last_used_at=connection.last_used_at.isoformat() if connection.last_used_at else None
                 ))
             
             return GoogleAdsConnectionListResponse(connections=connections)
@@ -261,7 +280,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
             with get_session() as session:
                 # Create digital asset for Google Ads account
                 digital_asset = DigitalAsset(
-                    subclient_id=1,  # Default subclient
+                    subclient_id=request.subclient_id,  # Use the provided subclient_id
                     asset_type=AssetType.GOOGLE_ADS,
                     provider="Google",
                     name=request.customer_name,

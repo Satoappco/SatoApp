@@ -185,6 +185,31 @@ class FacebookService:
         
         return response.json()
     
+    async def _extend_facebook_token(self, access_token: str) -> Dict[str, Any]:
+        """Extend Facebook long-lived token (can be called multiple times)"""
+        from app.config.settings import get_settings
+        settings = get_settings()
+        
+        url = f"{self.base_url}/oauth/access_token"
+        params = {
+            'grant_type': 'fb_exchange_token',
+            'client_id': settings.facebook_app_id,
+            'client_secret': settings.facebook_app_secret,
+            'fb_exchange_token': access_token
+        }
+        
+        print(f"🔄 Extending Facebook token...")
+        response = requests.get(url, params=params)
+        
+        if response.status_code != 200:
+            error_data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
+            error_msg = error_data.get('error', {}).get('message', f"HTTP {response.status_code}")
+            raise Exception(f"Facebook token extension failed: {error_msg}")
+        
+        result = response.json()
+        print(f"✅ Facebook token extended successfully")
+        return result
+    
     async def _get_user_info(self, access_token: str) -> Dict[str, Any]:
         """Get user information from Facebook"""
         url = f"{self.base_url}/me"
@@ -476,12 +501,28 @@ class FacebookService:
         if not metrics:
             metrics = [
                 'page_impressions',
-                'page_reach',
-                'page_engaged_users',
                 'page_post_engagements',
                 'page_video_views',
                 'page_fans'
             ]
+        
+        # Validate metrics to prevent invalid API calls
+        valid_metrics = {
+            'page_impressions', 'page_post_engagements', 'page_video_views', 'page_fans',
+            'page_reach', 'page_engaged_users', 'page_actions_post_reactions_total',
+            'page_posts_impressions', 'page_posts_impressions_unique', 'page_posts_impressions_viral',
+            'page_posts_impressions_paid', 'page_posts_impressions_organic'
+        }
+        
+        invalid_metrics = [m for m in metrics if m not in valid_metrics]
+        if invalid_metrics:
+            print(f"⚠️ Invalid Facebook metrics detected: {invalid_metrics}")
+            print(f"✅ Using only valid metrics: {[m for m in metrics if m in valid_metrics]}")
+            metrics = [m for m in metrics if m in valid_metrics]
+            
+            # If no valid metrics remain, use defaults
+            if not metrics:
+                metrics = ['page_impressions', 'page_post_engagements', 'page_video_views', 'page_fans']
         
         page_id = asset.meta.get('page_id')
         if not page_id:
@@ -632,10 +673,29 @@ class FacebookService:
             if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
                 print(f"🔄 Facebook token expired or expiring soon, refreshing...")
                 
-                # For Facebook, we need to get a new long-lived token
-                # Facebook doesn't have refresh tokens like Google, so we need to re-authenticate
-                # For now, we'll return an error asking for re-authentication
-                raise ValueError("Facebook token has expired. Please re-authenticate your Facebook account.")
+                # Facebook DOES support long-lived token refresh!
+                # Try to extend the token using Facebook's token extension API
+                try:
+                    extended_token = await self._extend_facebook_token(access_token)
+                    
+                    # Update the connection with the new token
+                    new_access_token = extended_token['access_token']
+                    new_expires_in = extended_token.get('expires_in', 3600)
+                    new_expires_at = datetime.utcnow() + timedelta(seconds=new_expires_in)
+                    
+                    # Encrypt and store the new token
+                    connection.access_token_enc = self._encrypt_token(new_access_token)
+                    connection.expires_at = new_expires_at
+                    connection.rotated_at = datetime.utcnow()
+                    session.add(connection)
+                    session.commit()
+                    
+                    print(f"✅ Successfully refreshed Facebook token for connection {connection_id}")
+                    access_token = new_access_token  # Use the new token
+                    
+                except Exception as e:
+                    print(f"❌ Failed to refresh Facebook token: {e}")
+                    raise ValueError("Facebook token has expired. Please re-authenticate your Facebook account.")
             
             # Update last used time
             connection.last_used_at = datetime.utcnow()
@@ -651,7 +711,7 @@ class FacebookService:
             }
     
     async def get_facebook_connection_for_user(self, user_id: int, subclient_id: int, asset_type: str = "SOCIAL_MEDIA") -> Optional[Dict[str, Any]]:
-        """Get active Facebook connection for user/subclient with token refresh"""
+        """Get active Facebook connection for user/subclient with token refresh - ALWAYS prioritizes real Page IDs"""
         
         with get_session() as session:
             # Look for Facebook connections
@@ -667,11 +727,38 @@ class FacebookService:
                 )
             )
             
-            result = session.exec(statement).first()
-            if not result:
+            results = session.exec(statement).all()
+            if not results:
                 return None
             
-            connection, digital_asset = result
+            # CRITICAL: Always prioritize real Facebook Page IDs over fake ones
+            # Real Facebook Page IDs are numeric (15+ digits), fake ones are text strings
+            real_page_connections = []
+            fake_page_connections = []
+            
+            for connection, digital_asset in results:
+                external_id = digital_asset.external_id
+                # Check if external_id is a real Facebook Page ID (numeric, 15+ digits)
+                if external_id and external_id.isdigit() and len(external_id) >= 15:
+                    real_page_connections.append((connection, digital_asset))
+                else:
+                    fake_page_connections.append((connection, digital_asset))
+            
+            # Always use real Page ID connections first, never fake ones
+            if real_page_connections:
+                connection, digital_asset = real_page_connections[0]
+                print(f"✅ Using REAL Facebook Page ID: {digital_asset.external_id} ({digital_asset.name})")
+            elif fake_page_connections:
+                connection, digital_asset = fake_page_connections[0]
+                print(f"⚠️ WARNING: Using fake Facebook Page ID: {digital_asset.external_id} ({digital_asset.name}) - This will cause API errors!")
+                return {
+                    "error": f"Invalid Facebook Page ID: {digital_asset.external_id}. Please connect a real Facebook page.",
+                    "status": "error",
+                    "requires_reauth": True,
+                    "suggestion": "Please connect a real Facebook page with a valid Page ID"
+                }
+            else:
+                return None
             
             try:
                 # Try to refresh token (this will also check expiration)

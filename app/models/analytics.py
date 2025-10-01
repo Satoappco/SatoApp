@@ -12,10 +12,11 @@ from .base import BaseModel
 
 class AssetType(str, Enum):
     """Types of digital assets"""
-    SOCIAL_MEDIA = "social_media"
-    ANALYTICS = "analytics" 
-    ADVERTISING = "advertising"
-    GOOGLE_ADS = "google_ads"
+    SOCIAL_MEDIA = "social_media"  # Facebook Page, Instagram, etc.
+    ANALYTICS = "analytics"  # Google Analytics (GA4)
+    ADVERTISING = "advertising"  # Generic advertising
+    GOOGLE_ADS = "google_ads"  # Google Ads (separate from Analytics)
+    FACEBOOK_ADS = "facebook_ads"  # Facebook Ads & Insights (separate from Facebook Page)
     SEARCH_CONSOLE = "search_console"
     EMAIL_MARKETING = "email_marketing"
     CRM = "crm"
@@ -114,6 +115,25 @@ class KpiCatalog(BaseModel, table=True):
     data_sources: str = Field()  # JSON array of data sources
     category: str = Field(max_length=100)
     is_active: bool = Field(default=True)
+
+
+class UserPropertySelection(BaseModel, table=True):
+    """User's selected properties/pages for each service"""
+    __tablename__ = "user_property_selections"
+    
+    # Relationships
+    user_id: int = Field(foreign_key="users.id")
+    subclient_id: int = Field(foreign_key="sub_customers.id")
+    
+    # Service and selected property
+    service: str = Field(max_length=50)  # "google_analytics", "google_ads", "facebook_page", "facebook_ads"
+    selected_property_id: str = Field(max_length=255)  # The external_id of the selected property/page/ad account
+    property_name: str = Field(max_length=255)  # Human-readable name for display
+    
+    # Additional metadata
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class CampaignKPI(BaseModel, table=True):

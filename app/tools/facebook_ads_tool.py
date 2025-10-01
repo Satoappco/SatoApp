@@ -73,11 +73,26 @@ class FacebookAdsTool(BaseTool):
             facebook_service = FacebookService()
 
             # Get Facebook ad account connection with token refresh
-            connection_info = asyncio.run(facebook_service.get_facebook_connection_for_user(
-                user_id=self.user_id,
-                subclient_id=self.subclient_id,
-                asset_type="ADVERTISING"
-            ))
+            # Use ThreadPoolExecutor to handle async operations properly
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in a running loop, we need to use a different approach
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, facebook_service.get_facebook_connection_for_user(
+                        user_id=self.user_id,
+                        subclient_id=self.subclient_id,
+                        asset_type="ADVERTISING"
+                    ))
+                    connection_info = future.result()
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                connection_info = asyncio.run(facebook_service.get_facebook_connection_for_user(
+                    user_id=self.user_id,
+                    subclient_id=self.subclient_id,
+                    asset_type="ADVERTISING"
+                ))
             
             if not connection_info:
                 return json.dumps({
@@ -95,14 +110,31 @@ class FacebookAdsTool(BaseTool):
                 })
 
             # Fetch ad insights data
-            result = asyncio.run(facebook_service.fetch_facebook_data(
-                connection_id=connection_info["connection_id"],
-                data_type="ad_insights",
-                start_date=start_date,
-                end_date=end_date,
-                metrics=metrics,
-                limit=limit
-            ))
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in a running loop, we need to use a different approach
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                        connection_id=connection_info["connection_id"],
+                        data_type="ad_insights",
+                        start_date=start_date,
+                        end_date=end_date,
+                        metrics=metrics,
+                        limit=limit
+                    ))
+                    result = future.result()
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                result = asyncio.run(facebook_service.fetch_facebook_data(
+                    connection_id=connection_info["connection_id"],
+                    data_type="ad_insights",
+                    start_date=start_date,
+                    end_date=end_date,
+                    metrics=metrics,
+                    limit=limit
+                ))
 
             # Format the response for the agent
             formatted_result = self._format_ads_data(result, metrics, dimensions, level)

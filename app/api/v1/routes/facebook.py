@@ -4,7 +4,7 @@ Facebook API routes for data fetching and connection management
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import select, and_
 
@@ -25,6 +25,7 @@ class FacebookConnection(BaseModel):
     external_id: str
     provider: str
     account_email: Optional[str] = None
+    is_active: bool
     created_at: datetime
     last_used_at: Optional[datetime] = None
 
@@ -59,24 +60,30 @@ class FacebookDataResponse(BaseModel):
 
 @router.get("/connections", response_model=FacebookConnectionsResponse)
 async def get_facebook_connections(
+    subclient_id: int = Query(None, description="Filter connections by subclient ID"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get all Facebook connections for the current authenticated user
+    Get Facebook connections for the current authenticated user, optionally filtered by subclient
     """
     
     try:
         with get_session() as session:
-            # Get all Facebook connections for the current user
+            # Build query conditions
+            conditions = [
+                Connection.user_id == current_user.id,  # Real authenticated user ID
+                DigitalAsset.provider == "Facebook",
+                Connection.revoked == False
+            ]
+            
+            # Add subclient filter if provided
+            if subclient_id is not None:
+                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            
+            # Get Facebook connections for the current user
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                and_(
-                    Connection.user_id == current_user.id,  # Real authenticated user ID
-                    DigitalAsset.provider == "Facebook",
-                    Connection.revoked == False
-                )
-            )
+            ).where(and_(*conditions))
             
             results = session.exec(statement).all()
             
@@ -89,6 +96,7 @@ async def get_facebook_connections(
                     external_id=asset.external_id,
                     provider=asset.provider,
                     account_email=connection.account_email,
+                    is_active=asset.is_active,
                     created_at=connection.created_at,
                     last_used_at=connection.last_used_at
                 ))

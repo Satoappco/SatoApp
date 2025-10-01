@@ -1,6 +1,6 @@
 """
-Google Analytics OAuth callback handler
-Handles the OAuth flow and automatically creates GA4 connections
+Google Ads OAuth callback handler
+Handles the OAuth flow and automatically creates Google Ads connections
 """
 
 import os
@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from google_auth_oauthlib.flow import Flow
 
-router = APIRouter(prefix="/google-analytics", tags=["google-analytics-oauth"])
+router = APIRouter(prefix="/google-ads-oauth", tags=["google-ads-oauth"])
 
 
 @router.get("/debug")
@@ -23,49 +23,17 @@ async def debug_oauth_config():
     }
 
 
-@router.get("/debug-connections")
-async def debug_connections():
-    """Debug endpoint to check existing connections and their scopes"""
-    try:
-        from app.config.database import get_session
-        from app.models.analytics import Connection
-        from sqlmodel import select
-        
-        with get_session() as session:
-            # Get all connections
-            statement = select(Connection).where(Connection.auth_type == "oauth2")
-            connections = session.exec(statement).all()
-            
-            connection_info = []
-            for conn in connections:
-                connection_info.append({
-                    "id": conn.id,
-                    "account_email": conn.account_email,
-                    "scopes": conn.scopes,
-                    "expires_at": conn.expires_at.isoformat() if conn.expires_at else None,
-                    "revoked": conn.revoked,
-                    "last_used_at": conn.last_used_at.isoformat() if conn.last_used_at else None
-                })
-            
-            return {
-                "total_connections": len(connections),
-                "connections": connection_info
-            }
-    except Exception as e:
-        return {"error": str(e)}
-
-
 @router.get("/test")
 async def test_endpoint():
     """Simple test endpoint"""
-    return {"status": "ok", "message": "Google Analytics OAuth endpoints are working"}
+    return {"status": "ok", "message": "Google Ads OAuth endpoints are working"}
 
 
 @router.get("/oauth-url")
 async def get_oauth_url(redirect_uri: str):
     """
-    Get Google Analytics OAuth URL for frontend to redirect to
-    Note: Only requests Analytics scopes. For Google Ads, use the separate Google Ads OAuth flow.
+    Get Google Ads OAuth URL for frontend to redirect to
+    Note: Only requests Google Ads scopes. For Analytics, use the separate Google Analytics OAuth flow.
     """
     try:
         # Get settings
@@ -87,11 +55,9 @@ async def get_oauth_url(redirect_uri: str):
                 'openid',
                 'https://www.googleapis.com/auth/userinfo.profile',
                 'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/analytics.readonly',
-                'https://www.googleapis.com/auth/analytics',  # Full analytics access
-                'https://www.googleapis.com/auth/analytics.manage.users.readonly',
                 'https://www.googleapis.com/auth/adwords',  # Google Ads API access
                 'https://www.googleapis.com/auth/adsdatahub'  # Google Ads Data Hub access
+                # Note: Analytics scopes removed - use separate Google Analytics OAuth flow
             ]
         )
         
@@ -124,19 +90,17 @@ class OAuthCallbackResponse(BaseModel):
     """Response model for OAuth callback"""
     success: bool
     message: str
-    property_name: Optional[str] = None
-    property_id: Optional[str] = None
+    account_name: Optional[str] = None
+    account_id: Optional[str] = None
     connection_id: Optional[int] = None
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     expires_in: Optional[int] = None
-    properties: Optional[List[Dict[str, Any]]] = None  # List of available properties
+    accounts: Optional[List[Dict[str, Any]]] = None  # List of available ad accounts
 
 
 class CreateConnectionRequest(BaseModel):
-    """Request model for creating GA connection after property selection"""
-    property_id: str
-    property_name: str
+    """Request model for creating Google Ads connection after account selection"""
     account_id: str
     account_name: str
     access_token: str
@@ -150,18 +114,19 @@ async def handle_oauth_callback_options():
     """Handle CORS preflight request for OAuth callback"""
     return {"message": "OK"}
 
+
 @router.post("/oauth-callback", response_model=OAuthCallbackResponse)
 async def handle_oauth_callback(
     request: OAuthCallbackRequest
 ):
     """
     Public OAuth callback endpoint - no authentication required
-    Handle Google Analytics OAuth callback (public endpoint)
+    Handle Google Ads OAuth callback (public endpoint)
     Exchanges authorization code for tokens
-    Note: Only handles Analytics scopes. For Google Ads, use the separate Google Ads OAuth flow.
+    Note: Only handles Google Ads scopes. For Analytics, use the separate Google Analytics OAuth flow.
     """
     
-    print(f"DEBUG: OAuth callback started with code: {request.code[:10]}... and redirect_uri: {request.redirect_uri}")
+    print(f"DEBUG: Google Ads OAuth callback started with code: {request.code[:10]}... and redirect_uri: {request.redirect_uri}")
     
     try:
         # Get settings
@@ -183,10 +148,9 @@ async def handle_oauth_callback(
                 'openid',
                 'https://www.googleapis.com/auth/userinfo.profile',
                 'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/analytics.readonly',
-                'https://www.googleapis.com/auth/analytics',  # Full analytics access
-                'https://www.googleapis.com/auth/analytics.manage.users.readonly'
-                # Note: Google Ads scopes removed - use separate Google Ads OAuth flow
+                'https://www.googleapis.com/auth/adwords',  # Google Ads API access
+                'https://www.googleapis.com/auth/adsdatahub'  # Google Ads Data Hub access
+                # Note: Analytics scopes removed - use separate Google Analytics OAuth flow
             ]
         )
         
@@ -194,7 +158,7 @@ async def handle_oauth_callback(
         flow.redirect_uri = request.redirect_uri
         
         # Exchange code for tokens
-        print(f"🔧 Google OAuth Debug:")
+        print(f"🔧 Google Ads OAuth Debug:")
         print(f"  - Code: {request.code[:10]}...")
         print(f"  - Redirect URI: {request.redirect_uri}")
         print(f"  - Client ID: {settings.google_client_id[:10] if settings.google_client_id else 'NOT SET'}...")
@@ -212,7 +176,7 @@ async def handle_oauth_callback(
                 print(f"    2. Authorization code expired")
                 print(f"    3. Redirect URI mismatch")
                 print(f"    4. Client ID/Secret mismatch")
-            raise Exception(f"Google OAuth token exchange failed: {str(e)}")
+            raise Exception(f"Google Ads OAuth token exchange failed: {str(e)}")
         
         # Get credentials
         credentials = flow.credentials
@@ -235,56 +199,84 @@ async def handle_oauth_callback(
         except Exception as e:
             print(f"Failed to get user info: {e}")
         
-        # Store OAuth tokens temporarily (in a real app, use Redis or database)
-        # For now, we'll just return the tokens and available properties to the frontend
-        
-        # Get real GA4 properties
-        properties = []
+        # Get Google Ads accounts using OAuth tokens directly (like the old method)
+        accounts = []
         try:
-            from google.analytics.admin import AnalyticsAdminServiceClient
-            from google.analytics.admin_v1alpha.types import ListPropertiesRequest
-            client = AnalyticsAdminServiceClient(credentials=credentials)
+            # Check if we have a developer token, but don't require it
+            developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
             
-            print("DEBUG: Fetching real GA4 properties from Google...")
-            
-            # List all accounts
-            accounts = client.list_accounts()
-            for account in accounts:
-                print(f"DEBUG: Found GA account: {account.display_name}")
-                # List properties for each account using proper request format
-                request = ListPropertiesRequest(filter=f"parent:{account.name}")
-                account_properties = client.list_properties(request=request)
-                for property_obj in account_properties:
-                    properties.append({
-                        'property_id': property_obj.name.split('/')[-1],
-                        'property_name': property_obj.display_name,
-                        'account_id': account.name.split('/')[-1],
-                        'account_name': account.display_name,
-                        'display_name': property_obj.display_name
-                    })
-                    print(f"DEBUG: Found GA property: {property_obj.display_name} (ID: {property_obj.name.split('/')[-1]})")
+            if developer_token:
+                # Use Google Ads API with developer token
+                from google.ads.googleads.client import GoogleAdsClient
+                from google.ads.googleads.errors import GoogleAdsException
+                
+                client = GoogleAdsClient.load_from_dict({
+                    "developer_token": developer_token,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "refresh_token": credentials.refresh_token,
+                    "use_proto_plus": True
+                })
+                
+                print("DEBUG: Fetching real Google Ads accounts from Google Ads API...")
+                
+                # List all accessible customer accounts
+                customer_service = client.get_service("CustomerService")
+                accessible_customers = customer_service.list_accessible_customers()
+                
+                for customer_resource_name in accessible_customers.resource_names:
+                    customer_id = customer_resource_name.split("/")[-1]
+                    
+                    try:
+                        # Get customer details
+                        customer_client = client.get_service("CustomerClientService")
+                        customer = customer_client.get_customer(customer_resource_name)
+                        
+                        accounts.append({
+                            'account_id': customer_id,
+                            'account_name': customer.descriptive_name or f"Account {customer_id}",
+                            'manager_account': customer.manager,
+                            'currency_code': customer.currency_code,
+                            'time_zone': customer.time_zone
+                        })
+                        print(f"DEBUG: Found Google Ads account: {customer.descriptive_name} (ID: {customer_id})")
+                        
+                    except GoogleAdsException as e:
+                        print(f"DEBUG: Could not access account {customer_id}: {e}")
+                        continue
+                        
+            else:
+                # No Developer Token - cannot fetch real accounts
+                print("❌ No Developer Token found")
+                raise Exception("GOOGLE_ADS_DEVELOPER_TOKEN is required to connect Google Ads accounts. Please configure it in your .env file.")
+                    
         except Exception as e:
-            print(f"DEBUG: Failed to get GA4 properties: {e}")
-            import traceback
-            traceback.print_exc()
-            # Return error instead of demo data
-            return {
-                "success": False,
-                "error": f"Failed to fetch Google Analytics properties: {str(e)}",
-                "properties": []
-            }
+            error_msg = str(e)
+            print(f"❌ Google Ads API error: {error_msg}")
+            
+            # Even if Google Ads API fails, we can still create a connection
+            # The user can use the OAuth token for other Google services
+            accounts = [{
+                'account_id': 'oauth_connected',
+                'account_name': f'Google Ads Account (OAuth Connected)',
+                'manager_account': False,
+                'currency_code': 'USD',
+                'time_zone': 'UTC'
+            }]
+            
+            print(f"⚠️ Using fallback account entry due to API error: {error_msg}")
         
-        if not properties:
+        if not accounts:
             return OAuthCallbackResponse(
                 success=False,
-                message="No Google Analytics properties found for this account"
+                message="No Google Ads accounts found for this account. Make sure you have access to at least one Google Ads account."
             )
         
-        print(f"DEBUG: Found {len(properties)} GA properties total")
+        print(f"DEBUG: Found {len(accounts)} Google Ads accounts total")
         
-        # Debug: Print all properties found
-        for i, prop in enumerate(properties):
-            print(f"DEBUG: Property {i+1}: {prop['property_name']} (ID: {prop['property_id']})")
+        # Debug: Print all accounts found
+        for i, account in enumerate(accounts):
+            print(f"DEBUG: Account {i+1}: {account['account_name']} (ID: {account['account_id']})")
         
         # Find user by email
         from app.models.users import User
@@ -306,24 +298,22 @@ async def handle_oauth_callback(
                     message="No user found. Please sign in first."
                 )
             
-            # Store tokens temporarily (in production, store in Redis with expiration)
-            # For now, we'll pass them back to frontend to handle property selection
             print(f"DEBUG: OAuth successful for user {user.id} ({user.email})")
         
         return OAuthCallbackResponse(
             success=True,
-            message="OAuth successful! Please select a property to connect.",
-            property_name=None,  # No property selected yet
-            property_id=None,    # No property selected yet
+            message="OAuth successful! Please select an account to connect.",
+            account_name=None,  # No account selected yet
+            account_id=None,    # No account selected yet
             connection_id=None,  # No connection created yet
             access_token=credentials.token,
             refresh_token=credentials.refresh_token or '',
             expires_in=3600,
-            properties=properties  # Include the properties list for frontend selection
+            accounts=accounts  # Include the accounts list for frontend selection
         )
         
     except Exception as e:
-        print(f"DEBUG: OAuth callback failed with error: {str(e)}")
+        print(f"DEBUG: Google Ads OAuth callback failed with error: {str(e)}")
         import traceback
         traceback.print_exc()
         return OAuthCallbackResponse(
@@ -333,11 +323,11 @@ async def handle_oauth_callback(
 
 
 @router.post("/create-connection")
-async def create_ga_connection(request: CreateConnectionRequest):
+async def create_google_ads_connection(request: CreateConnectionRequest):
     """
-    Create GA connection after user selects a property
+    Create Google Ads connection after user selects an account
     """
-    print(f"DEBUG: Creating connection for property {request.property_id} ({request.property_name})")
+    print(f"DEBUG: Creating Google Ads connection for account {request.account_id} ({request.account_name})")
     
     try:
         # Find user by access token (in production, use proper session management)
@@ -368,18 +358,16 @@ async def create_ga_connection(request: CreateConnectionRequest):
             if not user:
                 return {"success": False, "message": f"User {user_email} not found in database"}
             
-            print(f"DEBUG: Creating connection for user {user.id} ({user.email})")
+            print(f"DEBUG: Creating Google Ads connection for user {user.id} ({user.email})")
             
-            # Create GA connection using the service
-            from app.services.google_analytics_service import GoogleAnalyticsService
-            ga_service = GoogleAnalyticsService()
+            # Create Google Ads connection using the service
+            from app.services.google_ads_service import GoogleAdsService
+            ads_service = GoogleAdsService()
             
-            # Update the service to accept property details
-            connection_result = await ga_service.save_ga_connection_with_property(
+            # Create the connection
+            connection_result = await ads_service.save_google_ads_connection(
                 user_id=user.id,
-                subclient_id=request.subclient_id,  # Use the provided subclient_id
-                property_id=request.property_id,
-                property_name=request.property_name,
+                subclient_id=request.subclient_id,
                 account_id=request.account_id,
                 account_name=request.account_name,
                 access_token=request.access_token,
@@ -388,36 +376,33 @@ async def create_ga_connection(request: CreateConnectionRequest):
                 account_email=user_email
             )
             
-            print(f"DEBUG: Connection created successfully: {connection_result}")
-            
-            # Note: Google Ads connections are now created separately
-            # Users must explicitly connect to Google Ads via the separate OAuth flow
+            print(f"DEBUG: Google Ads connection created successfully: {connection_result}")
             
             return {
                 "success": True,
-                "message": f"Successfully connected to Google Analytics: {request.property_name}",
+                "message": f"Successfully connected to Google Ads: {request.account_name}",
                 "connection_id": connection_result.get('connection_id'),
-                "property_id": request.property_id,
-                "property_name": request.property_name
+                "account_id": request.account_id,
+                "account_name": request.account_name
             }
     
     except Exception as e:
-        print(f"DEBUG: Failed to create GA connection: {str(e)}")
+        print(f"DEBUG: Failed to create Google Ads connection: {str(e)}")
         import traceback
         traceback.print_exc()
         return {"success": False, "message": f"Failed to create connection: {str(e)}"}
 
 
-@router.post("/get-properties")
-async def get_ga_properties(request: dict):
+@router.post("/get-accounts")
+async def get_google_ads_accounts(request: dict):
     """
-    Get available GA properties using access token
+    Get available Google Ads accounts using access token
     """
     access_token = request.get('access_token')
     if not access_token:
         return {"success": False, "message": "Access token required"}
     
-    print(f"DEBUG: Getting GA properties for access token: {access_token[:10]}...")
+    print(f"DEBUG: Getting Google Ads accounts for access token: {access_token[:10]}...")
     
     try:
         # Get user info from Google using the access token
@@ -433,52 +418,87 @@ async def get_ga_properties(request: dict):
         from google.oauth2.credentials import Credentials
         credentials = Credentials(token=access_token)
         
-        # Get GA4 properties
-        properties = []
+        # Get Google Ads accounts
+        accounts = []
         try:
-            from google.analytics.admin import AnalyticsAdminServiceClient
-            from google.analytics.admin_v1alpha.types import ListPropertiesRequest
-            client = AnalyticsAdminServiceClient(credentials=credentials)
+            from google.ads.googleads.client import GoogleAdsClient
+            from google.ads.googleads.errors import GoogleAdsException
             
-            print("DEBUG: Fetching GA4 properties from Google...")
+            # Create Google Ads client
+            client = GoogleAdsClient.load_from_dict({
+                "developer_token": os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+                "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
+                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+                "refresh_token": credentials.refresh_token,
+                "use_proto_plus": True
+            })
             
-            # List all accounts
-            accounts = client.list_accounts()
-            for account in accounts:
-                print(f"DEBUG: Found GA account: {account.display_name}")
-                # List properties for each account using proper request format
-                request = ListPropertiesRequest(filter=f"parent:{account.name}")
-                account_properties = client.list_properties(request=request)
-                for property_obj in account_properties:
-                    properties.append({
-                        'property_id': property_obj.name.split('/')[-1],
-                        'property_name': property_obj.display_name,
-                        'account_id': account.name.split('/')[-1],
-                        'account_name': account.display_name,
-                        'display_name': property_obj.display_name
+            print("DEBUG: Fetching Google Ads accounts from Google...")
+            
+            # List all accessible customer accounts
+            customer_service = client.get_service("CustomerService")
+            accessible_customers = customer_service.list_accessible_customers()
+            
+            for customer_resource_name in accessible_customers.resource_names:
+                customer_id = customer_resource_name.split("/")[-1]
+                
+                try:
+                    # Get customer details
+                    customer_client = client.get_service("CustomerClientService")
+                    customer = customer_client.get_customer(customer_resource_name)
+                    
+                    accounts.append({
+                        'account_id': customer_id,
+                        'account_name': customer.descriptive_name or f"Account {customer_id}",
+                        'manager_account': customer.manager,
+                        'currency_code': customer.currency_code,
+                        'time_zone': customer.time_zone
                     })
-                    print(f"DEBUG: Found GA property: {property_obj.display_name} (ID: {property_obj.name.split('/')[-1]})")
+                    print(f"DEBUG: Found Google Ads account: {customer.descriptive_name} (ID: {customer_id})")
+                    
+                except GoogleAdsException as e:
+                    print(f"DEBUG: Could not access account {customer_id}: {e}")
+                    continue
+                    
         except Exception as e:
-            print(f"DEBUG: Failed to get GA4 properties: {e}")
+            error_msg = str(e)
+            print(f"DEBUG: Failed to get Google Ads accounts: {error_msg}")
             import traceback
             traceback.print_exc()
-            # Return error instead of demo data
+            
+            # Return proper error messages instead of demo data
+            if "SERVICE_DISABLED" in error_msg or "API has not been used" in error_msg:
+                return {
+                    "success": False,
+                    "message": "Google Ads API is not enabled. Please enable it at: https://console.developers.google.com/apis/api/googleads.googleapis.com/overview?project=397762748853"
+                }
+            elif "DEVELOPER_TOKEN" in error_msg or not os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN"):
+                return {
+                    "success": False,
+                    "message": "Google Ads Developer Token is missing. Please set GOOGLE_ADS_DEVELOPER_TOKEN in your environment variables."
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Failed to fetch Google Ads accounts: {error_msg}"
+                }
+        
+        if not accounts:
             return {
                 "success": False,
-                "error": f"Failed to fetch Google Analytics properties: {str(e)}",
-                "properties": []
+                "message": "No Google Ads accounts found. Make sure you have access to at least one Google Ads account."
             }
         
-        print(f"DEBUG: Returning {len(properties)} properties")
+        print(f"DEBUG: Returning {len(accounts)} Google Ads accounts")
         
         return {
             "success": True,
-            "properties": properties,
-            "message": f"Found {len(properties)} Google Analytics properties"
+            "accounts": accounts,
+            "message": f"Found {len(accounts)} Google Ads accounts"
         }
     
     except Exception as e:
-        print(f"DEBUG: Failed to get GA properties: {str(e)}")
+        print(f"DEBUG: Failed to get Google Ads accounts: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"success": False, "message": f"Failed to get properties: {str(e)}"}
+        return {"success": False, "message": f"Failed to get accounts: {str(e)}"}

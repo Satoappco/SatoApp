@@ -19,11 +19,11 @@ class APITokenService:
     """Service for managing API token authentication"""
     
     def __init__(self):
-        # Load single universal API token from environment variables
-        # Check both API_TOKEN (new) and API_KEY (legacy deployment script)
-        self.api_token = os.getenv("API_TOKEN") or os.getenv("API_KEY")
+        # Load single universal API token from settings (which loads from .env)
+        settings = get_settings()
+        self.api_token = settings.api_token
         
-        # Fallback to old token names for backward compatibility
+        # Fallback to old token names for backward compatibility if settings don't have it
         if not self.api_token:
             # Try old token names as fallback
             self.api_token = (

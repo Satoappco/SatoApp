@@ -111,6 +111,17 @@ async def run_crewai_analysis_for_test(
             except Exception as e:
                 logger.warning(f"Could not initialize Google Ads service: {e}")
         
+        # Also refresh Facebook tokens if Facebook is in data sources
+        if "facebook" in data_sources:
+            try:
+                from app.services.facebook_service import FacebookService
+                facebook_service = FacebookService()
+                logger.info(f"🔄 Checking and refreshing Facebook tokens for user {user_id}...")
+                await refresh_user_facebook_tokens(facebook_service, user_id)
+                logger.info(f"✅ Facebook service ready for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Could not initialize Facebook service: {e}")
+        
         # 3. INITIALIZE LLM
         import os
         from crewai.llm import LLM
@@ -196,7 +207,8 @@ async def run_crewai_analysis_for_test(
             
             # Get tools for this agent dynamically
             logger.info(f"🔧 Getting tools for agent type: {agent_type}")
-            agent_tools = _get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id)
+            # Note: customer_id in this context is actually subclient_id
+            agent_tools = _get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=customer_id)
             logger.info(f"🔧 Agent {agent_type} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
             
             # Create specialist agent using ONLY database configuration with timing
@@ -567,11 +579,97 @@ async def refresh_user_ga4_tokens(ga_service, user_id: int) -> None:
         # Don't raise - we want the webhook to continue even if token refresh fails
 
 
-def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id: int = None, customer_id: int = None) -> List:
+async def refresh_user_facebook_tokens(facebook_service, user_id: int) -> None:
+    """
+    Automatically refresh expired Facebook tokens for a user before executing agents.
+    
+    This prevents the "re-authorization required" error by proactively refreshing
+    tokens that are expired or close to expiring.
+    """
+    try:
+        logger.info(f"🔍 Checking Facebook token status for user {user_id}...")
+        
+        # Get all user's Facebook connections from the database
+        from app.core.database import DatabaseManager
+        db_manager = DatabaseManager()
+        
+        # Get user's connections (this should include expiry info)
+        with db_manager.get_session() as session:
+            from sqlmodel import select
+            from app.models.analytics import Connection
+            from app.models.analytics import DigitalAsset
+            
+            # Find all Facebook connections for this user
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.user_id == user_id,
+                Connection.revoked == False,
+                DigitalAsset.provider == "Facebook"
+            )
+            
+            results = session.exec(statement).all()
+            
+            if not results:
+                logger.info(f"No Facebook connections found for user {user_id}")
+                return
+            
+            logger.info(f"Found {len(results)} Facebook connections to check")
+            
+            # Check and refresh each connection
+            for connection, asset in results:
+                try:
+                    # Check if token is expired or will expire soon (within 5 minutes)
+                    now = datetime.now(timezone.utc)
+                    expires_at = connection.expires_at
+                    
+                    # Add 5 minutes buffer to refresh tokens before they expire
+                    buffer_time = timedelta(minutes=5)
+                    
+                    if expires_at and expires_at.replace(tzinfo=timezone.utc) <= (now + buffer_time):
+                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now
+                        if time_until_expiry.total_seconds() <= 0:
+                            logger.info(f"🔄 Facebook token expired for connection {connection.id}, refreshing...")
+                        else:
+                            logger.info(f"🔄 Facebook token expires soon for connection {connection.id} (in {time_until_expiry}), refreshing...")
+                        
+                        # Use the Facebook service to refresh the token
+                        try:
+                            result = await facebook_service.refresh_facebook_token(connection.id)
+                            logger.info(f"✅ Successfully refreshed Facebook token for connection {connection.id}")
+                        except ValueError as e:
+                            error_msg = str(e)
+                            if "expired" in error_msg.lower() or "re-authenticate" in error_msg.lower():
+                                logger.error(f"❌ Facebook connection {connection.id} requires re-authorization: {error_msg}")
+                                # Don't fail the entire analysis, but log the issue
+                            else:
+                                logger.error(f"❌ Failed to refresh Facebook token for connection {connection.id}: {error_msg}")
+                        except Exception as e:
+                            logger.error(f"❌ Unexpected error refreshing Facebook token for connection {connection.id}: {e}")
+                    else:
+                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now if expires_at else None
+                        if time_until_expiry:
+                            logger.info(f"✅ Facebook token for connection {connection.id} is valid (expires in {time_until_expiry})")
+                        else:
+                            logger.info(f"✅ Facebook token for connection {connection.id} has no expiry set")
+                            
+                except Exception as e:
+                    logger.error(f"❌ Error checking/refreshing Facebook connection {connection.id}: {e}")
+                    continue
+                    
+    except Exception as e:
+        logger.error(f"❌ Error in refresh_user_facebook_tokens: {e}")
+        # Don't raise - we want the webhook to continue even if token refresh fails
+
+
+def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id: int = None, customer_id: int = None, subclient_id: int = None) -> List:
     """AUTO-DISCOVERY: Dynamically assign tools based on agent type and role naming conventions"""
     from app.core.constants import get_tools_for_agent as get_standard_tools
     
     tools = []
+    
+    # Use the provided subclient_id directly - NO FALLBACK MAPPING!
+    # If subclient_id is not provided, tools will fail with clear error messages
     
     # Get tools using standardized constants
     tool_names = get_standard_tools(agent_type)
@@ -580,28 +678,28 @@ def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id:
         try:
             if tool_name == "GA4AnalyticsTool":
                 from app.tools.ga4_analytics_tool import GA4AnalyticsTool
-                tools.append(GA4AnalyticsTool(user_id=user_id, customer_id=customer_id))
-                logger.info(f"✅ Added GA4AnalyticsTool for {agent_type}")
+                tools.append(GA4AnalyticsTool(user_id=user_id, subclient_id=subclient_id))
+                logger.info(f"✅ Added GA4AnalyticsTool for {agent_type} (subclient_id={subclient_id})")
                 
             elif tool_name == "GoogleAdsAnalyticsTool":
                 from app.tools.google_ads_tool import GoogleAdsAnalyticsTool
-                tools.append(GoogleAdsAnalyticsTool(user_id=user_id, customer_id=customer_id))
-                logger.info(f"✅ Added GoogleAdsAnalyticsTool for {agent_type}")
+                tools.append(GoogleAdsAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
+                logger.info(f"✅ Added GoogleAdsAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
                 
             elif tool_name == "FacebookAnalyticsTool":
                 from app.tools.facebook_analytics_tool import FacebookAnalyticsTool
-                tools.append(FacebookAnalyticsTool(user_id=user_id, subclient_id=customer_id))
-                logger.info(f"✅ Added FacebookAnalyticsTool for {agent_type}")
+                tools.append(FacebookAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
+                logger.info(f"✅ Added FacebookAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
                 
             elif tool_name == "FacebookAdsTool":
                 from app.tools.facebook_ads_tool import FacebookAdsTool
-                tools.append(FacebookAdsTool(user_id=user_id, subclient_id=customer_id))
-                logger.info(f"✅ Added FacebookAdsTool for {agent_type}")
+                tools.append(FacebookAdsTool(user_id=user_id, subclient_id=subclient_id))
+                logger.info(f"✅ Added FacebookAdsTool for {agent_type} (subclient_id={subclient_id})")
                 
             elif tool_name == "FacebookMarketingTool":
                 from app.tools.facebook_marketing_tool import FacebookMarketingTool
-                tools.append(FacebookMarketingTool(user_id=user_id, subclient_id=customer_id))
-                logger.info(f"✅ Added FacebookMarketingTool for {agent_type}")
+                tools.append(FacebookMarketingTool(user_id=user_id, subclient_id=subclient_id))
+                logger.info(f"✅ Added FacebookMarketingTool for {agent_type} (subclient_id={subclient_id})")
                 
         except ImportError as e:
             logger.warning(f"⚠️ Could not import {tool_name}: {e}")

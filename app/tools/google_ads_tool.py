@@ -9,7 +9,8 @@ import json
 from datetime import datetime, timedelta
 import os
 
-from app.services.google_analytics_service import GoogleAnalyticsService
+from app.services.google_ads_service import GoogleAdsService
+from app.utils.async_utils import run_async_in_thread
 
 
 class GoogleAdsAnalyticsInput(BaseModel):
@@ -34,11 +35,11 @@ class GoogleAdsAnalyticsTool(BaseTool):
     class Config:
         extra = "allow"
 
-    def __init__(self, user_id: int = None, customer_id: int = None):
+    def __init__(self, user_id: int = None, subclient_id: int = None):
         super().__init__()
         # Use object.__setattr__ to bypass Pydantic validation
         object.__setattr__(self, 'user_id', user_id)
-        object.__setattr__(self, 'customer_id', customer_id)
+        object.__setattr__(self, 'subclient_id', subclient_id)
 
     def _run(self, metrics: List[str], dimensions: List[str] = None, start_date: str = None, end_date: str = None, limit: int = 100) -> str:
         """Execute Google Ads data fetch with REAL DATA based on agent's specifications"""
@@ -46,92 +47,40 @@ class GoogleAdsAnalyticsTool(BaseTool):
             if dimensions is None:
                 dimensions = []
             
-            # Use stored user_id and customer_id from initialization
-            if not self.user_id or not self.customer_id:
+            # Use stored user_id and subclient_id from initialization
+            if not self.user_id or not self.subclient_id:
                 return json.dumps({
                     "status": "error",
-                    "message": "No user/customer context available for Google Ads data fetching. Tool needs to be initialized with user_id and customer_id."
+                    "message": "No user/subclient context available for Google Ads data fetching. Tool needs to be initialized with user_id and subclient_id."
                 }, indent=2)
             
-            # Initialize Google Analytics service (which now includes Google Ads)
-            ga_service = GoogleAnalyticsService()
+            # Initialize Google Ads service
+            google_ads_service = GoogleAdsService()
             
-            # Get customer's Google connections (customer owns the connections)
-            # Use asyncio.run() but handle the event loop properly
-            import asyncio
-            try:
-                # Try to get the current event loop
-                loop = asyncio.get_running_loop()
-                # If we're in a running loop, we need to use a different approach
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, ga_service.get_user_ga_connections(self.customer_id))
-                    user_connections = future.result()
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run()
-                user_connections = asyncio.run(ga_service.get_user_ga_connections(self.customer_id))
+            # Get subclient's Google Ads connections
+            user_connections = run_async_in_thread(google_ads_service.get_user_google_ads_connections(self.user_id, self.subclient_id))
             
             if not user_connections:
                 return json.dumps({
                     "status": "error",
-                    "message": f"No Google Ads connections found for customer {self.customer_id}. Please connect your Google Ads account first."
+                    "message": f"No Google Ads connections found for subclient {self.subclient_id}. Please connect your Google Ads account first."
                 }, indent=2)
             
             # Use the first available connection
             connection = user_connections[0]
             connection_id = connection["connection_id"]
-            
-            # Get Google Ads accounts
-            try:
-                # Try to get the current event loop
-                loop = asyncio.get_running_loop()
-                # If we're in a running loop, we need to use a different approach
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, ga_service.get_google_ads_accounts(connection_id))
-                    accounts = future.result()
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run()
-                accounts = asyncio.run(ga_service.get_google_ads_accounts(connection_id))
-            
-            if not accounts:
-                return json.dumps({
-                    "status": "error",
-                    "message": "No Google Ads accounts found. Please ensure your Google Ads account is properly connected."
-                }, indent=2)
-            
-            # Use the first account
-            account = accounts[0]
-            customer_id = account["customer_id"]
+            customer_id = connection["customer_id"]
             
             # Fetch real Google Ads data with agent-specified parameters
-            try:
-                # Try to get the current event loop
-                loop = asyncio.get_running_loop()
-                # If we're in a running loop, we need to use a different approach
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, ga_service.fetch_google_ads_data(
-                        connection_id=connection_id,
-                        customer_id=customer_id,
-                        metrics=metrics,
-                        dimensions=dimensions,
-                        start_date=start_date,
-                        end_date=end_date,
-                        limit=limit
-                    ))
-                    ads_data = future.result()
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run()
-                ads_data = asyncio.run(ga_service.fetch_google_ads_data(
-                    connection_id=connection_id,
-                    customer_id=customer_id,
-                    metrics=metrics,
-                    dimensions=dimensions,
-                    start_date=start_date,
-                    end_date=end_date,
-                    limit=limit
-                ))
+            ads_data = run_async_in_thread(google_ads_service.get_google_ads_data(
+                connection_id=connection_id,
+                customer_id=customer_id,
+                metrics=metrics,
+                dimensions=dimensions,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit
+            ))
             
             if not ads_data.get("success"):
                 return json.dumps({
@@ -150,8 +99,8 @@ class GoogleAdsAnalyticsTool(BaseTool):
                     "row_count": ads_data.get("row_count", 0),
                     "account": {
                         "customer_id": customer_id,
-                        "descriptive_name": account.get("descriptive_name", "Unknown"),
-                        "currency_code": account.get("currency_code", "USD")
+                        "descriptive_name": connection.get("account_name", "Unknown"),
+                        "currency_code": "USD"  # Default currency, could be enhanced to get from connection
                     }
                 },
                 "timestamp": datetime.now().isoformat()

@@ -55,14 +55,8 @@ class GoogleAnalyticsService:
         'openid'  # OpenID Connect for authentication
     ]
     
-    # Google Ads scopes - for advertising data access
-    GOOGLE_ADS_SCOPES = [
-        'https://www.googleapis.com/auth/adwords',
-        'https://www.googleapis.com/auth/adsdatahub'
-    ]
-    
-    # Combined scopes for both Analytics and Ads
-    COMBINED_SCOPES = GA4_SCOPES + GOOGLE_ADS_SCOPES
+    # Note: Google Ads scopes are handled by the separate GoogleAdsService
+    # Each service should only use its own scopes to avoid scope conflicts
     
     def __init__(self):
         self.encryption_key = self._get_encryption_key()
@@ -83,8 +77,22 @@ class GoogleAnalyticsService:
         """Encrypt token for secure storage"""
         return self.cipher_suite.encrypt(token.encode())
     
-    def _decrypt_token(self, encrypted_token: bytes) -> str:
+    def _decrypt_token(self, encrypted_token) -> str:
         """Decrypt token for use"""
+        # Validate input
+        if encrypted_token is None:
+            raise ValueError("Encrypted token is None - connection may not be properly initialized")
+        
+        if not isinstance(encrypted_token, (bytes, str)):
+            raise ValueError(f"Encrypted token must be bytes or str, got {type(encrypted_token)}")
+        
+        # Convert to bytes if it's a string
+        if isinstance(encrypted_token, str):
+            try:
+                encrypted_token = encrypted_token.encode('utf-8')
+            except Exception as e:
+                raise ValueError(f"Failed to convert string token to bytes: {e}")
+        
         try:
             return self.cipher_suite.decrypt(encrypted_token).decode()
         except Exception as e:
@@ -126,9 +134,8 @@ class GoogleAnalyticsService:
             account_email: Google account email
         """
         
-        # For now, use demo data - in the future this will fetch real GA4 properties
-        property_id = f"ga4-property-{user_id}-{subclient_id}"
-        property_name = f"Google Analytics Property for {account_email}"
+        # This method should not be used - use get_ga4_properties instead for real data
+        raise NotImplementedError("This method creates demo data. Use get_ga4_properties() for real GA4 properties.")
         
         with get_session() as session:
             # Check if digital asset already exists
@@ -202,6 +209,7 @@ class GoogleAnalyticsService:
                     refresh_token_enc=refresh_token_enc,
                     token_hash=token_hash,
                     expires_at=expires_at,
+                    is_active=True,
                     revoked=False,
                     last_used_at=datetime.utcnow()
                 )
@@ -238,6 +246,22 @@ class GoogleAnalyticsService:
         """
         
         with get_session() as session:
+            # First, deactivate all other ANALYTICS assets for this user/subclient
+            print(f"DEBUG: Deactivating other ANALYTICS assets for user {user_id}, subclient {subclient_id}")
+            deactivate_statement = select(DigitalAsset).where(
+                and_(
+                    DigitalAsset.subclient_id == subclient_id,
+                    DigitalAsset.asset_type == AssetType.ANALYTICS,
+                    DigitalAsset.provider == "Google",
+                    DigitalAsset.is_active == True
+                )
+            )
+            other_assets = session.exec(deactivate_statement).all()
+            for asset in other_assets:
+                asset.is_active = False
+                print(f"DEBUG: Deactivated asset {asset.id}: {asset.name}")
+            session.commit()
+            
             # Check if digital asset already exists
             statement = select(DigitalAsset).where(
                 and_(
@@ -368,14 +392,15 @@ class GoogleAnalyticsService:
             # Decrypt refresh token
             refresh_token = self._decrypt_token(connection.refresh_token_enc)
             
-            # Create credentials and refresh
+            # Create credentials and refresh using stored scopes
+            stored_scopes = connection.scopes if connection.scopes else self.GA4_SCOPES
             credentials = Credentials(
                 token=None,
                 refresh_token=refresh_token,
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=get_google_client_id(),
                 client_secret=get_google_client_secret(),
-                scopes=self.GA4_SCOPES
+                scopes=stored_scopes
             )
             
             try:
@@ -508,14 +533,15 @@ class GoogleAnalyticsService:
                 # Decrypt existing refresh token
                 refresh_token = self._decrypt_token(connection.refresh_token_enc)
                 
-                # Create credentials with comprehensive scopes
+                # Create credentials using stored scopes
+                stored_scopes = connection.scopes if connection.scopes else self.GA4_SCOPES
                 credentials = Credentials(
                     token=None,
                     refresh_token=refresh_token,
                     token_uri="https://oauth2.googleapis.com/token",
                     client_id=get_google_client_id(),
                     client_secret=get_google_client_secret(),
-                    scopes=self.GA4_SCOPES  # Use comprehensive scopes
+                    scopes=stored_scopes
                 )
                 
                 # Try to refresh with new scopes
@@ -675,12 +701,19 @@ class GoogleAnalyticsService:
             if not connection:
                 raise ValueError("Connection not found or revoked")
             
+            # Check if tokens are properly encrypted
+            if not connection.access_token_enc or not connection.refresh_token_enc:
+                raise ValueError(f"Connection {connection_id} has missing or invalid encrypted tokens. Please re-authorize this connection.")
+            
             # Check if token needs refresh
             if connection.expires_at and connection.expires_at <= datetime.utcnow():
                 # Refresh token
                 await self.refresh_ga_token(connection_id)
                 # Reload connection
                 connection = session.exec(statement).first()
+                # Re-validate tokens after refresh
+                if not connection.access_token_enc or not connection.refresh_token_enc:
+                    raise ValueError(f"Connection {connection_id} tokens are still invalid after refresh. Please re-authorize this connection.")
             
             # Decrypt tokens
             access_token = self._decrypt_token(connection.access_token_enc)
@@ -785,20 +818,24 @@ class GoogleAnalyticsService:
                 "totals": []
             }
     
-    async def get_user_ga_connections(self, user_id: int) -> List[Dict[str, Any]]:
-        """Get all GA connections for a user"""
+    async def get_user_ga_connections(self, user_id: int, subclient_id: int = None) -> List[Dict[str, Any]]:
+        """Get all GA connections for a user and subclient"""
         
         with get_session() as session:
+            conditions = [
+                Connection.user_id == user_id,
+                DigitalAsset.asset_type == AssetType.ANALYTICS,
+                DigitalAsset.provider == "Google",
+                Connection.revoked == False
+            ]
+            
+            # Add subclient_id filter if provided
+            if subclient_id is not None:
+                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                and_(
-                    Connection.user_id == user_id,
-                    DigitalAsset.asset_type == AssetType.ANALYTICS,
-                    DigitalAsset.provider == "Google",
-                    Connection.revoked == False
-                )
-            )
+            ).where(and_(*conditions))
             
             results = session.exec(statement).all()
             
