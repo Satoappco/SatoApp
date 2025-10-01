@@ -25,27 +25,37 @@ async def get_user_subclients(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get all subclients for current user
+    Get all subclients for current user's customer, with default subclient first
     """
     
     try:
         with get_session() as session:
-            # Get subclients for the main user (ID 5)
+            # Get user's customer ID
+            customer_id = current_user.primary_customer_id
+            
+            # Get subclients for the user's customer, ordered by ID (default first)
             statement = select(SubCustomer).where(
-                SubCustomer.customer_id == 1  # Main customer ID
-            )
+                SubCustomer.customer_id == customer_id
+            ).order_by(SubCustomer.id.asc())  # First subclient = default
+            
             subclients = session.exec(statement).all()
             
-            return [
+            result = [
                 {
                     "id": sc.id,
                     "name": sc.name,
                     "customer_id": sc.customer_id,
                     "subtype": sc.subtype,
-                    "status": sc.status
+                    "status": sc.status,
+                    "is_default": idx == 0  # Mark first one as default
                 }
-                for sc in subclients
+                for idx, sc in enumerate(subclients)
             ]
+            
+            return {
+                "subclients": result,
+                "default_subclient_id": result[0]["id"] if result else None
+            }
     
     except Exception as e:
         raise HTTPException(
@@ -130,15 +140,16 @@ async def save_ga_connection(
 
 @router.get("/connections", response_model=GAConnectionListResponse)
 async def get_ga_connections(
+    subclient_id: int = Query(None, description="Filter connections by subclient ID"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get all GA connections for the current authenticated user
+    Get GA connections for the current authenticated user, optionally filtered by subclient
     """
     
     try:
-        # Use real authenticated user ID
-        connections = await ga_service.get_user_ga_connections(current_user.id)
+        # Use real authenticated user ID and optional subclient filter
+        connections = await ga_service.get_user_ga_connections(current_user.id, subclient_id)
         return GAConnectionListResponse(connections=connections)
     
     except Exception as e:

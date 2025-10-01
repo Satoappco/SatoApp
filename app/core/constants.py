@@ -290,9 +290,18 @@ def should_include_agent(agent_type: str, data_sources: List[str], user_question
     # This allows multiple specialists to work together on multi-source requests
     result = any(ds in standard_data_sources for ds in agent_data_sources)
     print(f"   Agent included: {result} (ANY data source match)")
-    return result
+
     
-    # Keyword-based matching for backward compatibility
+    # If data source matching worked, return the result
+    if result:
+        return result
+    
+    # If data sources were explicitly provided, trust them - don't use keyword fallback
+    if standard_data_sources:
+        print(f"   Explicitly provided data sources don't match - NOT including agent")
+        return False
+    
+    # Keyword-based matching ONLY when no data sources are provided (backward compatibility)
     question_lower = user_question.lower()
     
     if standard_type in [AgentType.GOOGLE_DATABASE_ANALYSIS_EXPERT, AgentType.GOOGLE_ANALYTICS]:

@@ -63,3 +63,21 @@ def sanitize_agent_response(response: str) -> str:
     # Remove any potential harmful content
     # For now, just return as-is, but this could be expanded
     return response.strip()
+
+
+def get_default_subclient_for_customer(customer_id: int) -> int:
+    """Get the default subclient ID for a customer (the first active subclient)"""
+    from app.config.database import get_session
+    from app.models.users import SubCustomer
+    from sqlmodel import select
+    
+    with get_session() as session:
+        # Get the first active subclient for this customer
+        statement = select(SubCustomer).where(
+            SubCustomer.customer_id == customer_id
+        ).order_by(SubCustomer.id.asc())  # Get the first one (usually ID 1)
+        
+        subclient = session.exec(statement).first()
+        if subclient:
+            return subclient.id
+        return customer_id  # Fallback to customer_id if no subclient found

@@ -21,6 +21,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 from app.services.google_analytics_service import GoogleAnalyticsService
+from app.utils.async_utils import run_async_in_thread
 from app.config.database import get_session
 from app.models.analytics import Connection, DigitalAsset, AssetType
 from sqlmodel import select, and_
@@ -60,12 +61,12 @@ class GA4AnalyticsTool(BaseTool):
     class Config:
         extra = "allow"
     
-    def __init__(self, user_id: int = None, customer_id: int = None):
+    def __init__(self, user_id: int = None, subclient_id: int = None):
         super().__init__()
         self.ga_service = GoogleAnalyticsService()
         # Use object.__setattr__ to bypass Pydantic validation
         object.__setattr__(self, 'user_id', user_id)
-        object.__setattr__(self, 'customer_id', customer_id)
+        object.__setattr__(self, 'subclient_id', subclient_id)
     
     @property
     def ga_service(self):
@@ -102,38 +103,26 @@ class GA4AnalyticsTool(BaseTool):
         """
         
         try:
-            # Use stored user_id and customer_id from initialization
-            if not self.user_id or not self.customer_id:
+            # Use stored user_id and subclient_id from initialization
+            if not self.user_id or not self.subclient_id:
                 return {
-                    'error': 'No user/customer context available for GA4 data fetching',
-                    'suggestion': 'Tool needs to be initialized with user_id and customer_id'
+                    'error': 'No user/subclient context available for GA4 data fetching',
+                    'suggestion': 'Tool needs to be initialized with user_id and subclient_id'
                 }
             
-            # Get customer's GA4 connections (customer owns the connections)
-            # Use asyncio.run() but handle the event loop properly
-            import asyncio
-            try:
-                # Try to get the current event loop
-                loop = asyncio.get_running_loop()
-                # If we're in a running loop, we need to use a different approach
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self.ga_service.get_user_ga_connections(self.customer_id))
-                    user_connections = future.result()
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run()
-                user_connections = asyncio.run(self.ga_service.get_user_ga_connections(self.customer_id))
+            # Get subclient's GA4 connections (subclient owns the connections)
+            user_connections = run_async_in_thread(self.ga_service.get_user_ga_connections(self.user_id, self.subclient_id))
             
             if not user_connections:
                 return {
-                    'error': f'No GA4 connections found for customer {self.customer_id}',
-                    'suggestion': 'Customer needs to connect their Google Analytics account first'
+                    'error': f'No GA4 connections found for subclient {self.subclient_id}',
+                    'suggestion': 'Subclient needs to connect their Google Analytics account first'
                 }
             
             # Use provided property_id or first available connection
             if property_id and property_id not in ["YOUR_GA4_PROPERTY_ID", "YOUR_PROPERTY_ID", "PROPERTY_ID"]:
                 # Find connection for specific property (only if it's a real property ID)
-                connection_id = self._get_user_ga_connection(self.customer_id, property_id)
+                connection_id = self._get_user_ga_connection(self.user_id, property_id)
                 if not connection_id:
                     return {
                         'error': f'No GA4 connection found for property {property_id}',
@@ -152,33 +141,15 @@ class GA4AnalyticsTool(BaseTool):
                 dimensions = self._get_default_dimensions(analysis_type)
             
             # Fetch data using the service
-            try:
-                # Try to get the current event loop
-                loop = asyncio.get_running_loop()
-                # If we're in a running loop, we need to use a different approach
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self.ga_service.fetch_ga4_data(
-                        connection_id=connection_id,
-                        property_id=property_id,
-                        metrics=metrics,
-                        dimensions=dimensions,
-                        start_date=start_date,
-                        end_date=end_date,
-                        limit=limit
-                    ))
-                    result = future.result()
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run()
-                result = asyncio.run(self.ga_service.fetch_ga4_data(
-                    connection_id=connection_id,
-                    property_id=property_id,
-                    metrics=metrics,
-                    dimensions=dimensions,
-                    start_date=start_date,
-                    end_date=end_date,
-                    limit=limit
-                ))
+            result = run_async_in_thread(self.ga_service.fetch_ga4_data(
+                connection_id=connection_id,
+                property_id=property_id,
+                metrics=metrics,
+                dimensions=dimensions,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit
+            ))
             
             # Add analysis insights
             result['analysis_type'] = analysis_type
@@ -193,7 +164,7 @@ class GA4AnalyticsTool(BaseTool):
             }
     
     def _get_user_ga_connection(self, user_id: int, property_id: str) -> Optional[int]:
-        """Get user's GA4 connection ID for the specified property"""
+        """Get user's GA4 connection ID for the specified property and subclient"""
         
         with get_session() as session:
             statement = select(Connection, DigitalAsset).join(
@@ -201,6 +172,7 @@ class GA4AnalyticsTool(BaseTool):
             ).where(
                 and_(
                     Connection.user_id == user_id,
+                    DigitalAsset.subclient_id == self.subclient_id,
                     DigitalAsset.asset_type == AssetType.ANALYTICS,
                     DigitalAsset.provider == "Google",
                     DigitalAsset.external_id == property_id,

@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     
+    def __init__(self, **kwargs):
+        # Handle DEBUG environment variable that might be set to 'WARN' or other non-boolean values
+        if 'debug' in kwargs and isinstance(kwargs['debug'], str):
+            kwargs['debug'] = kwargs['debug'].lower() in ('true', '1', 'yes', 'on')
+        super().__init__(**kwargs)
+    
     # Server Configuration
     host: str = "0.0.0.0"
     port: int = 8000
@@ -80,3 +86,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached application settings"""
     return Settings()
+
+def clear_settings_cache():
+    """Clear the settings cache to force reload"""
+    get_settings.cache_clear()

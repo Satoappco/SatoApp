@@ -20,7 +20,7 @@ from sqlmodel import select, and_
 class FacebookMarketingInput(BaseModel):
     """Input schema for FacebookMarketingTool."""
     data_type: str = Field("auto", description="Type of data to fetch: 'auto', 'page_insights', 'page_posts', 'ad_insights', 'campaigns'")
-    metrics: Optional[List[str]] = Field(None, description="Specific metrics to retrieve (optional - will use smart defaults)")
+    metrics: Optional[List[str]] = Field(None, description="Specific metrics to retrieve (optional - will use smart defaults). Valid metrics: page_impressions, page_post_engagements, page_video_views, page_fans. Do NOT use custom metrics like page_posts_impressions_by_story_type_viral as they don't exist in Facebook API.")
     start_date: str = Field("7daysAgo", description="Start date in YYYY-MM-DD format or relative")
     end_date: str = Field("today", description="End date in YYYY-MM-DD format or relative")
     level: str = Field("account", description="Level of data aggregation: 'account', 'campaign', 'adset', 'ad' (for ads data)")
@@ -34,7 +34,9 @@ class FacebookMarketingTool(BaseTool):
         "Comprehensive Facebook marketing tool that automatically determines and fetches the most relevant "
         "Facebook data based on your request. This tool can handle page insights, social media metrics, "
         "advertising performance, campaign data, and content analysis. It intelligently chooses between "
-        "analytics and advertising data based on available connections and request context."
+        "analytics and advertising data based on available connections and request context. "
+        "IMPORTANT: Use the default metrics (page_impressions, page_post_engagements, page_video_views, page_fans) "
+        "unless you have specific requirements. Do NOT generate custom metrics as they may not exist in Facebook API."
     )
     args_schema: Type[BaseModel] = FacebookMarketingInput
 
@@ -70,17 +72,37 @@ class FacebookMarketingTool(BaseTool):
             facebook_service = FacebookService()
 
             # Get Facebook connections with token refresh
-            social_connections = asyncio.run(facebook_service.get_facebook_connection_for_user(
-                user_id=self.user_id,
-                subclient_id=self.subclient_id,
-                asset_type="SOCIAL_MEDIA"
-            ))
-            
-            ad_connections = asyncio.run(facebook_service.get_facebook_connection_for_user(
-                user_id=self.user_id,
-                subclient_id=self.subclient_id,
-                asset_type="ADVERTISING"
-            ))
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in a running loop, we need to use a different approach
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    social_future = executor.submit(asyncio.run, facebook_service.get_facebook_connection_for_user(
+                        user_id=self.user_id,
+                        subclient_id=self.subclient_id,
+                        asset_type="SOCIAL_MEDIA"
+                    ))
+                    ad_future = executor.submit(asyncio.run, facebook_service.get_facebook_connection_for_user(
+                        user_id=self.user_id,
+                        subclient_id=self.subclient_id,
+                        asset_type="ADVERTISING"
+                    ))
+                    social_connections = social_future.result()
+                    ad_connections = ad_future.result()
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                social_connections = asyncio.run(facebook_service.get_facebook_connection_for_user(
+                    user_id=self.user_id,
+                    subclient_id=self.subclient_id,
+                    asset_type="SOCIAL_MEDIA"
+                ))
+                
+                ad_connections = asyncio.run(facebook_service.get_facebook_connection_for_user(
+                    user_id=self.user_id,
+                    subclient_id=self.subclient_id,
+                    asset_type="ADVERTISING"
+                ))
             
             connections = []
             if social_connections and "error" not in social_connections:
@@ -120,14 +142,31 @@ class FacebookMarketingTool(BaseTool):
                         if asset_id and conn["external_id"] != asset_id:
                             continue
                         
-                        result = asyncio.run(facebook_service.fetch_facebook_data(
-                            connection_id=conn["connection_id"],
-                            data_type=data_type,
-                            start_date=start_date,
-                            end_date=end_date,
-                            metrics=metrics,
-                            limit=limit
-                        ))
+                        try:
+                            # Try to get the current event loop
+                            loop = asyncio.get_running_loop()
+                            # If we're in a running loop, we need to use a different approach
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                                    connection_id=conn["connection_id"],
+                                    data_type=data_type,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                    metrics=metrics,
+                                    limit=limit
+                                ))
+                                result = future.result()
+                        except RuntimeError:
+                            # No event loop running, safe to use asyncio.run()
+                            result = asyncio.run(facebook_service.fetch_facebook_data(
+                                connection_id=conn["connection_id"],
+                                data_type=data_type,
+                                start_date=start_date,
+                                end_date=end_date,
+                                metrics=metrics,
+                                limit=limit
+                            ))
                         results.append(result)
                     
             elif data_type in ["ad_insights", "campaigns"]:
@@ -137,14 +176,31 @@ class FacebookMarketingTool(BaseTool):
                         if asset_id and conn["external_id"] != asset_id:
                             continue
                         
-                        result = asyncio.run(facebook_service.fetch_facebook_data(
-                            connection_id=conn["connection_id"],
-                            data_type="ad_insights",
-                            start_date=start_date,
-                            end_date=end_date,
-                            metrics=metrics,
-                            limit=limit
-                        ))
+                        try:
+                            # Try to get the current event loop
+                            loop = asyncio.get_running_loop()
+                            # If we're in a running loop, we need to use a different approach
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                                    connection_id=conn["connection_id"],
+                                    data_type="ad_insights",
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                    metrics=metrics,
+                                    limit=limit
+                                ))
+                                result = future.result()
+                        except RuntimeError:
+                            # No event loop running, safe to use asyncio.run()
+                            result = asyncio.run(facebook_service.fetch_facebook_data(
+                                connection_id=conn["connection_id"],
+                                data_type="ad_insights",
+                                start_date=start_date,
+                                end_date=end_date,
+                                metrics=metrics,
+                                limit=limit
+                            ))
                         results.append(result)
             
             else:
@@ -178,7 +234,7 @@ class FacebookMarketingTool(BaseTool):
             })
 
     def _get_facebook_connections(self) -> List[tuple]:
-        """Get all active Facebook connections for user/subclient"""
+        """Get all active Facebook connections for user/subclient - ALWAYS prioritizes real Page IDs"""
         with get_session() as session:
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
@@ -192,7 +248,29 @@ class FacebookMarketingTool(BaseTool):
             )
             
             results = session.exec(statement).all()
-            return results
+            
+            # CRITICAL: Always prioritize real Facebook Page IDs over fake ones
+            # Real Facebook Page IDs are numeric (15+ digits), fake ones are text strings
+            real_page_connections = []
+            fake_page_connections = []
+            
+            for connection, digital_asset in results:
+                external_id = digital_asset.external_id
+                # Check if external_id is a real Facebook Page ID (numeric, 15+ digits)
+                if external_id and external_id.isdigit() and len(external_id) >= 15:
+                    real_page_connections.append((connection, digital_asset))
+                else:
+                    fake_page_connections.append((connection, digital_asset))
+            
+            # Always return real Page ID connections first, never fake ones
+            if real_page_connections:
+                print(f"✅ FacebookMarketingTool: Using {len(real_page_connections)} REAL Facebook Page ID(s)")
+                return real_page_connections
+            elif fake_page_connections:
+                print(f"⚠️ WARNING: FacebookMarketingTool: Found {len(fake_page_connections)} fake Facebook Page ID(s) - These will cause API errors!")
+                return []  # Return empty list to avoid using fake Page IDs
+            else:
+                return results
 
     def _determine_data_type(self, connections: List[dict], metrics: List[str] = None) -> str:
         """Intelligently determine the best data type based on available connections and metrics"""

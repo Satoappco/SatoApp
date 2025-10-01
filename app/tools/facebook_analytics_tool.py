@@ -20,7 +20,7 @@ from sqlmodel import select, and_
 class FacebookAnalyticsInput(BaseModel):
     """Input schema for FacebookAnalyticsTool."""
     data_type: str = Field("page_insights", description="Type of data to fetch: 'page_insights', 'page_posts', 'ad_insights'")
-    metrics: Optional[List[str]] = Field(None, description="Specific metrics to retrieve (optional - will use defaults if not provided)")
+    metrics: Optional[List[str]] = Field(None, description="Specific metrics to retrieve (optional - will use defaults if not provided). Valid metrics: page_impressions, page_post_engagements, page_video_views, page_fans. Do NOT use custom metrics like page_posts_impressions_by_story_type_viral as they don't exist in Facebook API.")
     start_date: str = Field("7daysAgo", description="Start date in YYYY-MM-DD format or relative (e.g., '7daysAgo', '30daysAgo')")
     end_date: str = Field("today", description="End date in YYYY-MM-DD format or relative (e.g., 'today', 'yesterday')")
     limit: int = Field(100, description="Maximum number of results to return")
@@ -32,7 +32,9 @@ class FacebookAnalyticsTool(BaseTool):
     description: str = (
         "Fetch Facebook page insights, social media metrics, and content performance data from Facebook API. "
         "This tool retrieves REAL data from Facebook pages including engagement metrics, reach, impressions, "
-        "post performance, and social media analytics. Perfect for social media analysis and content performance tracking."
+        "post performance, and social media analytics. Perfect for social media analysis and content performance tracking. "
+        "IMPORTANT: Use the default metrics (page_impressions, page_post_engagements, page_video_views, page_fans) "
+        "unless you have specific requirements. Do NOT generate custom metrics as they may not exist in Facebook API."
     )
     args_schema: Type[BaseModel] = FacebookAnalyticsInput
 
@@ -67,11 +69,25 @@ class FacebookAnalyticsTool(BaseTool):
             facebook_service = FacebookService()
 
             # Get Facebook connection with token refresh
-            connection_info = asyncio.run(facebook_service.get_facebook_connection_for_user(
-                user_id=self.user_id,
-                subclient_id=self.subclient_id,
-                asset_type="SOCIAL_MEDIA"
-            ))
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in a running loop, we need to use a different approach
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, facebook_service.get_facebook_connection_for_user(
+                        user_id=self.user_id,
+                        subclient_id=self.subclient_id,
+                        asset_type="SOCIAL_MEDIA"
+                    ))
+                    connection_info = future.result()
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                connection_info = asyncio.run(facebook_service.get_facebook_connection_for_user(
+                    user_id=self.user_id,
+                    subclient_id=self.subclient_id,
+                    asset_type="SOCIAL_MEDIA"
+                ))
             
             if not connection_info:
                 return json.dumps({
@@ -89,38 +105,79 @@ class FacebookAnalyticsTool(BaseTool):
                 })
 
             # Fetch data based on type
-            if data_type == "page_insights":
-                result = asyncio.run(facebook_service.fetch_facebook_data(
-                    connection_id=connection_info["connection_id"],
-                    data_type="page_insights",
-                    start_date=start_date,
-                    end_date=end_date,
-                    metrics=metrics,
-                    limit=limit
-                ))
-            elif data_type == "page_posts":
-                result = asyncio.run(facebook_service.fetch_facebook_data(
-                    connection_id=connection_info["connection_id"],
-                    data_type="page_posts",
-                    start_date=start_date,
-                    end_date=end_date,
-                    limit=limit
-                ))
-            elif data_type == "ad_insights":
-                result = asyncio.run(facebook_service.fetch_facebook_data(
-                    connection_id=connection_info["connection_id"],
-                    data_type="ad_insights",
-                    start_date=start_date,
-                    end_date=end_date,
-                    metrics=metrics,
-                    limit=limit
-                ))
-            else:
-                return json.dumps({
-                    "error": f"Unsupported data type: {data_type}",
-                    "status": "error",
-                    "supported_types": ["page_insights", "page_posts", "ad_insights"]
-                })
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in a running loop, we need to use a different approach
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    if data_type == "page_insights":
+                        future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                            connection_id=connection_info["connection_id"],
+                            data_type="page_insights",
+                            start_date=start_date,
+                            end_date=end_date,
+                            metrics=metrics,
+                            limit=limit
+                        ))
+                    elif data_type == "page_posts":
+                        future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                            connection_id=connection_info["connection_id"],
+                            data_type="page_posts",
+                            start_date=start_date,
+                            end_date=end_date,
+                            limit=limit
+                        ))
+                    elif data_type == "ad_insights":
+                        future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                            connection_id=connection_info["connection_id"],
+                            data_type="ad_insights",
+                            start_date=start_date,
+                            end_date=end_date,
+                            metrics=metrics,
+                            limit=limit
+                        ))
+                    else:
+                        return json.dumps({
+                            "error": f"Unsupported data type: {data_type}",
+                            "status": "error",
+                            "supported_types": ["page_insights", "page_posts", "ad_insights"]
+                        })
+                    result = future.result()
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                if data_type == "page_insights":
+                    result = asyncio.run(facebook_service.fetch_facebook_data(
+                        connection_id=connection_info["connection_id"],
+                        data_type="page_insights",
+                        start_date=start_date,
+                        end_date=end_date,
+                        metrics=metrics,
+                        limit=limit
+                    ))
+                elif data_type == "page_posts":
+                    result = asyncio.run(facebook_service.fetch_facebook_data(
+                        connection_id=connection_info["connection_id"],
+                        data_type="page_posts",
+                        start_date=start_date,
+                        end_date=end_date,
+                        limit=limit
+                    ))
+                elif data_type == "ad_insights":
+                    result = asyncio.run(facebook_service.fetch_facebook_data(
+                        connection_id=connection_info["connection_id"],
+                        data_type="ad_insights",
+                        start_date=start_date,
+                        end_date=end_date,
+                        metrics=metrics,
+                        limit=limit
+                    ))
+                else:
+                    return json.dumps({
+                        "error": f"Unsupported data type: {data_type}",
+                        "status": "error",
+                        "supported_types": ["page_insights", "page_posts", "ad_insights"]
+                    })
 
             # Format the response for the agent
             formatted_result = self._format_facebook_data(result, data_type)
@@ -312,15 +369,9 @@ class FacebookAnalyticsTool(BaseTool):
         """Get human-readable description for Facebook metrics"""
         descriptions = {
             'page_impressions': 'Total number of times your page content was displayed',
-            'page_reach': 'Number of unique people who saw your page content',
-            'page_engaged_users': 'Number of people who engaged with your page content',
             'page_post_engagements': 'Total engagements on your page posts',
             'page_video_views': 'Number of times your page videos were viewed',
-            'page_fans': 'Number of people who like your page',
-            'page_views': 'Number of times your page was viewed',
-            'page_actions_post_reactions': 'Number of reactions on your page posts',
-            'page_actions_post_comments': 'Number of comments on your page posts',
-            'page_actions_post_shares': 'Number of shares of your page posts'
+            'page_fans': 'Number of people who like your page'
         }
         return descriptions.get(metric_name, f'Facebook metric: {metric_name}')
 
@@ -344,12 +395,12 @@ class FacebookAnalyticsTool(BaseTool):
         
         # Calculate performance indicators
         impressions = metrics.get('page_impressions', {}).get('value', 0)
-        reach = metrics.get('page_reach', {}).get('value', 0)
-        engaged_users = metrics.get('page_engaged_users', {}).get('value', 0)
+        post_engagements = metrics.get('page_post_engagements', {}).get('value', 0)
+        fans = metrics.get('page_fans', {}).get('value', 0)
         
         if impressions > 0:
-            summary["performance_indicators"]["reach_rate"] = (reach / impressions) * 100
-        if reach > 0:
-            summary["performance_indicators"]["engagement_rate"] = (engaged_users / reach) * 100
+            summary["performance_indicators"]["engagement_rate"] = (post_engagements / impressions) * 100
+        if fans > 0:
+            summary["performance_indicators"]["engagement_per_fan"] = post_engagements / fans
         
         return summary

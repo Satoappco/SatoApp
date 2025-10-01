@@ -9,6 +9,9 @@ from app.core.database import db_manager
 from app.core.utils import generate_session_id, get_current_timestamp
 from app.core.exceptions import SatoAppException
 from app.config.logging import get_logger
+from app.config.database import get_session
+from app.models.analytics import DigitalAsset, Connection
+from sqlmodel import select, and_
 
 logger = get_logger("services.dialogcx")
 
@@ -41,21 +44,32 @@ class DialogCXService:
         try:
             # Query the assets and connections tables
             # This would return actual user assets from database
-            # For now, return mock data structure
-            return [
-                {
-                    'asset_type': 'analytics_property',
-                    'platform': 'GA4',
-                    'asset_id': 'properties/123456',
-                    'is_active': True
-                },
-                {
-                    'asset_type': 'social_page',
-                    'platform': 'Facebook',
-                    'asset_id': 'act_123456',
-                    'is_active': True
-                }
-            ]
+            # Return real data from database
+            with get_session() as session:
+                # Query actual user assets from database
+                statement = select(DigitalAsset, Connection).join(
+                    Connection, DigitalAsset.id == Connection.digital_asset_id
+                ).where(
+                    and_(
+                        Connection.user_id == user_id,
+                        Connection.revoked == False,
+                        DigitalAsset.is_active == True
+                    )
+                )
+                
+                results = session.exec(statement).all()
+                
+                assets = []
+                for digital_asset, connection in results:
+                    assets.append({
+                        'asset_type': digital_asset.asset_type.value.lower(),
+                        'platform': digital_asset.provider,
+                        'asset_id': digital_asset.external_id,
+                        'is_active': digital_asset.is_active,
+                        'connection_id': connection.id
+                    })
+                
+                return assets
             
         except Exception as e:
             logger.error(f"Failed to get user assets: {str(e)}")
