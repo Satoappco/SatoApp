@@ -1029,6 +1029,13 @@ async def handle_dialogcx_webhook(
                 logger.error(f"❌ Missing session_id in structured payload: {raw_data}")
                 raise HTTPException(status_code=400, detail="Missing session_id in payload")
             
+            # Validate session ID - must be a real DialogCX session ID
+            if not session_id or session_id.strip() == "":
+                logger.error(f"❌ Empty or invalid session_id in payload: {raw_data}")
+                raise HTTPException(status_code=400, detail="session_id cannot be empty")
+            
+            logger.info(f"📋 Using DialogCX session ID: {session_id}")
+            
             if not user_question or not user_question.strip():
                 logger.error(f"❌ Missing or empty user_question in payload: {raw_data}")
                 raise HTTPException(status_code=400, detail="Missing or empty user_question in payload")
@@ -1171,6 +1178,14 @@ async def handle_dialogcx_webhook(
                 raise HTTPException(status_code=400, detail="Invalid or missing session ID")
                 
             dialogcx_session_id = dialogcx_session_full_name.split("/")[-1]
+            
+            # Validate session ID - must be a real DialogCX session ID
+            if not dialogcx_session_id or dialogcx_session_id.strip() == "":
+                logger.error(f"❌ Empty or invalid session_id from DialogCX: {dialogcx_session_full_name}")
+                raise HTTPException(status_code=400, detail="Invalid DialogCX session ID")
+            
+            logger.info(f"📋 Using DialogCX session ID (legacy): {dialogcx_session_id}")
+            
             intent_parameters = intent_info.get("parameters", {})
             intent_confidence = intent_info.get("confidence", 0.0)
             
@@ -1794,5 +1809,4 @@ async def get_detailed_execution_logs(
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to get detailed execution logs: {str(e)}")
-
 
