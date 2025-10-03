@@ -131,10 +131,10 @@ class AgentDisplayName(str, Enum):
 
 # Tool Mapping Configuration
 AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
-    # Master agent - gets delegation tools only
-    AgentType.MASTER: [ToolName.DELEGATE_WORK_TO_COWORKER],
+    # Master agent - gets delegation tools AND DateConversionTool
+    AgentType.MASTER: [ToolName.DELEGATE_WORK_TO_COWORKER, "DateConversionTool"],
     
-    # Date specialist - needs DateConversionTool
+    # Date specialist - needs DateConversionTool (deactivated - Master now handles this)
     "date_timeframe_specialist": ["DateConversionTool"],
     
     # Google specialists - ONLY Google tools
