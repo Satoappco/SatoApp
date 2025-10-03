@@ -1,0 +1,217 @@
+# Google Cloud ignore file for SatoApp Backend (FastAPI)
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation
+docs/
+*.md
+README.md
+
+# Development and debug files
+debug_*.py
+# test_*.py  # COMMENTED OUT - allows crewai_test.py to be included
+fix_*.py
+update_*.py
+start_*.py
+start_*.sh
+setup-*.sh
+*.json
+*.log
+*.sql
+*.txt
+*.example
+*.backup
+
+# Certificates and keys (should be in environment variables)
+*.pem
+*.key
+*.crt
+*.p12
+*.json
+
+# Docker and deployment files (keep Dockerfile, ignore others)
+docker/
+deploy-*.sh
+!deploy-fast.sh
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (should be set via Cloud Run environment variables)
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Test files
+# tests/
+# test_*/
+# *_test.py  # COMMENTED OUT - allows crewai_test.py to be included
+
+# Development scripts
+start_https_server.py
+https_proxy.py
+
+# Lock files (use requirements.txt instead)
+uv.lock
+poetry.lock
+Pipfile.lock
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Local development files
+local/
+dev/
+development/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Configuration files that shouldn't be deployed
+config.local.*
+settings.local.*
+
+# Project-specific files
+env.https.example
+pyproject.toml
+uv.lock
+
+# Keep essential files
+!requirements.txt
+!Dockerfile
+!deploy-fast.sh
+!app/
+!alembic.ini
+!alembic/
