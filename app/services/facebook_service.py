@@ -714,18 +714,32 @@ class FacebookService:
         """Get active Facebook connection for user/subclient with token refresh - ALWAYS prioritizes real Page IDs"""
         
         with get_session() as session:
+            # Build conditions list
+            from sqlmodel import or_
+            conditions = [
+                Connection.user_id == user_id,
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.provider == "Facebook",
+                Connection.revoked == False
+            ]
+            
+            # Handle both old and new asset type naming conventions
+            if asset_type == "ADVERTISING":
+                # Check for both ADVERTISING and FACEBOOK_ADS types (database has both)
+                conditions.append(
+                    or_(
+                        DigitalAsset.asset_type == "ADVERTISING",
+                        DigitalAsset.asset_type == "FACEBOOK_ADS",
+                        DigitalAsset.asset_type == "facebook_ads"
+                    )
+                )
+            else:
+                conditions.append(DigitalAsset.asset_type == asset_type)
+            
             # Look for Facebook connections
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                and_(
-                    Connection.user_id == user_id,
-                    DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.asset_type == asset_type,
-                    Connection.revoked == False
-                )
-            )
+            ).where(and_(*conditions))
             
             results = session.exec(statement).all()
             if not results:
