@@ -745,31 +745,43 @@ class FacebookService:
             if not results:
                 return None
             
-            # CRITICAL: Always prioritize real Facebook Page IDs over fake ones
-            # Real Facebook Page IDs are numeric (15+ digits), fake ones are text strings
-            real_page_connections = []
-            fake_page_connections = []
+            # CRITICAL: Validate Facebook IDs based on asset type
+            # - For SOCIAL_MEDIA: Page IDs are numeric (15+ digits)
+            # - For ADVERTISING/FACEBOOK_ADS: Ad Account IDs start with "act_" followed by digits
+            real_connections = []
+            fake_connections = []
             
             for connection, digital_asset in results:
                 external_id = digital_asset.external_id
-                # Check if external_id is a real Facebook Page ID (numeric, 15+ digits)
-                if external_id and external_id.isdigit() and len(external_id) >= 15:
-                    real_page_connections.append((connection, digital_asset))
+                is_valid = False
+                
+                # Validate based on asset type
+                if asset_type in ["ADVERTISING", "FACEBOOK_ADS", "facebook_ads"]:
+                    # Ad Account IDs must start with "act_" and have numeric part
+                    if external_id and external_id.startswith("act_"):
+                        numeric_part = external_id[4:]  # Remove "act_" prefix
+                        is_valid = numeric_part.isdigit() and len(numeric_part) >= 10
                 else:
-                    fake_page_connections.append((connection, digital_asset))
+                    # Page IDs must be numeric with 15+ digits
+                    is_valid = external_id and external_id.isdigit() and len(external_id) >= 15
+                
+                if is_valid:
+                    real_connections.append((connection, digital_asset))
+                else:
+                    fake_connections.append((connection, digital_asset))
             
-            # Always use real Page ID connections first, never fake ones
-            if real_page_connections:
-                connection, digital_asset = real_page_connections[0]
-                print(f"✅ Using REAL Facebook Page ID: {digital_asset.external_id} ({digital_asset.name})")
-            elif fake_page_connections:
-                connection, digital_asset = fake_page_connections[0]
-                print(f"⚠️ WARNING: Using fake Facebook Page ID: {digital_asset.external_id} ({digital_asset.name}) - This will cause API errors!")
+            # Always use real connections first, never fake ones
+            if real_connections:
+                connection, digital_asset = real_connections[0]
+                print(f"✅ Using REAL Facebook ID: {digital_asset.external_id} ({digital_asset.name}) - Type: {asset_type}")
+            elif fake_connections:
+                connection, digital_asset = fake_connections[0]
+                print(f"⚠️ WARNING: Using fake/invalid Facebook ID: {digital_asset.external_id} ({digital_asset.name}) - This will cause API errors!")
                 return {
-                    "error": f"Invalid Facebook Page ID: {digital_asset.external_id}. Please connect a real Facebook page.",
+                    "error": f"Invalid Facebook ID: {digital_asset.external_id}. Please re-authenticate your Facebook account.",
                     "status": "error",
                     "requires_reauth": True,
-                    "suggestion": "Please connect a real Facebook page with a valid Page ID"
+                    "suggestion": "Please re-authenticate your Facebook account in the Connections tab"
                 }
             else:
                 return None
