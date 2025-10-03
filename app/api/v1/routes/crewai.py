@@ -27,6 +27,7 @@ class CrewAITestRequest(BaseModel):
     """Request model for CrewAI testing"""
     user_id: int
     customer_id: int
+    subcustomer_id: int  # This is the actual subclient_id for database queries
     session_id: str
     user_question: str
     user_intent: str
@@ -47,6 +48,7 @@ class CrewAITestResponse(BaseModel):
 async def run_crewai_analysis_for_test(
     user_id: int,
     customer_id: int,
+    subcustomer_id: int,
     user_question: str,
     intent_name: str,
     data_sources: List[str],
@@ -212,8 +214,8 @@ async def run_crewai_analysis_for_test(
             
             # Get tools for this agent dynamically
             logger.info(f"🔧 Getting tools for agent type: {agent_type}")
-            # Note: customer_id in this context is actually subclient_id
-            agent_tools = _get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=customer_id)
+            # Use subcustomer_id as subclient_id for database queries
+            agent_tools = _get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=subcustomer_id)
             logger.info(f"🔧 Agent {agent_type} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
             
             # Create specialist agent using ONLY database configuration with timing
@@ -967,6 +969,7 @@ async def test_crewai_analysis(
         result = await run_crewai_analysis_for_test(
             user_id=request.user_id,
             customer_id=request.customer_id,
+            subcustomer_id=request.subcustomer_id,
             user_question=request.user_question,
             intent_name=request.user_intent,
             data_sources=data_sources,
