@@ -86,13 +86,13 @@ for line in lines:
         
         # Convert localhost URLs to production URLs
         if 'localhost:8000' in value:
-            value = value.replace('localhost:8000', 'https://sato-backend-397762748853.me-west1.run.app')
+            value = value.replace('localhost:8000', 'https://sato-backend-v2-397762748853.me-west1.run.app')
         elif 'localhost:3000' in value:
             value = value.replace('localhost:3000', 'https://satoapp.co')
         elif value == 'wss://localhost:8000':
-            value = 'wss://sato-backend-397762748853.me-west1.run.app'
+            value = 'wss://sato-backend-v2-397762748853.me-west1.run.app'
         elif value == 'https://localhost:8000':
-            value = 'https://sato-backend-397762748853.me-west1.run.app'
+            value = 'https://sato-backend-v2-397762748853.me-west1.run.app'
         elif value == 'https://localhost:3000':
             value = 'https://satoapp.co'
         
