@@ -161,6 +161,10 @@ async def run_crewai_analysis_for_test(
         
         if master_task_description:
             try:
+                # Get current date for date calculations
+                from datetime import datetime
+                current_date = datetime.now().strftime("%Y-%m-%d")
+                
                 # Replace placeholders in task with actual values
                 master_task_description = master_task_description.format(
                     objective=user_question,
@@ -169,7 +173,8 @@ async def run_crewai_analysis_for_test(
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
                     data_source=", ".join(data_sources),  # Support both naming conventions
-                    available_specialists=", ".join([s['name'] for s in specialist_agents_data])
+                    available_specialists=", ".join([s['name'] for s in specialist_agents_data]),
+                    current_date=current_date
                 )
                 logger.info(f"✅ Formatted task description: {master_task_description}")
             except KeyError as e:
@@ -239,7 +244,8 @@ async def run_crewai_analysis_for_test(
                     date_range="as specified in the user question",  # Let LLM interpret this
                     timezone="UTC",
                     currency="USD",
-                    attribution_window="30d"
+                    attribution_window="30d",
+                    current_date=current_date  # Add current date for date calculations
                 )
             else:
                 # Fallback if no task in database
