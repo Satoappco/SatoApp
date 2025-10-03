@@ -36,8 +36,8 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-# Convert .env to YAML format for Cloud Run (same as frontend)
-echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format...${NC}"
+# Convert .env to YAML format for Cloud Run with production URLs
+echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format with production URLs...${NC}"
 python3 << 'PYTHON_SCRIPT'
 import os
 import re
@@ -75,22 +75,33 @@ except FileNotFoundError:
     print("ERROR: .env file not found!", file=sys.stderr)
     sys.exit(1)
 
-# Parse all environment variables
+# Parse all environment variables and convert localhost to production URLs
 env_vars = {}
-# No longer filtering out secret variables since we're using .env file approach
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue
+        
+        # Convert localhost URLs to production URLs
+        if 'localhost:8000' in value:
+            value = value.replace('localhost:8000', 'https://sato-backend-397762748853.me-west1.run.app')
+        elif 'localhost:3000' in value:
+            value = value.replace('localhost:3000', 'https://satoapp.co')
+        elif value == 'wss://localhost:8000':
+            value = 'wss://sato-backend-397762748853.me-west1.run.app'
+        elif value == 'https://localhost:8000':
+            value = 'https://sato-backend-397762748853.me-west1.run.app'
+        elif value == 'https://localhost:3000':
+            value = 'https://satoapp.co'
+        
         env_vars[key] = value
 
 # Write YAML file for Cloud Run
 with open('.env.cloudrun.yaml', 'w', encoding='utf-8') as f:
     for key, value in env_vars.items():
         # For YAML, we need to properly escape the value
-        # Use literal style for multiline values
         if '\n' in value or '"' in value:
             # Use literal block scalar for complex values
             f.write(f'{key}: |-\n')
@@ -100,7 +111,7 @@ with open('.env.cloudrun.yaml', 'w', encoding='utf-8') as f:
             # Simple quoted value
             f.write(f'{key}: "{value}"\n')
 
-print(f"✅ Converted {len(env_vars)} environment variables to YAML format")
+print(f"✅ Converted {len(env_vars)} environment variables to YAML format with production URLs")
 PYTHON_SCRIPT
 
 if [ $? -ne 0 ]; then
@@ -110,7 +121,7 @@ fi
 
 # Validate required environment variables
 echo -e "${BLUE}🔍 Validating required environment variables...${NC}"
-REQUIRED_VARS=("GEMINI_API_KEY" "API_TOKEN" "DATABASE_URL" "DB_PASSWORD" "GOOGLE_CLOUD_PROJECT_ID" "GOOGLE_CLOUD_LOCATION" "DIALOGCX_AGENT_ID")
+REQUIRED_VARS=("GEMINI_API_KEY" "API_TOKEN" "DATABASE_URL" "DB_PASSWORD")
 MISSING_VARS=()
 for var in "${REQUIRED_VARS[@]}"; do
     if ! grep -q "^${var}:" .env.cloudrun.yaml; then
@@ -124,15 +135,15 @@ if [ ${#MISSING_VARS[@]} -ne 0 ]; then
         echo -e "${RED}  - $var${NC}"
     done
     echo ""
-    echo "Please fill in these variables in your .env file with actual values (not 'your-*' placeholders)"
+    echo "Please fill in these variables in your .env file with actual values"
     rm -f .env.cloudrun.yaml
     exit 1
 fi
 
-echo -e "${GREEN}✅ Environment variables loaded and validated${NC}"
+echo -e "${GREEN}✅ Environment variables loaded and validated with production URLs${NC}"
 echo ""
 
-# Deploy with optimized settings using YAML env file (same as frontend)
+# Deploy with optimized settings using YAML file with production URLs
 echo -e "${BLUE}🚀 Deploying with optimized settings...${NC}"
 gcloud run deploy $SERVICE_NAME \
   --source . \
@@ -147,8 +158,7 @@ gcloud run deploy $SERVICE_NAME \
   --execution-environment gen2 \
   --cpu-boost \
   --add-cloudsql-instances $PROJECT_ID:$REGION:$CLOUD_SQL_INSTANCE \
-  --env-vars-file .env.cloudrun.yaml \
-  --update-secrets=DATABASE_URL=DATABASE_URL:latest,DB_PASSWORD=DB_PASSWORD:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,API_TOKEN=API_TOKEN:latest,SECRET_KEY=SECRET_KEY:latest,NEXTAUTH_SECRET=NEXTAUTH_SECRET:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,FACEBOOK_APP_SECRET=FACEBOOK_APP_SECRET:latest
+  --env-vars-file .env.cloudrun.yaml
 
 # Clean up temporary YAML file
 rm -f .env.cloudrun.yaml

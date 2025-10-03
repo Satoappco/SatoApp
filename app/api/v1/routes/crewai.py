@@ -19,7 +19,7 @@ from app.core.database import get_session
 from app.config.logging import get_logger
 from app.models.agents import CustomerLog, ExecutionTiming
 
-logger = get_logger("api.crewai_test")
+logger = get_logger("api.crewai")
 router = APIRouter()
 
 
@@ -749,7 +749,7 @@ async def test_crewai_analysis(
     """
     # Generate unique analysis ID for comprehensive logging
     import time
-    analysis_id = f"crewai_test_{int(time.time() * 1000)}"
+    analysis_id = f"crewai_{int(time.time() * 1000)}"
     
     logger.info(f"🧪 CREWAI TEST ENDPOINT CALLED - Analysis ID: {analysis_id}")
     logger.info(f"Request: {request.dict()}")
