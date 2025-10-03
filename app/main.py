@@ -89,6 +89,10 @@ def create_app() -> FastAPI:
     app.include_router(websocket_router, prefix="/api/v1", tags=["websocket"])
     app.include_router(api_router)
     
+    # Include crewai_test router separately to avoid circular import during module initialization
+    from app.api.v1.routes.crewai_test import router as crewai_test_router
+    app.include_router(crewai_test_router, prefix="/api/v1", tags=["crewai-test"])
+    
     # Add a simple test endpoint
     @app.get("/test-webhook")
     def test_webhook():
