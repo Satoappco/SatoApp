@@ -828,14 +828,8 @@ class GoogleAnalyticsService:
                 Connection.revoked == False
             ]
             
-            # Check for both GA4 and ANALYTICS asset types (database has both)
-            from sqlmodel import or_
-            conditions.append(
-                or_(
-                    DigitalAsset.asset_type == AssetType.GA4,
-                    DigitalAsset.asset_type == AssetType.ANALYTICS
-                )
-            )
+            # Check for GA4 asset type (database uses 'GA4' not 'analytics')
+            conditions.append(DigitalAsset.asset_type == AssetType.GA4)
             
             # Add subclient_id filter if provided
             if subclient_id is not None:

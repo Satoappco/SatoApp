@@ -472,14 +472,8 @@ class GoogleAdsService:
                 Connection.revoked == False
             ]
             
-            # Check for both GOOGLE_ADS and GOOGLE_ADS_CAPS asset types (database has both)
-            from sqlmodel import or_
-            conditions.append(
-                or_(
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS_CAPS
-                )
-            )
+            # Check for GOOGLE_ADS asset type (database uses 'GOOGLE_ADS' uppercase)
+            conditions.append(DigitalAsset.asset_type == AssetType.GOOGLE_ADS_CAPS)
             
             # Add subclient_id filter if provided
             if subclient_id is not None:
