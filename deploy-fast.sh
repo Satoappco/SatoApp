@@ -13,7 +13,7 @@ NC='\033[0m'
 
 # Configuration
 REGION="me-west1"
-SERVICE_NAME="sato-backend"
+SERVICE_NAME="sato-backend-v2"
 PROJECT_ID=$(gcloud config get-value project)
 CLOUD_SQL_INSTANCE="sato-db"  # Correct Cloud SQL instance name
 

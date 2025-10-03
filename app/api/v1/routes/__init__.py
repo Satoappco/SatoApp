@@ -19,7 +19,6 @@ from . import facebook_marketing_oauth
 from . import admin
 from . import customers
 from . import property_selections
-from . import digital_assets
 from . import users
 from . import crewai
 
@@ -28,5 +27,5 @@ __all__ = [
     "google_analytics_oauth", "google_ads", "google_ads_oauth", 
     "crewai_analysis", "facebook", "facebook_oauth", 
     "facebook_page_oauth", "facebook_marketing_oauth", "admin", 
-    "customers", "property_selections", "digital_assets", "users", "crewai"
+    "customers", "property_selections", "users", "crewai"
 ]
