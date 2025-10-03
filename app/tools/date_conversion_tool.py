@@ -48,17 +48,28 @@ class DateConversionTool(BaseTool):
         """
         current_date = datetime.now().strftime("%Y-%m-%d")
         
-        return f"""You need to convert the timeframe "{timeframe}" to exact dates.
+        return f"""CRITICAL: Convert the timeframe "{timeframe}" to exact dates.
 
-Today's date is: {current_date}
+TODAY'S DATE IS: {current_date}
+CURRENT YEAR: {datetime.now().year}
+CURRENT MONTH: {datetime.now().strftime('%B')} ({datetime.now().month})
+CURRENT DAY: {datetime.now().day}
 
 Think through this step by step:
-1. What does "{timeframe}" mean relative to {current_date}?
-2. What is the start date in YYYY-MM-DD format?
-3. What is the end date in YYYY-MM-DD format?
+1. What does "{timeframe}" mean relative to TODAY ({current_date})?
+2. Calculate the start date in YYYY-MM-DD format
+3. Calculate the end date in YYYY-MM-DD format
 
-Return your answer in this EXACT format:
+IMPORTANT: 
+- "last week" means the 7 days BEFORE this week (Monday to Sunday of the previous week)
+- Always use {datetime.now().year} as the year for relative dates unless specified otherwise
+- Count backwards/forwards from {current_date}
+
+Return ONLY this format (no other text):
 Start Date: YYYY-MM-DD
 End Date: YYYY-MM-DD
 
-Think carefully about calendar logic (weekdays, month lengths, leap years, etc.)"""
+Example for "last week" when today is 2025-10-03 (Thursday):
+- Current week started on Monday 2025-09-30
+- Last week was Monday 2025-09-23 to Sunday 2025-09-29
+- Answer: Start Date: 2025-09-23, End Date: 2025-09-29"""
