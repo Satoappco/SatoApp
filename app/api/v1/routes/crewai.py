@@ -253,10 +253,16 @@ async def run_crewai_analysis_for_test(
                 # Fallback if no task in database
                 specialist_task_description = f"Analyze {agent_type} data for: {user_question}"
             
+            # Set expected output based on agent type
+            if agent_type == "date_timeframe_specialist":
+                expected_output = "Exact dates in the format: Start Date: YYYY-MM-DD\nEnd Date: YYYY-MM-DD"
+            else:
+                expected_output = f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema"
+            
             specialist_task = Task(
                 description=specialist_task_description,
                 agent=specialist_agent,
-                expected_output=f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema"
+                expected_output=expected_output
             )
             tasks.append(specialist_task)
             logger.info(f"✅ Created task for: {specialist_data['name']}")
