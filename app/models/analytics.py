@@ -13,10 +13,13 @@ from .base import BaseModel
 class AssetType(str, Enum):
     """Types of digital assets"""
     SOCIAL_MEDIA = "social_media"  # Facebook Page, Instagram, etc.
-    ANALYTICS = "analytics"  # Google Analytics (GA4)
+    ANALYTICS = "analytics"  # Google Analytics (GA4) - legacy value
+    GA4 = "GA4"  # Google Analytics 4 - actual database value
     ADVERTISING = "advertising"  # Generic advertising
     GOOGLE_ADS = "google_ads"  # Google Ads (separate from Analytics)
+    GOOGLE_ADS_CAPS = "GOOGLE_ADS"  # Google Ads - actual database value
     FACEBOOK_ADS = "facebook_ads"  # Facebook Ads & Insights (separate from Facebook Page)
+    FACEBOOK_ADS_CAPS = "FACEBOOK_ADS"  # Facebook Ads - actual database value
     SEARCH_CONSOLE = "search_console"
     EMAIL_MARKETING = "email_marketing"
     CRM = "crm"
