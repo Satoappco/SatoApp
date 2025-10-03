@@ -824,10 +824,18 @@ class GoogleAnalyticsService:
         with get_session() as session:
             conditions = [
                 Connection.user_id == user_id,
-                DigitalAsset.asset_type == AssetType.ANALYTICS,
                 DigitalAsset.provider == "Google",
                 Connection.revoked == False
             ]
+            
+            # Check for both GA4 and ANALYTICS asset types (database has both)
+            from sqlmodel import or_
+            conditions.append(
+                or_(
+                    DigitalAsset.asset_type == AssetType.GA4,
+                    DigitalAsset.asset_type == AssetType.ANALYTICS
+                )
+            )
             
             # Add subclient_id filter if provided
             if subclient_id is not None:
