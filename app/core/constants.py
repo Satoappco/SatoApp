@@ -174,6 +174,9 @@ AGENT_DATA_SOURCE_MAPPING: Dict[str, List[str]] = {
     # Master agent - can work with any data source
     AgentType.MASTER: [DataSource.GA4, DataSource.GOOGLE_ADS, DataSource.FACEBOOK, DataSource.FB],
     
+    # Date specialist - works with ANY data source (needed for all timeframe requests)
+    "date_timeframe_specialist": [DataSource.GA4, DataSource.GOOGLE_ADS, DataSource.FACEBOOK, DataSource.FB],
+    
     # Google specialists - ONLY Google data sources
     AgentType.GOOGLE_DATABASE_ANALYSIS_EXPERT: [DataSource.GA4, DataSource.GOOGLE_ADS],
     AgentType.GOOGLE_ANALYTICS: [DataSource.GA4],
