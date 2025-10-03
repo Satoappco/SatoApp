@@ -21,14 +21,12 @@ from . import customers
 from . import property_selections
 from . import digital_assets
 from . import users
-
-# NOTE: crewai_test is NOT imported here to avoid circular import in Python 3.11
-# It's registered directly in main.py after all other modules are initialized
+from . import crewai
 
 __all__ = [
     "agents", "health", "webhooks", "auth", "google_analytics", 
     "google_analytics_oauth", "google_ads", "google_ads_oauth", 
     "crewai_analysis", "facebook", "facebook_oauth", 
     "facebook_page_oauth", "facebook_marketing_oauth", "admin", 
-    "customers", "property_selections", "digital_assets", "users"
+    "customers", "property_selections", "digital_assets", "users", "crewai"
 ]

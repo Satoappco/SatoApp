@@ -736,7 +736,7 @@ def _should_include_specialist(specialist_config: Dict, data_sources: List[str],
     return should_include_agent(agent_type, data_sources, user_question)
 
 
-@router.post("/crewai-test", response_model=CrewAITestResponse)
+@router.post("/crewai", response_model=CrewAITestResponse)
 async def test_crewai_analysis(
     request: CrewAITestRequest,
     _: bool = Depends(verify_crewai_token)

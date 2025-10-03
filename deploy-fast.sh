@@ -77,6 +77,7 @@ except FileNotFoundError:
 
 # Parse all environment variables
 env_vars = {}
+# No longer filtering out secret variables since we're using .env file approach
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
@@ -146,7 +147,8 @@ gcloud run deploy $SERVICE_NAME \
   --execution-environment gen2 \
   --cpu-boost \
   --add-cloudsql-instances $PROJECT_ID:$REGION:$CLOUD_SQL_INSTANCE \
-  --env-vars-file .env.cloudrun.yaml
+  --env-vars-file .env.cloudrun.yaml \
+  --update-secrets=DATABASE_URL=DATABASE_URL:latest,DB_PASSWORD=DB_PASSWORD:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,API_TOKEN=API_TOKEN:latest,SECRET_KEY=SECRET_KEY:latest,NEXTAUTH_SECRET=NEXTAUTH_SECRET:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,FACEBOOK_APP_SECRET=FACEBOOK_APP_SECRET:latest
 
 # Clean up temporary YAML file
 rm -f .env.cloudrun.yaml

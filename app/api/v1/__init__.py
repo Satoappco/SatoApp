@@ -21,10 +21,10 @@ from .routes import (
     customers, 
     property_selections, 
     digital_assets,
-    users
+    users,
+    crewai
 )
 
-# NOTE: crewai_test is registered directly in main.py to avoid circular import
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -42,7 +42,7 @@ api_router.include_router(facebook_oauth.router, tags=["facebook-oauth"])
 api_router.include_router(facebook_page_oauth.router, tags=["facebook-page-oauth"])
 api_router.include_router(facebook_marketing_oauth.router, tags=["facebook-marketing-oauth"])
 api_router.include_router(crewai_analysis.router, tags=["crewai"])
-# crewai_test router is registered in main.py to avoid circular import
+api_router.include_router(crewai.router, tags=["crewai"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(customers.router, tags=["customers"])
 api_router.include_router(property_selections.router, tags=["property-selections"])
