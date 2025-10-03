@@ -134,8 +134,8 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
     # Master agent - gets delegation tools only
     AgentType.MASTER: [ToolName.DELEGATE_WORK_TO_COWORKER],
     
-    # Date specialist - no tools needed (pure LLM reasoning)
-    "date_timeframe_specialist": [],
+    # Date specialist - needs DateConversionTool
+    "date_timeframe_specialist": ["DateConversionTool"],
     
     # Google specialists - ONLY Google tools
     AgentType.GOOGLE_DATABASE_ANALYSIS_EXPERT: [ToolName.GA4_ANALYTICS_TOOL, ToolName.GOOGLE_ADS_ANALYTICS_TOOL],
