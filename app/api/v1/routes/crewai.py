@@ -709,6 +709,11 @@ def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id:
                 tools.append(FacebookMarketingTool(user_id=user_id, subclient_id=subclient_id))
                 logger.info(f"✅ Added FacebookMarketingTool for {agent_type} (subclient_id={subclient_id})")
                 
+            elif tool_name == "DateConversionTool":
+                from app.tools.date_conversion_tool import DateConversionTool
+                tools.append(DateConversionTool())
+                logger.info(f"✅ Added DateConversionTool for {agent_type}")
+                
         except ImportError as e:
             logger.warning(f"⚠️ Could not import {tool_name}: {e}")
         except Exception as e:
