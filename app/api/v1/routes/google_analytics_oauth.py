@@ -55,6 +55,55 @@ async def debug_connections():
         return {"error": str(e)}
 
 
+@router.post("/clear-invalid-scopes")
+async def clear_connections_with_invalid_scopes():
+    """
+    Clear connections that have Google Ads scopes (which should be separate)
+    This fixes the OAuth scope mismatch issue
+    """
+    try:
+        from app.config.database import get_session
+        from app.models.analytics import Connection
+        from sqlmodel import select
+        
+        with get_session() as session:
+            # Find connections with Google Ads scopes
+            statement = select(Connection).where(Connection.auth_type == "oauth2")
+            connections = session.exec(statement).all()
+            
+            invalid_connections = []
+            for conn in connections:
+                if conn.scopes and any(scope in conn.scopes for scope in [
+                    'https://www.googleapis.com/auth/adwords',
+                    'https://www.googleapis.com/auth/adsdatahub'
+                ]):
+                    invalid_connections.append(conn)
+            
+            # Revoke invalid connections
+            for conn in invalid_connections:
+                conn.revoked = True
+                conn.access_token_enc = None
+                conn.refresh_token_enc = None
+                conn.token_hash = None
+                session.add(conn)
+            
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": f"Revoked {len(invalid_connections)} connections with invalid scopes",
+                "revoked_connections": [
+                    {
+                        "id": conn.id,
+                        "account_email": conn.account_email,
+                        "scopes": conn.scopes
+                    } for conn in invalid_connections
+                ]
+            }
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
 @router.get("/test")
 async def test_endpoint():
     """Simple test endpoint"""
@@ -89,9 +138,8 @@ async def get_oauth_url(redirect_uri: str):
                 'https://www.googleapis.com/auth/userinfo.email',
                 'https://www.googleapis.com/auth/analytics.readonly',
                 'https://www.googleapis.com/auth/analytics',  # Full analytics access
-                'https://www.googleapis.com/auth/analytics.manage.users.readonly',
-                'https://www.googleapis.com/auth/adwords',  # Google Ads API access
-                'https://www.googleapis.com/auth/adsdatahub'  # Google Ads Data Hub access
+                'https://www.googleapis.com/auth/analytics.manage.users.readonly'
+                # Note: Google Ads scopes removed - use separate Google Ads OAuth flow
             ]
         )
         

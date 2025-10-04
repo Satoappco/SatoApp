@@ -29,6 +29,104 @@ async def test_endpoint():
     return {"status": "ok", "message": "Google Ads OAuth endpoints are working"}
 
 
+@router.get("/debug-connections")
+async def debug_connections():
+    """Debug endpoint to check existing Google Ads connections and their scopes"""
+    try:
+        from app.config.database import get_session
+        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from sqlmodel import select, and_
+        
+        with get_session() as session:
+            # Get all Google Ads connections
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                and_(
+                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                    Connection.auth_type == "oauth2"
+                )
+            )
+            results = session.exec(statement).all()
+            
+            connection_info = []
+            for conn, asset in results:
+                connection_info.append({
+                    "id": conn.id,
+                    "account_email": conn.account_email,
+                    "scopes": conn.scopes,
+                    "expires_at": conn.expires_at.isoformat() if conn.expires_at else None,
+                    "revoked": conn.revoked,
+                    "last_used_at": conn.last_used_at.isoformat() if conn.last_used_at else None,
+                    "asset_type": asset.asset_type.value
+                })
+            
+            return {
+                "total_connections": len(connection_info),
+                "connections": connection_info
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/clear-invalid-scopes")
+async def clear_connections_with_invalid_scopes():
+    """
+    Clear Google Ads connections that have Analytics scopes (which should be separate)
+    This fixes any OAuth scope mismatch issues
+    """
+    try:
+        from app.config.database import get_session
+        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from sqlmodel import select, and_
+        
+        with get_session() as session:
+            # Find Google Ads connections with Analytics scopes
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                and_(
+                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                    Connection.auth_type == "oauth2"
+                )
+            )
+            results = session.exec(statement).all()
+            
+            invalid_connections = []
+            for conn, asset in results:
+                if conn.scopes and any(scope in conn.scopes for scope in [
+                    'https://www.googleapis.com/auth/analytics.readonly',
+                    'https://www.googleapis.com/auth/analytics',
+                    'https://www.googleapis.com/auth/analytics.manage.users.readonly'
+                ]):
+                    invalid_connections.append((conn, asset))
+            
+            # Revoke invalid connections
+            for conn, asset in invalid_connections:
+                conn.revoked = True
+                conn.access_token_enc = None
+                conn.refresh_token_enc = None
+                conn.token_hash = None
+                session.add(conn)
+            
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": f"Revoked {len(invalid_connections)} Google Ads connections with invalid Analytics scopes",
+                "revoked_connections": [
+                    {
+                        "id": conn.id,
+                        "account_email": conn.account_email,
+                        "scopes": conn.scopes,
+                        "asset_type": asset.asset_type.value
+                    } for conn, asset in invalid_connections
+                ]
+            }
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
 @router.get("/oauth-url")
 async def get_oauth_url(redirect_uri: str):
     """
