@@ -36,6 +36,15 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
+# Check for Google Ads Developer Token
+if ! grep -q "GOOGLE_ADS_DEVELOPER_TOKEN=" .env || grep -q "GOOGLE_ADS_DEVELOPER_TOKEN=your_google_ads_developer_token_here" .env; then
+    echo -e "${RED}⚠️  WARNING: GOOGLE_ADS_DEVELOPER_TOKEN not configured!${NC}"
+    echo "  Google Ads integration will fall back to default account."
+    echo "  To fix: Add GOOGLE_ADS_DEVELOPER_TOKEN to .env file"
+    echo "  Get token from: https://ads.google.com/aw/apicenter"
+    echo ""
+fi
+
 # Convert .env to YAML format for Cloud Run with production URLs
 echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format with production URLs...${NC}"
 python3 << 'PYTHON_SCRIPT'
@@ -85,16 +94,21 @@ for line in lines:
             continue
         
         # Convert localhost URLs to production URLs
-        if 'localhost:8000' in value:
-            value = value.replace('localhost:8000', 'https://sato-backend-v2-397762748853.me-west1.run.app')
+        # Handle wss:// protocol first
+        if value.startswith('wss://localhost:8000') or value == 'wss://localhost:8000':
+            value = value.replace('wss://localhost:8000', 'wss://sato-backend-v2-397762748853.me-west1.run.app')
+        # Handle http:// and https:// protocols
+        elif 'https://localhost:8000' in value or 'https://localhost:8000' in value:
+            value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
+            value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
+        elif 'https://localhost:3000' in value or 'https://localhost:3000' in value:
+            value = value.replace('https://localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
+            value = value.replace('https://localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
+        # Handle bare localhost references
+        elif 'localhost:8000' in value:
+            value = value.replace('localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
         elif 'localhost:3000' in value:
-            value = value.replace('localhost:3000', 'https://satoapp.co')
-        elif value == 'wss://localhost:8000':
-            value = 'wss://sato-backend-v2-397762748853.me-west1.run.app'
-        elif value == 'https://localhost:8000':
-            value = 'https://sato-backend-v2-397762748853.me-west1.run.app'
-        elif value == 'https://localhost:3000':
-            value = 'https://satoapp.co'
+            value = value.replace('localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
         
         env_vars[key] = value
 
@@ -143,11 +157,30 @@ fi
 echo -e "${GREEN}✅ Environment variables loaded and validated with production URLs${NC}"
 echo ""
 
-# Deploy with optimized settings using YAML file with production URLs
-echo -e "${BLUE}🚀 Deploying with optimized settings...${NC}"
+# Build image with no cache and deploy
+echo -e "${BLUE}🚀 Building Docker image (clean build, no cache)...${NC}"
+IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
+
+# Build image without cache
+gcloud builds submit --tag $IMAGE_NAME --no-cache
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Docker build failed!${NC}"
+    rm -f .env.cloudrun.yaml
+    exit 1
+fi
+
+# Verify YAML file still exists (it should)
+if [ ! -f ".env.cloudrun.yaml" ]; then
+    echo -e "${RED}❌ ERROR: .env.cloudrun.yaml file not found after build!${NC}"
+    echo "This should not happen. The file should have been created earlier in the script."
+    exit 1
+fi
+
+echo -e "${BLUE}🚀 Deploying to Cloud Run with optimized settings...${NC}"
 gcloud run deploy $SERVICE_NAME \
-  --source . \
-  --region $REGION \
+  --image $IMAGE_NAME \
+  --region=$REGION \
   --allow-unauthenticated \
   --memory 8Gi \
   --cpu 4 \
@@ -160,11 +193,14 @@ gcloud run deploy $SERVICE_NAME \
   --add-cloudsql-instances $PROJECT_ID:$REGION:$CLOUD_SQL_INSTANCE \
   --env-vars-file .env.cloudrun.yaml
 
+# Capture deployment result before cleanup
+DEPLOY_RESULT=$?
+
 # Clean up temporary YAML file
 rm -f .env.cloudrun.yaml
 
 # Check deployment result
-if [ $? -eq 0 ]; then
+if [ $DEPLOY_RESULT -eq 0 ]; then
     echo ""
     echo -e "${GREEN}✅ Fast deployment completed successfully!${NC}"
     

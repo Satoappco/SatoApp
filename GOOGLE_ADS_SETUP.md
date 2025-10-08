@@ -14,7 +14,8 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 
 # Encryption key for token storage
-SECRET_KEY=your_32_character_secret_key_here
+SECRET_KEY=your-secret-key-here
+# SECRET_KEY=your_32_character_secret_key_here
 
 # Optional: Google Ads Developer Token (only if you want to use Google Ads API)
 GOOGLE_ADS_DEVELOPER_TOKEN=your_developer_token_here

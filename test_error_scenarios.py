@@ -11,7 +11,7 @@ import os
 from typing import Dict, Any
 
 # Test configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://localhost:8000"
 JWT_TOKEN = os.getenv("TEST_JWT_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo1LCJlbWFpbCI6InNhdG9hcHBjb0BnbWFpbC5jb20iLCJyb2xlIjoidmlld2VyIiwicHJpbWFyeV9jdXN0b21lcl9pZCI6NSwiZXhwIjoxNzU5MTY1NjM4LCJ0eXBlIjoiYWNjZXNzIn0.cbT9HnysgrHG_ni6k4BDS0ir7sUrBOyyH_loexvDZTU")  # Use env var or test token
 
 class ErrorTester:
