@@ -12,46 +12,43 @@ from google_auth_oauthlib.flow import Flow
 router = APIRouter(prefix="/google-analytics", tags=["google-analytics-oauth"])
 
 
-@router.get("/debug")
-async def debug_oauth_config():
-    """Debug endpoint to check OAuth configuration"""
-    import os
-    return {
-        "google_client_id": os.getenv("GOOGLE_CLIENT_ID", "NOT_SET"),
-        "google_client_secret": "SET" if os.getenv("GOOGLE_CLIENT_SECRET") else "NOT_SET",
-        "env_file_exists": os.path.exists(".env")
-    }
 
 
-@router.get("/debug-connections")
-async def debug_connections():
-    """Debug endpoint to check existing connections and their scopes"""
+@router.post("/fix-analytics-assets")
+async def fix_analytics_assets():
+    """Fix all 'analytics' asset types to 'GA4' and activate them"""
     try:
         from app.config.database import get_session
-        from app.models.analytics import Connection
-        from sqlmodel import select
+        from app.models.analytics import DigitalAsset, AssetType
+        from sqlmodel import select, and_
         
         with get_session() as session:
-            # Get all connections
-            statement = select(Connection).where(Connection.auth_type == "oauth2")
-            connections = session.exec(statement).all()
+            # Find all analytics assets from Google
+            statement = select(DigitalAsset).where(
+                and_(
+                    DigitalAsset.provider == "Google",
+                    DigitalAsset.asset_type == "analytics"
+                )
+            )
+            assets = session.exec(statement).all()
             
-            connection_info = []
-            for conn in connections:
-                connection_info.append({
-                    "id": conn.id,
-                    "account_email": conn.account_email,
-                    "scopes": conn.scopes,
-                    "expires_at": conn.expires_at.isoformat() if conn.expires_at else None,
-                    "revoked": conn.revoked,
-                    "last_used_at": conn.last_used_at.isoformat() if conn.last_used_at else None
-                })
+            fixed_count = 0
+            for asset in assets:
+                asset.asset_type = AssetType.GA4
+                asset.is_active = True
+                session.add(asset)
+                fixed_count += 1
+                print(f"Fixed asset {asset.id}: {asset.name} - Changed to GA4 and activated")
+            
+            session.commit()
             
             return {
-                "total_connections": len(connections),
-                "connections": connection_info
+                "success": True,
+                "message": f"Fixed {fixed_count} analytics assets to GA4 and activated them"
             }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}
 
 

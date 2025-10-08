@@ -136,7 +136,39 @@ async def revoke_facebook_connection(
                     detail="Connection not found"
                 )
             
-            # Revoke connection
+            # First, revoke the token with Facebook
+            try:
+                import requests
+                from app.services.google_analytics_service import GoogleAnalyticsService
+                
+                ga_service = GoogleAnalyticsService()
+                access_token = ga_service._decrypt_token(connection.access_token_enc)
+                
+                # Get Facebook App ID from environment
+                import os
+                app_id = os.getenv('FACEBOOK_APP_ID')
+                
+                if app_id:
+                    # Revoke the token with Facebook Graph API
+                    # Facebook requires: DELETE https://graph.facebook.com/{user-id}/permissions?access_token={access-token}
+                    revoke_url = f"https://graph.facebook.com/me/permissions"
+                    response = requests.delete(
+                        revoke_url,
+                        params={'access_token': access_token}
+                    )
+                    
+                    if response.status_code == 200:
+                        print(f"Successfully revoked Facebook token for connection {connection_id}")
+                    else:
+                        print(f"Warning: Facebook revocation returned status {response.status_code} for connection {connection_id}")
+                else:
+                    print(f"Warning: FACEBOOK_APP_ID not set, cannot revoke with Facebook")
+                    
+            except Exception as e:
+                print(f"Error revoking token with Facebook for connection {connection_id}: {str(e)}")
+                # Continue anyway to mark as revoked in our DB
+            
+            # Mark connection as revoked in our database
             connection.revoked = True
             session.add(connection)
             session.commit()
@@ -325,5 +357,194 @@ async def get_facebook_ad_accounts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch Facebook ad accounts: {str(e)}"
+        )
+
+
+@router.get("/available-pages/{subclient_id}")
+async def get_available_facebook_pages(
+    subclient_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get ALL available Facebook pages from Facebook using an existing connection's tokens.
+    This allows users to see all their Facebook pages even if not all are connected.
+    """
+    
+    try:
+        with get_session() as session:
+            # Find any active Facebook Page connection for this user and subclient
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.user_id == current_user.id,
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
+                DigitalAsset.provider == "Facebook",
+                Connection.revoked == False
+            ).limit(1)
+            
+            result = session.exec(statement).first()
+            
+            if not result:
+                return {
+                    "success": False,
+                    "message": "No Facebook Page connection found. Please connect to Facebook first.",
+                    "pages": []
+                }
+            
+            connection, digital_asset = result
+            
+            # Check if token is expired or expiring soon, and refresh if needed
+            from datetime import timedelta
+            buffer_time = timedelta(minutes=5)
+            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+                print(f"🔄 Facebook token expired or expiring soon, refreshing...")
+                try:
+                    # Refresh the token using the service method
+                    refresh_result = await facebook_service.refresh_facebook_token(connection.id)
+                    access_token = refresh_result.get("access_token")
+                    print(f"✅ Successfully refreshed Facebook token")
+                    # Reload connection to get updated data
+                    session.refresh(connection)
+                except Exception as e:
+                    print(f"❌ Failed to refresh Facebook token: {str(e)}")
+                    return {
+                        "success": False,
+                        "message": "Token expired. Please reconnect to Facebook.",
+                        "pages": []
+                    }
+            else:
+                # Decrypt access token
+                access_token = facebook_service._decrypt_token(connection.access_token_enc)
+            
+            print(f"DEBUG: Fetching all available Facebook pages for user {current_user.id}")
+            
+            # Fetch all available Facebook pages
+            pages = await facebook_service._get_user_pages(access_token)
+            
+            print(f"DEBUG: Found {len(pages)} total Facebook pages")
+            
+            # Mark which pages are already connected
+            connected_page_ids = []
+            assets_statement = select(DigitalAsset).where(
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
+                DigitalAsset.provider == "Facebook"
+            )
+            connected_assets = session.exec(assets_statement).all()
+            connected_page_ids = [asset.external_id for asset in connected_assets]
+            
+            # Add connected flag to each page
+            for page in pages:
+                page['is_connected'] = page['id'] in connected_page_ids
+            
+            return {
+                "success": True,
+                "pages": pages,
+                "message": f"Found {len(pages)} Facebook pages",
+                "access_token": access_token
+            }
+    
+    except Exception as e:
+        print(f"DEBUG: Error fetching available Facebook pages: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch available Facebook pages: {str(e)}"
+        )
+
+
+@router.get("/available-ad-accounts/{subclient_id}")
+async def get_available_facebook_ad_accounts(
+    subclient_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get ALL available Facebook ad accounts from Facebook using an existing connection's tokens.
+    This allows users to see all their Facebook ad accounts even if not all are connected.
+    """
+    
+    try:
+        with get_session() as session:
+            # Find any active Facebook Ads connection for this user and subclient
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.user_id == current_user.id,
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.ADVERTISING,
+                DigitalAsset.provider == "Facebook",
+                Connection.revoked == False
+            ).limit(1)
+            
+            result = session.exec(statement).first()
+            
+            if not result:
+                return {
+                    "success": False,
+                    "message": "No Facebook Ads connection found. Please connect to Facebook Ads first.",
+                    "ad_accounts": []
+                }
+            
+            connection, digital_asset = result
+            
+            # Check if token is expired or expiring soon, and refresh if needed
+            buffer_time = timedelta(minutes=5)
+            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+                print(f"🔄 Facebook token expired or expiring soon, refreshing...")
+                try:
+                    # Refresh the token using the service method
+                    refresh_result = await facebook_service.refresh_facebook_token(connection.id)
+                    access_token = refresh_result.get("access_token")
+                    print(f"✅ Successfully refreshed Facebook token")
+                    # Reload connection to get updated data
+                    session.refresh(connection)
+                except Exception as e:
+                    print(f"❌ Failed to refresh Facebook token: {str(e)}")
+                    return {
+                        "success": False,
+                        "message": "Token expired. Please reconnect to Facebook Ads.",
+                        "ad_accounts": []
+                    }
+            else:
+                # Decrypt access token
+                access_token = facebook_service._decrypt_token(connection.access_token_enc)
+            
+            print(f"DEBUG: Fetching all available Facebook ad accounts for user {current_user.id}")
+            
+            # Fetch all available Facebook ad accounts
+            ad_accounts = await facebook_service._get_user_ad_accounts(access_token)
+            
+            print(f"DEBUG: Found {len(ad_accounts)} total Facebook ad accounts")
+            
+            # Mark which ad accounts are already connected
+            connected_ad_account_ids = []
+            assets_statement = select(DigitalAsset).where(
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.ADVERTISING,
+                DigitalAsset.provider == "Facebook"
+            )
+            connected_assets = session.exec(assets_statement).all()
+            connected_ad_account_ids = [asset.external_id for asset in connected_assets]
+            
+            # Add connected flag to each ad account
+            for ad_account in ad_accounts:
+                ad_account['is_connected'] = ad_account['id'] in connected_ad_account_ids
+            
+            return {
+                "success": True,
+                "ad_accounts": ad_accounts,
+                "message": f"Found {len(ad_accounts)} Facebook ad accounts",
+                "access_token": access_token
+            }
+    
+    except Exception as e:
+        print(f"DEBUG: Error fetching available Facebook ad accounts: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch available Facebook ad accounts: {str(e)}"
         )
 

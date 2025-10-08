@@ -142,9 +142,37 @@ async def handle_oauth_callback(
                 )
             
             # Get available Facebook pages (only pages, not ad accounts)
+            print(f"🔍 DEBUG: Fetching Facebook pages for Page connection...")
+            print(f"🔍 DEBUG: Using access token: {token_data['access_token'][:20]}...")
+            
+            # Check what permissions were granted
+            print(f"🔍 Checking granted permissions for access token...")
+            try:
+                import requests
+                permissions_url = f"{facebook_service.base_url}/me/permissions"
+                permissions_response = requests.get(permissions_url, params={'access_token': token_data['access_token']})
+                if permissions_response.ok:
+                    permissions_data = permissions_response.json()
+                    granted_permissions = [p['permission'] for p in permissions_data.get('data', []) if p.get('status') == 'granted']
+                    print(f"✅ Granted permissions: {', '.join(granted_permissions)}")
+                    
+                    # Check if pages permissions are granted
+                    has_pages_show_list = 'pages_show_list' in granted_permissions
+                    has_pages_read_engagement = 'pages_read_engagement' in granted_permissions
+                    
+                    if not has_pages_show_list:
+                        print(f"⚠️ WARNING: pages_show_list permission is not granted!")
+                        print(f"   This means Facebook won't return any pages.")
+                        print(f"   The user needs to re-authorize with pages permissions.")
+                else:
+                    print(f"⚠️ Could not fetch permissions: {permissions_response.text}")
+            except Exception as e:
+                print(f"⚠️ Error checking permissions: {str(e)}")
+            
             pages = await facebook_service._get_user_pages(token_data['access_token'])
             
-            print(f"DEBUG: Found {len(pages)} Facebook pages for Page connection")
+            print(f"✅ DEBUG: Found {len(pages)} Facebook pages for Page connection")
+            print(f"🔍 DEBUG: Pages data: {pages}")
         
         return OAuthCallbackResponse(
             success=True,

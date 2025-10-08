@@ -434,6 +434,157 @@ async def get_ga_properties(
         )
 
 
+@router.get("/available-properties/{subclient_id}")
+async def get_available_ga_properties(
+    subclient_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get ALL available GA properties from Google using an existing connection's tokens.
+    This allows users to see all their GA properties even if not all are connected.
+    """
+    
+    try:
+        with get_session() as session:
+            # Find any active GA connection for this user and subclient
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.user_id == current_user.id,
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.GA4,
+                Connection.revoked == False
+            ).limit(1)
+            
+            result = session.exec(statement).first()
+            
+            if not result:
+                return {
+                    "success": False,
+                    "message": "No Google Analytics connection found. Please connect to Google Analytics first.",
+                    "properties": []
+                }
+            
+            connection, digital_asset = result
+            
+            # Check if token needs refresh (with 5-minute buffer)
+            from datetime import timedelta
+            buffer_time = timedelta(minutes=5)
+            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+                print(f"🔄 Google Analytics token expired or expiring soon, refreshing...")
+                try:
+                    # Refresh the token
+                    refresh_result = await ga_service.refresh_ga_token(connection.id)
+                    if not refresh_result.get("success"):
+                        print(f"❌ Failed to refresh Google Analytics token")
+                        return {
+                            "success": False,
+                            "message": "Token expired. Please reconnect to Google Analytics.",
+                            "properties": []
+                        }
+                    print(f"✅ Successfully refreshed Google Analytics token")
+                    # Reload connection with new token
+                    session.refresh(connection)
+                except ValueError as e:
+                    # Token refresh failed - user needs to re-authenticate
+                    error_message = str(e)
+                    print(f"❌ Token refresh failed: {error_message}")
+                    
+                    # Check if the error message contains a re-auth URL
+                    if "Please re-authorize your Google Analytics connection:" in error_message:
+                        # Extract the re-auth URL from the error message
+                        import re
+                        url_match = re.search(r'https://[^\s]+', error_message)
+                        reauth_url = url_match.group(0) if url_match else None
+                        
+                        return {
+                            "success": False,
+                            "message": "Your Google Analytics token has expired. Please reconnect your account.",
+                            "properties": [],
+                            "requires_reauth": True,
+                            "reauth_url": reauth_url
+                        }
+                    
+                    return {
+                        "success": False,
+                        "message": "Token expired. Please reconnect to Google Analytics.",
+                        "properties": [],
+                        "requires_reauth": True
+                    }
+                except Exception as e:
+                    print(f"❌ Unexpected error during token refresh: {str(e)}")
+                    return {
+                        "success": False,
+                        "message": "Token expired. Please reconnect to Google Analytics.",
+                        "properties": []
+                    }
+            
+            # Decrypt access token
+            access_token = ga_service._decrypt_token(connection.access_token_enc)
+            
+            # Fetch all available properties from Google Analytics
+            from google.oauth2.credentials import Credentials
+            from google.analytics.admin import AnalyticsAdminServiceClient
+            from google.analytics.admin_v1alpha.types import ListPropertiesRequest
+            
+            credentials = Credentials(token=access_token)
+            client = AnalyticsAdminServiceClient(credentials=credentials)
+            
+            properties = []
+            
+            print(f"DEBUG: Fetching all available GA4 properties for user {current_user.id}")
+            
+            # List all accounts
+            accounts = client.list_accounts()
+            for account in accounts:
+                print(f"DEBUG: Found GA account: {account.display_name}")
+                # List properties for each account
+                request = ListPropertiesRequest(filter=f"parent:{account.name}")
+                account_properties = client.list_properties(request=request)
+                for property_obj in account_properties:
+                    property_id = property_obj.name.split('/')[-1]
+                    properties.append({
+                        'property_id': property_id,
+                        'property_name': property_obj.display_name,
+                        'account_id': account.name.split('/')[-1],
+                        'account_name': account.display_name,
+                        'display_name': property_obj.display_name
+                    })
+                    print(f"DEBUG: Found GA property: {property_obj.display_name} (ID: {property_id})")
+            
+            print(f"DEBUG: Found {len(properties)} total GA4 properties")
+            
+            # Mark which properties are already connected
+            connected_property_ids = []
+            assets_statement = select(DigitalAsset).where(
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.GA4
+            )
+            connected_assets = session.exec(assets_statement).all()
+            connected_property_ids = [asset.external_id for asset in connected_assets]
+            
+            # Add connected flag to each property
+            for prop in properties:
+                prop['is_connected'] = prop['property_id'] in connected_property_ids
+            
+            return {
+                "success": True,
+                "properties": properties,
+                "message": f"Found {len(properties)} Google Analytics properties",
+                "access_token": access_token,  # Include for creating new connections
+                "refresh_token": ga_service._decrypt_token(connection.refresh_token_enc) if connection.refresh_token_enc else None
+            }
+    
+    except Exception as e:
+        print(f"DEBUG: Error fetching available GA properties: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch available GA properties: {str(e)}"
+        )
+
+
 # Common GA4 metrics and dimensions for reference
 @router.get("/metrics")
 async def get_available_metrics():

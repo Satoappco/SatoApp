@@ -8,7 +8,9 @@ import hashlib
 import base64
 from datetime import datetime, timedelta
 import os
+import asyncio
 from typing import Dict, Any, Optional, List
+import requests
 from cryptography.fernet import Fernet
 from google.oauth2.credentials import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
@@ -44,6 +46,9 @@ def get_google_client_secret() -> str:
 
 class GoogleAnalyticsService:
     """Service for managing Google Analytics OAuth and data fetching"""
+    
+    # Class-level refresh locks to prevent simultaneous token refresh attempts
+    _refresh_locks = {}
     
     # Google Analytics 4 scopes - comprehensive set for modern GA4 API
     GA4_SCOPES = [
@@ -111,122 +116,22 @@ class GoogleAnalyticsService:
         """Generate hash for token validation"""
         return hashlib.sha256(token.encode()).hexdigest()
     
-    async def save_ga_connection(
-        self,
-        user_id: int,
-        subclient_id: int,
-        access_token: str,
-        refresh_token: str,
-        expires_in: int,
-        account_email: str
-    ) -> Dict[str, Any]:
-        """
-        Save Google Analytics OAuth connection to database
+    def _extract_date_from_tool_result(self, tool_result: str) -> str:
+        """Extract YYYY-MM-DD date from DateConversionTool result"""
+        import re
+        # Look for "Start Date: YYYY-MM-DD" or "End Date: YYYY-MM-DD" pattern
+        date_match = re.search(r'(?:Start Date|End Date):\s*(\d{4}-\d{2}-\d{2})', tool_result)
+        if date_match:
+            return date_match.group(1)
         
-        Args:
-            user_id: ID of user creating the connection
-            subclient_id: ID of subclient this asset belongs to
-            property_id: GA4 property ID (e.g., "123456789")
-            property_name: Human-readable property name
-            access_token: OAuth access token
-            refresh_token: OAuth refresh token
-            expires_in: Token expiration time in seconds
-            account_email: Google account email
-        """
+        # Fallback: look for any YYYY-MM-DD pattern
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', tool_result)
+        if date_match:
+            return date_match.group(1)
         
-        # This method should not be used - use get_ga4_properties instead for real data
-        raise NotImplementedError("This method creates demo data. Use get_ga4_properties() for real GA4 properties.")
-        
-        with get_session() as session:
-            # Check if digital asset already exists
-            statement = select(DigitalAsset).where(
-                and_(
-                    DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.asset_type == AssetType.ANALYTICS,
-                    DigitalAsset.provider == "Google",
-                    DigitalAsset.external_id == property_id
-                )
-            )
-            digital_asset = session.exec(statement).first()
-            
-            if not digital_asset:
-                # Create new digital asset
-                digital_asset = DigitalAsset(
-                    subclient_id=subclient_id,
-                    asset_type=AssetType.ANALYTICS,
-                    provider="Google",
-                    name=property_name,
-                    external_id=property_id,
-                    meta={
-                        "property_id": property_id,
-                        "account_email": account_email,
-                        "is_demo": True,  # Mark as demo data
-                        "note": "This is demo data. Real GA4 properties will be fetched in future updates."
-                    },
-                    is_active=True
-                )
-                session.add(digital_asset)
-                session.commit()
-                session.refresh(digital_asset)
-            
-            # Encrypt tokens
-            access_token_enc = self._encrypt_token(access_token)
-            refresh_token_enc = self._encrypt_token(refresh_token)
-            token_hash = self._generate_token_hash(access_token)
-            
-            # Calculate expiration time
-            expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
-            
-            # Create or update connection
-            connection_statement = select(Connection).where(
-                and_(
-                    Connection.digital_asset_id == digital_asset.id,
-                    Connection.user_id == user_id,
-                    Connection.revoked == False
-                )
-            )
-            connection = session.exec(connection_statement).first()
-            
-            if connection:
-                # Update existing connection
-                connection.access_token_enc = access_token_enc
-                connection.refresh_token_enc = refresh_token_enc
-                connection.token_hash = token_hash
-                connection.expires_at = expires_at
-                connection.account_email = account_email
-                connection.scopes = self.GA4_SCOPES
-                connection.rotated_at = datetime.utcnow()
-                connection.last_used_at = datetime.utcnow()
-            else:
-                # Create new connection
-                connection = Connection(
-                    digital_asset_id=digital_asset.id,
-                    user_id=user_id,
-                    auth_type=AuthType.OAUTH2,
-                    account_email=account_email,
-                    scopes=self.GA4_SCOPES,
-                    access_token_enc=access_token_enc,
-                    refresh_token_enc=refresh_token_enc,
-                    token_hash=token_hash,
-                    expires_at=expires_at,
-                    is_active=True,
-                    revoked=False,
-                    last_used_at=datetime.utcnow()
-                )
-            
-            session.add(connection)
-            session.commit()
-            session.refresh(connection)
-            
-            return {
-                "connection_id": connection.id,
-                "digital_asset_id": digital_asset.id,
-                "property_id": property_id,
-                "property_name": property_name,
-                "account_email": account_email,
-                "expires_at": expires_at.isoformat(),
-                "scopes": self.GA4_SCOPES
-            }
+        # If no date found, log error and raise exception
+        print(f"❌ ERROR: Could not extract date from DateConversionTool result: {tool_result}")
+        raise ValueError(f"Failed to extract date from DateConversionTool result. Tool returned: {tool_result}")
     
     async def save_ga_connection_with_property(
         self,
@@ -246,12 +151,12 @@ class GoogleAnalyticsService:
         """
         
         with get_session() as session:
-            # First, deactivate all other ANALYTICS assets for this user/subclient
-            print(f"DEBUG: Deactivating other ANALYTICS assets for user {user_id}, subclient {subclient_id}")
+            # First, deactivate all other GA4 assets for this user/subclient
+            print(f"DEBUG: Deactivating other GA4 assets for user {user_id}, subclient {subclient_id}")
             deactivate_statement = select(DigitalAsset).where(
                 and_(
                     DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.asset_type == AssetType.ANALYTICS,
+                    DigitalAsset.asset_type == AssetType.GA4,
                     DigitalAsset.provider == "Google",
                     DigitalAsset.is_active == True
                 )
@@ -266,7 +171,7 @@ class GoogleAnalyticsService:
             statement = select(DigitalAsset).where(
                 and_(
                     DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.asset_type == AssetType.ANALYTICS,
+                    DigitalAsset.asset_type == AssetType.GA4,
                     DigitalAsset.provider == "Google",
                     DigitalAsset.external_id == property_id
                 )
@@ -278,7 +183,7 @@ class GoogleAnalyticsService:
                 # Create new digital asset with real property details
                 digital_asset = DigitalAsset(
                     subclient_id=subclient_id,
-                    asset_type=AssetType.ANALYTICS,
+                    asset_type=AssetType.GA4,
                     provider="Google",
                     name=property_name,
                     external_id=property_id,
@@ -298,7 +203,8 @@ class GoogleAnalyticsService:
                 session.refresh(digital_asset)
             else:
                 print(f"DEBUG: Using existing digital asset {digital_asset.id} for property {property_id}")
-                # Update metadata if needed
+                # Activate this asset and update metadata if needed
+                digital_asset.is_active = True
                 if digital_asset.meta.get("property_name") != property_name:
                     digital_asset.meta.update({
                         "property_name": property_name,
@@ -306,8 +212,8 @@ class GoogleAnalyticsService:
                         "account_name": account_name,
                         "account_email": account_email
                     })
-                    session.add(digital_asset)
-                    session.commit()
+                session.add(digital_asset)
+                session.commit()
             
             # Encrypt tokens
             access_token_enc = self._encrypt_token(access_token)
@@ -358,6 +264,23 @@ class GoogleAnalyticsService:
             session.add(connection)
             session.commit()
             session.refresh(connection)
+            
+            # Automatically save this property as the selected property for the user
+            from app.services.property_selection_service import PropertySelectionService
+            property_selection_service = PropertySelectionService()
+            
+            try:
+                await property_selection_service.save_property_selection(
+                    user_id=user_id,
+                    subclient_id=subclient_id,
+                    service="google_analytics",
+                    property_id=property_id,
+                    property_name=property_name
+                )
+                print(f"DEBUG: Automatically saved property selection for {property_name}")
+            except Exception as e:
+                print(f"DEBUG: Failed to save property selection: {e}")
+                # Don't fail the connection creation if property selection save fails
             
             return {
                 "connection_id": connection.id,
@@ -685,6 +608,66 @@ class GoogleAnalyticsService:
         # Return failure - no fake success
         raise ValueError("All automatic token renewal methods failed. Manual re-authorization required.")
     
+    def validate_ga_refresh_token(self, refresh_token: str) -> bool:
+        """
+        Validate GA4 refresh token without making API calls
+        
+        Args:
+            refresh_token: The refresh token to validate
+            
+        Returns:
+            True if token appears valid, False otherwise
+        """
+        try:
+            # Basic validation checks
+            if not refresh_token or len(refresh_token) < 10:
+                print("❌ Invalid GA4 refresh token format")
+                return False
+            
+            # Check if it looks like a valid Google OAuth2 refresh token
+            if not refresh_token.startswith('1//'):
+                print("❌ GA4 Refresh token doesn't match Google OAuth2 format")
+                return False
+            
+            # Try to create a Credentials object to validate the token structure
+            try:
+                credentials = Credentials(
+                    token=None,
+                    refresh_token=refresh_token,
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=get_google_client_id(),
+                    client_secret=get_google_client_secret(),
+                    scopes=self.GA4_SCOPES
+                )
+                print("✅ GA4 Refresh token format appears valid")
+                return True
+            except Exception as cred_error:
+                print(f"❌ GA4 Refresh token credentials validation failed: {cred_error}")
+                return False
+            
+        except Exception as e:
+            print(f"❌ GA4 Refresh token validation error: {e}")
+            return False
+    
+    def is_ga_token_expired(self, expires_at: datetime) -> bool:
+        """
+        Check if GA4 token is expired with buffer
+        
+        Args:
+            expires_at: Token expiration datetime
+            
+        Returns:
+            True if expired or expiring soon, False otherwise
+        """
+        if not expires_at:
+            return True  # No expiry time means assume expired
+        
+        current_time = datetime.utcnow()
+        time_until_expiry = expires_at - current_time
+        
+        # Consider expired if it expires within 5 minutes
+        return time_until_expiry <= timedelta(minutes=5)
+
     async def get_ga_credentials(self, connection_id: int) -> Credentials:
         """Get valid Google Analytics credentials for API calls"""
         
@@ -705,15 +688,56 @@ class GoogleAnalyticsService:
             if not connection.access_token_enc or not connection.refresh_token_enc:
                 raise ValueError(f"Connection {connection_id} has missing or invalid encrypted tokens. Please re-authorize this connection.")
             
-            # Check if token needs refresh
-            if connection.expires_at and connection.expires_at <= datetime.utcnow():
-                # Refresh token
-                await self.refresh_ga_token(connection_id)
-                # Reload connection
-                connection = session.exec(statement).first()
-                # Re-validate tokens after refresh
-                if not connection.access_token_enc or not connection.refresh_token_enc:
-                    raise ValueError(f"Connection {connection_id} tokens are still invalid after refresh. Please re-authorize this connection.")
+            # Check if token needs refresh (efficient check without API calls)
+            token_needs_refresh = self.is_ga_token_expired(connection.expires_at)
+            
+            if token_needs_refresh:
+                # Use refresh lock to prevent simultaneous refresh attempts
+                if connection_id not in self._refresh_locks:
+                    self._refresh_locks[connection_id] = asyncio.Lock()
+                
+                async with self._refresh_locks[connection_id]:
+                    # Double-check if token still needs refresh (another process might have refreshed it)
+                    connection = session.exec(statement).first()  # Reload from DB
+                    if not self.is_ga_token_expired(connection.expires_at):
+                        print(f"🔄 GA4 Token was already refreshed by another process")
+                    else:
+                        current_time = datetime.utcnow()
+                        if connection.expires_at:
+                            time_until_expiry = connection.expires_at - current_time
+                            print(f"🔄 GA4 Token expires soon ({time_until_expiry}), refreshing...")
+                        else:
+                            print(f"🔄 GA4 No token expiry time set, refreshing...")
+                        
+                        try:
+                            await self.refresh_ga_token(connection_id)
+                            # Reload connection
+                            connection = session.exec(statement).first()
+                            print(f"✅ GA4 Token refreshed successfully")
+                        except Exception as refresh_error:
+                            print(f"❌ GA4 Token refresh failed: {refresh_error}")
+                            raise ValueError(f"Failed to refresh GA4 token: {refresh_error}")
+                        
+                        # Re-validate tokens after refresh
+                        if not connection.access_token_enc or not connection.refresh_token_enc:
+                            raise ValueError(f"Connection {connection_id} tokens are still invalid after refresh. Please re-authorize this connection.")
+            
+            # Validate refresh token format (no API call needed)
+            refresh_token = self._decrypt_token(connection.refresh_token_enc)
+            if not self.validate_ga_refresh_token(refresh_token):
+                print(f"❌ GA4 Refresh token format is invalid, attempting refresh...")
+                try:
+                    await self.refresh_ga_token(connection_id)
+                    # Reload connection
+                    connection = session.exec(statement).first()
+                    # Re-validate after refresh
+                    new_refresh_token = self._decrypt_token(connection.refresh_token_enc)
+                    if not self.validate_ga_refresh_token(new_refresh_token):
+                        raise ValueError("GA4 Refresh token is invalid and cannot be fixed")
+                    print(f"✅ GA4 Refresh token validation successful after refresh")
+                except Exception as validation_error:
+                    print(f"❌ GA4 Refresh token validation and refresh failed: {validation_error}")
+                    raise ValueError(f"GA4 refresh token is invalid: {validation_error}")
             
             # Decrypt tokens
             access_token = self._decrypt_token(connection.access_token_enc)
@@ -760,6 +784,19 @@ class GoogleAnalyticsService:
         """
         
         try:
+            # Validate metrics - fix common invalid metric names
+            valid_metrics = []
+            for metric in metrics:
+                # Fix common invalid metric names
+                if metric == "averageEngagementTime":
+                    print(f"WARNING: Converting invalid metric 'averageEngagementTime' to 'engagementRate'")
+                    valid_metrics.append("engagementRate")
+                elif metric == "averageSessionDuration":
+                    print(f"WARNING: Converting invalid metric 'averageSessionDuration' to 'averageSessionDuration'")
+                    valid_metrics.append("averageSessionDuration")
+                else:
+                    valid_metrics.append(metric)
+            
             # Get valid credentials
             credentials = await self.get_ga_credentials(connection_id)
             
@@ -770,7 +807,7 @@ class GoogleAnalyticsService:
             request = RunReportRequest(
                 property=f"properties/{property_id}",
                 dimensions=[Dimension(name=dim) for dim in (dimensions or [])],
-                metrics=[Metric(name=metric) for metric in metrics],
+                metrics=[Metric(name=metric) for metric in valid_metrics],
                 date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
                 limit=limit
             )
@@ -805,12 +842,27 @@ class GoogleAnalyticsService:
             return result
             
         except Exception as e:
-            print(f"Error in fetch_ga4_data: {str(e)}")
+            error_msg = str(e)
+            print(f"Error in fetch_ga4_data: {error_msg}")
             import traceback
             traceback.print_exc()
+            
+            # Provide more specific error information
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                detailed_error = f"GA4 Authentication Error: {error_msg}. Please re-authorize your Google Analytics connection."
+            elif "403" in error_msg or "forbidden" in error_msg.lower():
+                detailed_error = f"GA4 Permission Error: {error_msg}. Check if your account has access to the GA4 property."
+            elif "quota" in error_msg.lower():
+                detailed_error = f"GA4 Quota Error: {error_msg}. You may have exceeded the API quota limit."
+            elif "property" in error_msg.lower():
+                detailed_error = f"GA4 Property Error: {error_msg}. Check if the property ID is correct."
+            else:
+                detailed_error = f"GA4 API Error: {error_msg}"
+            
             return {
                 "success": False,
-                "error": str(e),
+                "error": detailed_error,
+                "original_error": error_msg,
                 "dimension_headers": [],
                 "metric_headers": [],
                 "rows": [],
@@ -828,7 +880,7 @@ class GoogleAnalyticsService:
                 Connection.revoked == False
             ]
             
-            # Check for GA4 asset type (database uses 'GA4' not 'analytics')
+            # Check for GA4 asset type
             conditions.append(DigitalAsset.asset_type == AssetType.GA4)
             
             # Add subclient_id filter if provided
@@ -862,7 +914,7 @@ class GoogleAnalyticsService:
         return await self.get_user_ga_connections(user_id)
     
     async def revoke_ga_connection(self, connection_id: int) -> bool:
-        """Revoke a GA connection"""
+        """Revoke a GA connection - marks as revoked in DB and revokes with Google"""
         
         with get_session() as session:
             statement = select(Connection).where(Connection.id == connection_id)
@@ -871,6 +923,30 @@ class GoogleAnalyticsService:
             if not connection:
                 return False
             
+            # First, revoke the token with Google
+            try:
+                access_token = self._decrypt_token(connection.access_token_enc)
+                
+                # Revoke the token with Google OAuth2
+                revoke_url = "https://oauth2.googleapis.com/revoke"
+                response = requests.post(
+                    revoke_url,
+                    params={'token': access_token},
+                    headers={'content-type': 'application/x-www-form-urlencoded'}
+                )
+                
+                # Google returns 200 for successful revocation
+                if response.status_code == 200:
+                    print(f"Successfully revoked token with Google for connection {connection_id}")
+                else:
+                    print(f"Warning: Google revocation returned status {response.status_code} for connection {connection_id}")
+                    # Continue anyway to mark as revoked in our DB
+                    
+            except Exception as e:
+                print(f"Error revoking token with Google for connection {connection_id}: {str(e)}")
+                # Continue anyway to mark as revoked in our DB
+            
+            # Mark as revoked in our database
             connection.revoked = True
             connection.rotated_at = datetime.utcnow()
             
@@ -954,7 +1030,55 @@ class GoogleAnalyticsService:
         end_date: str,
         limit: int = 100
     ) -> Dict[str, Any]:
-        """Fetch Google Ads data for analysis"""
+        """
+        Fetch Google Ads data using the Google Ads API
+        
+        Args:
+            connection_id: ID of the connection to use
+            customer_id: Google Ads customer ID
+            metrics: List of metrics to fetch
+            dimensions: List of dimensions to group by
+            start_date: Start date (relative or YYYY-MM-DD format)
+            end_date: End date (relative or YYYY-MM-DD format)
+            limit: Maximum number of rows to return
+        """
+        
+        print(f"🔄 Fetching Google Ads data for customer {customer_id}")
+        print(f"   Metrics: {metrics}")
+        print(f"   Dimensions: {dimensions}")
+        print(f"   Date range: {start_date} to {end_date}")
+        
+        # Use DateConversionTool to convert relative dates to ISO format
+        from app.tools.date_conversion_tool import DateConversionTool
+        date_tool = DateConversionTool()
+        
+        # Convert dates using LLM-based tool
+        if start_date and end_date:
+            # Check if dates are already in YYYY-MM-DD format
+            import re
+            if re.match(r'^\d{4}-\d{2}-\d{2}$', start_date) and re.match(r'^\d{4}-\d{2}-\d{2}$', end_date):
+                start_date_iso, end_date_iso = start_date, end_date
+                print(f"   Using provided ISO dates: {start_date_iso} to {end_date_iso}")
+            else:
+                # Use DateConversionTool to convert relative dates
+                try:
+                    start_result = date_tool._run(start_date)
+                    end_result = date_tool._run(end_date)
+                    
+                    # Extract dates from tool results
+                    start_date_iso = self._extract_date_from_tool_result(start_result)
+                    end_date_iso = self._extract_date_from_tool_result(end_result)
+                    print(f"   Converted dates: {start_date_iso} to {end_date_iso}")
+                except Exception as e:
+                    print(f"❌ ERROR: Failed to convert dates using DateConversionTool: {e}")
+                    print(f"   Original dates: {start_date} to {end_date}")
+                    raise ValueError(f"Date conversion failed: {e}")
+        else:
+            # Use default dates if not provided
+            from datetime import datetime, timedelta
+            end_date_iso = datetime.now().strftime("%Y-%m-%d")
+            start_date_iso = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            print(f"   Using default dates: {start_date_iso} to {end_date_iso}")
         
         try:
             with get_session() as session:
@@ -993,7 +1117,7 @@ class GoogleAnalyticsService:
                 query = f"""
                     SELECT {', '.join(metrics + dimensions)}
                     FROM campaign
-                    WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+                    WHERE segments.date BETWEEN '{start_date_iso}' AND '{end_date_iso}'
                     ORDER BY segments.date DESC
                     LIMIT {limit}
                 """

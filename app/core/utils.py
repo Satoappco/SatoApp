@@ -12,9 +12,6 @@ def generate_session_id() -> str:
     return str(uuid.uuid4())
 
 
-def generate_request_id() -> str:
-    """Generate a unique request ID"""
-    return str(uuid.uuid4())
 
 
 def get_current_timestamp() -> str:

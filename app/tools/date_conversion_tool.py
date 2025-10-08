@@ -6,7 +6,7 @@ NO HARDCODED LOGIC - the LLM figures out the dates itself
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from datetime import datetime
 
 

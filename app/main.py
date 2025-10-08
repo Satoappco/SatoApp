@@ -73,11 +73,12 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
-            "https://localhost:3000",  # HTTPS frontend
-            "http://localhost:3000",   # HTTP frontend (fallback)
+            "https://localhost:3000",  # HTTPS frontend (local)
+            "https://localhost:3000",   # HTTP frontend (local fallback)
             "https://sato-frontend-397762748853.me-west1.run.app",  # Production frontend
+            "https://sato-frontend-dev-397762748853.me-west1.run.app",  # Development frontend
             "https://localhost:8000",  # HTTPS backend (for testing)
-            "http://localhost:8000",   # HTTP backend (for testing)
+            "https://localhost:8000",   # HTTP backend (for testing)
         ],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

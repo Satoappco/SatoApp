@@ -18,6 +18,7 @@ from app.models.users import User
 from app.core.database import get_session
 from app.config.logging import get_logger
 from app.models.agents import CustomerLog, ExecutionTiming
+from app.api.v1.routes.webhooks import refresh_user_ga4_tokens, refresh_user_facebook_tokens
 
 logger = get_logger("api.crewai")
 router = APIRouter()
@@ -147,7 +148,7 @@ async def run_crewai_analysis_for_test(
         
         # Create Master Agent using ONLY database configuration with timing
         master_agent = timing_wrapper.create_timed_agent(
-            role=master_agent_data["role"],
+            role=master_agent_data["name"],  # Use name field for display
             goal=master_agent_data["goal"],
             backstory=master_agent_data["backstory"],
             verbose=master_agent_data.get("verbose", True),
@@ -161,6 +162,8 @@ async def run_crewai_analysis_for_test(
         master_task_description = master_agent_data.get("task", "")
         logger.info(f"📋 Original task template: {master_task_description}")
         
+        # Master agent will use its DateConversionTool naturally during task execution
+        
         if master_task_description:
             try:
                 # Get current date for date calculations
@@ -172,6 +175,7 @@ async def run_crewai_analysis_for_test(
                     objective=user_question,
                     user_id=user_id,
                     customer_id=customer_id,
+                    subcustomer_id=subcustomer_id,
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
                     data_source=", ".join(data_sources),  # Support both naming conventions
@@ -202,6 +206,8 @@ async def run_crewai_analysis_for_test(
         tasks.append(master_task)
         
         # 5. CREATE SPECIALIST AGENTS DYNAMICALLY FROM DATABASE
+        specialist_tasks = []  # Track specialist tasks to set context
+        
         logger.info(f"📊 Available specialist agents: {len(specialist_agents_data)}")
         for specialist_data in specialist_agents_data:
             logger.info(f"🔍 Checking specialist: {specialist_data['name']} (type: {specialist_data['agent_type']})")
@@ -215,7 +221,7 @@ async def run_crewai_analysis_for_test(
             # Get tools for this agent dynamically
             logger.info(f"🔧 Getting tools for agent type: {agent_type}")
             # Use subcustomer_id as subclient_id for database queries
-            agent_tools = _get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=subcustomer_id)
+            agent_tools = get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=subcustomer_id)
             logger.info(f"🔧 Agent {agent_type} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
             
             # Create specialist agent using ONLY database configuration with timing
@@ -225,47 +231,51 @@ async def run_crewai_analysis_for_test(
                 backstory=specialist_data["backstory"],
                 tools=agent_tools,
                 verbose=specialist_data.get("verbose", True),
-                allow_delegation=specialist_data.get("allow_delegation", False),
+                allow_delegation=False,  # Specialists should NOT delegate
                 llm=llm
             )
             
             agents.append(specialist_agent)
-            logger.info(f"✅ Created Specialist: {specialist_data['name']} (delegation: {specialist_data.get('allow_delegation', False)}, verbose: {specialist_data.get('verbose', True)}, tools: {len(agent_tools)})")
+            logger.info(f"✅ Created Specialist: {specialist_data['name']} (delegation: False, verbose: {specialist_data.get('verbose', True)}, tools: {len(agent_tools)})")
             
             # Create specialist task using database configuration
             specialist_task_description = specialist_data.get("task", "")
             if specialist_task_description:
-                # Let the LLM parse the date range from the user question naturally
+                # Use converted dates from master agent's DateConversionTool
                 # Replace placeholders in task with actual values
                 specialist_task_description = specialist_task_description.format(
                     objective=user_question,
                     user_id=user_id,
                     customer_id=customer_id,
+                    subcustomer_id=subcustomer_id,
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
-                    date_range="as specified in the user question",  # Let LLM interpret this
+                    date_range="as specified in the user question",
                     timezone="UTC",
                     currency="USD",
                     attribution_window="30d",
-                    current_date=current_date  # Add current date for date calculations
+                    current_date=current_date,  # Add current date for date calculations
+                    available_specialists=", ".join([s['name'] for s in specialist_agents_data])
                 )
             else:
                 # Fallback if no task in database
                 specialist_task_description = f"Analyze {agent_type} data for: {user_question}"
             
             # Set expected output based on agent type
-            if agent_type == "date_timeframe_specialist":
-                expected_output = "Exact dates in the format: Start Date: YYYY-MM-DD\nEnd Date: YYYY-MM-DD"
-            else:
-                expected_output = f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema"
+            expected_output = f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema"
             
+            # CRITICAL FIX: Set context=[master_task] so specialist output feeds back to master
             specialist_task = Task(
                 description=specialist_task_description,
                 agent=specialist_agent,
-                expected_output=expected_output
+                expected_output=expected_output,
+                context=[master_task]  # ✅ This ensures output goes to master, not directly to user
             )
-            tasks.append(specialist_task)
-            logger.info(f"✅ Created task for: {specialist_data['name']}")
+            specialist_tasks.append(specialist_task)
+            logger.info(f"✅ Created task for: {specialist_data['name']} with context=[master_task]")
+        
+        # Add specialist tasks after master task so they execute after and feed back
+        tasks.extend(specialist_tasks)
         
         # 6. EXECUTE DYNAMIC CREW WITH DATABASE-DRIVEN CONFIGURATION AND TIMING
         crew = timing_wrapper.create_timed_crew(
@@ -277,7 +287,7 @@ async def run_crewai_analysis_for_test(
         
         # Prepare customer log data but don't create it yet
         user_intent = intent_name or "CrewAI Test"
-        crewai_input_prompt = f"User Question: {user_question}\nIntent: {intent_name}\nData Sources: {data_sources}\nUser ID: {user_id}"
+        crewai_input_prompt = f"User Question: {user_question}\nIntent: {intent_name}\nData Sources: {data_sources}\nUser ID: {user_id}\nCustomer ID: {customer_id}\nSubcustomer ID: {subcustomer_id}"
         
         logger.info(f"🤖 Executing crew with {len(agents)} agents and {len(tasks)} tasks")
         
@@ -447,286 +457,12 @@ async def run_crewai_analysis_for_test(
         }
 
 
-def _extract_timeframe_info(user_question: str) -> Dict[str, any]:
-    """
-    Extract timeframe information from user question.
-    
-    Examples:
-    - "last 90 days" -> {"timeframe": "90 days", "date_range": "last_90_days"}
-    - "this month" -> {"timeframe": "this month", "date_range": "this_month"}
-    - "last week" -> {"timeframe": "7 days", "date_range": "last_7_days"}
-    """
-    import re
-    from datetime import datetime, timedelta
-    
-    timeframe_info = {}
-    question_lower = user_question.lower()
-    
-    # Extract number of days
-    days_match = re.search(r'(\d+)\s*days?', question_lower)
-    if days_match:
-        days = int(days_match.group(1))
-        timeframe_info.update({
-            "timeframe": f"{days} days",
-            "date_range": f"last_{days}_days",
-            "duration_days": days
-        })
-    
-    # Extract specific time periods
-    if "last week" in question_lower:
-        timeframe_info.update({
-            "timeframe": "7 days",
-            "date_range": "last_7_days",
-            "duration_days": 7
-        })
-    elif "last month" in question_lower:
-        timeframe_info.update({
-            "timeframe": "30 days", 
-            "date_range": "last_30_days",
-            "duration_days": 30
-        })
-    elif "this month" in question_lower:
-        timeframe_info.update({
-            "timeframe": "this month",
-            "date_range": "this_month",
-            "duration_days": 30
-        })
-    elif "this week" in question_lower:
-        timeframe_info.update({
-            "timeframe": "this week",
-            "date_range": "this_week", 
-            "duration_days": 7
-        })
-    
-    # Extract analysis type
-    if "day of the week" in question_lower:
-        timeframe_info["analysis_type"] = "day_of_week"
-    elif "hour" in question_lower:
-        timeframe_info["analysis_type"] = "hourly"
-    elif "month" in question_lower:
-        timeframe_info["analysis_type"] = "monthly"
-    
-    return timeframe_info
 
 
-async def refresh_user_ga4_tokens(ga_service, user_id: int) -> None:
-    """
-    Automatically refresh expired GA4 tokens for a user before executing agents.
-    
-    This prevents the "re-authorization required" error by proactively refreshing
-    tokens that are expired or close to expiring.
-    """
-    try:
-        logger.info(f"🔍 Checking GA4 token status for user {user_id}...")
-        
-        # Get all user's GA4 connections from the database
-        from app.core.database import DatabaseManager
-        db_manager = DatabaseManager()
-        
-        # Get user's connections (this should include expiry info)
-        with db_manager.get_session() as session:
-            from sqlmodel import select
-            from app.models.analytics import Connection
-            from app.models.analytics import DigitalAsset
-            
-            # Find all GA4 connections for this user
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                Connection.user_id == user_id,
-                Connection.revoked == False,
-                DigitalAsset.asset_type == "analytics",  # GA4 connections
-                DigitalAsset.provider == "Google"
-            )
-            
-            results = session.exec(statement).all()
-            
-            if not results:
-                logger.info(f"No GA4 connections found for user {user_id}")
-                return
-            
-            logger.info(f"Found {len(results)} GA4 connections to check")
-            
-            # Check and refresh each connection
-            for connection, asset in results:
-                try:
-                    # Check if token is expired or will expire soon (within 5 minutes)
-                    now = datetime.now(timezone.utc)
-                    expires_at = connection.expires_at
-                    
-                    # Add 5 minutes buffer to refresh tokens before they expire
-                    buffer_time = timedelta(minutes=5)
-                    
-                    if expires_at and expires_at.replace(tzinfo=timezone.utc) <= (now + buffer_time):
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now
-                        if time_until_expiry.total_seconds() <= 0:
-                            logger.info(f"🔄 Token expired for connection {connection.id}, refreshing...")
-                        else:
-                            logger.info(f"🔄 Token expires soon for connection {connection.id} (in {time_until_expiry}), refreshing...")
-                        
-                        # Use the GA service to refresh the token
-                        try:
-                            result = await ga_service.refresh_ga_token(connection.id)
-                            logger.info(f"✅ Successfully refreshed token for connection {connection.id}")
-                        except ValueError as e:
-                            error_msg = str(e)
-                            if "Please re-authorize" in error_msg:
-                                logger.error(f"❌ GA4 connection {connection.id} requires re-authorization: {error_msg}")
-                                # Don't fail the entire analysis, but log the issue
-                            else:
-                                logger.error(f"❌ Failed to refresh token for connection {connection.id}: {error_msg}")
-                        except Exception as e:
-                            logger.error(f"❌ Unexpected error refreshing token for connection {connection.id}: {e}")
-                    else:
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now if expires_at else None
-                        if time_until_expiry:
-                            logger.info(f"✅ Token for connection {connection.id} is valid (expires in {time_until_expiry})")
-                        else:
-                            logger.info(f"✅ Token for connection {connection.id} has no expiry set")
-                            
-                except Exception as e:
-                    logger.error(f"❌ Error checking/refreshing connection {connection.id}: {e}")
-                    continue
-                    
-    except Exception as e:
-        logger.error(f"❌ Error in refresh_user_ga4_tokens: {e}")
-        # Don't raise - we want the webhook to continue even if token refresh fails
 
 
-async def refresh_user_facebook_tokens(facebook_service, user_id: int) -> None:
-    """
-    Automatically refresh expired Facebook tokens for a user before executing agents.
-    
-    This prevents the "re-authorization required" error by proactively refreshing
-    tokens that are expired or close to expiring.
-    """
-    try:
-        logger.info(f"🔍 Checking Facebook token status for user {user_id}...")
-        
-        # Get all user's Facebook connections from the database
-        from app.core.database import DatabaseManager
-        db_manager = DatabaseManager()
-        
-        # Get user's connections (this should include expiry info)
-        with db_manager.get_session() as session:
-            from sqlmodel import select
-            from app.models.analytics import Connection
-            from app.models.analytics import DigitalAsset
-            
-            # Find all Facebook connections for this user
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                Connection.user_id == user_id,
-                Connection.revoked == False,
-                DigitalAsset.provider == "Facebook"
-            )
-            
-            results = session.exec(statement).all()
-            
-            if not results:
-                logger.info(f"No Facebook connections found for user {user_id}")
-                return
-            
-            logger.info(f"Found {len(results)} Facebook connections to check")
-            
-            # Check and refresh each connection
-            for connection, asset in results:
-                try:
-                    # Check if token is expired or will expire soon (within 5 minutes)
-                    now = datetime.now(timezone.utc)
-                    expires_at = connection.expires_at
-                    
-                    # Add 5 minutes buffer to refresh tokens before they expire
-                    buffer_time = timedelta(minutes=5)
-                    
-                    if expires_at and expires_at.replace(tzinfo=timezone.utc) <= (now + buffer_time):
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now
-                        if time_until_expiry.total_seconds() <= 0:
-                            logger.info(f"🔄 Facebook token expired for connection {connection.id}, refreshing...")
-                        else:
-                            logger.info(f"🔄 Facebook token expires soon for connection {connection.id} (in {time_until_expiry}), refreshing...")
-                        
-                        # Use the Facebook service to refresh the token
-                        try:
-                            result = await facebook_service.refresh_facebook_token(connection.id)
-                            logger.info(f"✅ Successfully refreshed Facebook token for connection {connection.id}")
-                        except ValueError as e:
-                            error_msg = str(e)
-                            if "expired" in error_msg.lower() or "re-authenticate" in error_msg.lower():
-                                logger.error(f"❌ Facebook connection {connection.id} requires re-authorization: {error_msg}")
-                                # Don't fail the entire analysis, but log the issue
-                            else:
-                                logger.error(f"❌ Failed to refresh Facebook token for connection {connection.id}: {error_msg}")
-                        except Exception as e:
-                            logger.error(f"❌ Unexpected error refreshing Facebook token for connection {connection.id}: {e}")
-                    else:
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now if expires_at else None
-                        if time_until_expiry:
-                            logger.info(f"✅ Facebook token for connection {connection.id} is valid (expires in {time_until_expiry})")
-                        else:
-                            logger.info(f"✅ Facebook token for connection {connection.id} has no expiry set")
-                            
-                except Exception as e:
-                    logger.error(f"❌ Error checking/refreshing Facebook connection {connection.id}: {e}")
-                    continue
-                    
-    except Exception as e:
-        logger.error(f"❌ Error in refresh_user_facebook_tokens: {e}")
-        # Don't raise - we want the webhook to continue even if token refresh fails
-
-
-def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id: int = None, customer_id: int = None, subclient_id: int = None) -> List:
-    """AUTO-DISCOVERY: Dynamically assign tools based on agent type and role naming conventions"""
-    from app.core.constants import get_tools_for_agent as get_standard_tools
-    
-    tools = []
-    
-    # Use the provided subclient_id directly - NO FALLBACK MAPPING!
-    # If subclient_id is not provided, tools will fail with clear error messages
-    
-    # Get tools using standardized constants
-    tool_names = get_standard_tools(agent_type)
-    
-    for tool_name in tool_names:
-        try:
-            if tool_name == "GA4AnalyticsTool":
-                from app.tools.ga4_analytics_tool import GA4AnalyticsTool
-                tools.append(GA4AnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added GA4AnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "GoogleAdsAnalyticsTool":
-                from app.tools.google_ads_tool import GoogleAdsAnalyticsTool
-                tools.append(GoogleAdsAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added GoogleAdsAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookAnalyticsTool":
-                from app.tools.facebook_analytics_tool import FacebookAnalyticsTool
-                tools.append(FacebookAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookAdsTool":
-                from app.tools.facebook_ads_tool import FacebookAdsTool
-                tools.append(FacebookAdsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookAdsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookMarketingTool":
-                from app.tools.facebook_marketing_tool import FacebookMarketingTool
-                tools.append(FacebookMarketingTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookMarketingTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "DateConversionTool":
-                from app.tools.date_conversion_tool import DateConversionTool
-                tools.append(DateConversionTool())
-                logger.info(f"✅ Added DateConversionTool for {agent_type}")
-                
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import {tool_name}: {e}")
-        except Exception as e:
-            logger.error(f"❌ Error creating {tool_name}: {e}")
-    
-    logger.info(f"🔧 Agent '{agent_type}' assigned {len(tools)} tools: {[tool.__class__.__name__ for tool in tools]}")
-    return tools
+# Import the centralized function from utils
+from app.utils.agent_utils import get_tools_for_agent
 
 
 def verify_jwt_token(authorization: str = Header(None)):
@@ -885,16 +621,22 @@ async def test_crewai_analysis(
         data_sources = ["ga4"]  # Default fallback
     
     # Validate individual data sources using standardized constants
-    from app.core.constants import VALID_DATA_SOURCES, get_standard_data_source
+    from app.core.constants import VALID_DATA_SOURCES, validate_data_sources, get_data_source_suggestions
+    standard_data_sources, invalid_sources = validate_data_sources(data_sources)
     
-    # Convert data sources to standard format
-    standard_data_sources = [get_standard_data_source(ds) for ds in data_sources]
-    invalid_sources = [ds for ds in standard_data_sources if ds not in VALID_DATA_SOURCES]
     if invalid_sources:
-        logger.error(f"❌ Invalid data sources: {invalid_sources}. Valid sources: {VALID_DATA_SOURCES}")
+        # Provide helpful error messages with suggestions
+        error_details = []
+        for invalid_source in invalid_sources:
+            suggestions = get_data_source_suggestions(invalid_source)
+            suggestion_text = f" Did you mean: {', '.join(suggestions[:3])}?" if suggestions else ""
+            error_details.append(f"'{invalid_source}'{suggestion_text}")
+        
+        error_message = f"Invalid data sources: {', '.join(error_details)}. Valid sources: {', '.join(VALID_DATA_SOURCES)}"
+        logger.error(f"❌ {error_message}")
         return CrewAITestResponse(
             success=False,
-            error=f"Invalid data sources: {invalid_sources}. Valid sources: {VALID_DATA_SOURCES}",
+            error=error_message,
             session_id=request.session_id
         )
     
@@ -956,8 +698,8 @@ async def test_crewai_analysis(
         request.parameters = filtered_params
     
     try:
-        # Extract timeframe information from user question
-        timeframe_info = _extract_timeframe_info(request.user_question)
+        # Master agent will handle date extraction using its DateConversionTool
+        # No need for hardcoded regex patterns - let the LLM handle it naturally
         
         # Create matching parameters
         matching_parameters = {
@@ -965,9 +707,6 @@ async def test_crewai_analysis(
             "intent_parameters": request.parameters,
             "session_parameters": request.parameters
         }
-        
-        if timeframe_info:
-            matching_parameters.update(timeframe_info)
         
         logger.info(f"Processing for user_id: {request.user_id}, customer_id: {request.customer_id}")
         logger.info(f"Session ID: {request.session_id}")
@@ -1084,3 +823,5 @@ async def test_health():
         "service": "crewai-test",
         "timestamp": datetime.utcnow().isoformat()
     }
+
+

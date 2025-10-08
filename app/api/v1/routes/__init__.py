@@ -11,7 +11,6 @@ from . import google_analytics
 from . import google_analytics_oauth
 from . import google_ads
 from . import google_ads_oauth
-from . import crewai_analysis
 from . import facebook
 from . import facebook_oauth
 from . import facebook_page_oauth
@@ -26,7 +25,7 @@ from . import crewai
 __all__ = [
     "agents", "health", "webhooks", "auth", "google_analytics", 
     "google_analytics_oauth", "google_ads", "google_ads_oauth", 
-    "crewai_analysis", "facebook", "facebook_oauth", 
+    "facebook", "facebook_oauth", 
     "facebook_page_oauth", "facebook_marketing_oauth", "admin", 
     "customers", "property_selections", "digital_assets", "users", "crewai"
 ]

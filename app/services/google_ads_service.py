@@ -8,6 +8,7 @@ import hashlib
 import base64
 from datetime import datetime, timedelta
 import os
+import asyncio
 from typing import Dict, Any, Optional, List
 from cryptography.fernet import Fernet
 from google.oauth2.credentials import Credentials
@@ -36,6 +37,9 @@ def get_google_client_secret() -> str:
 
 class GoogleAdsService:
     """Service for managing Google Ads OAuth and data fetching"""
+    
+    # Class-level refresh locks to prevent simultaneous token refresh attempts
+    _refresh_locks = {}
     
     # Google Ads scopes - for advertising data access
     GOOGLE_ADS_SCOPES = [
@@ -91,6 +95,7 @@ class GoogleAdsService:
         """Generate hash for token validation"""
         return hashlib.sha256(token.encode()).hexdigest()
     
+    
     async def save_google_ads_connection(
         self,
         user_id: int,
@@ -119,23 +124,7 @@ class GoogleAdsService:
         print(f"🔄 Creating Google Ads connection for account {account_id} ({account_name})")
         
         with get_session() as session:
-            # First, deactivate all other GOOGLE_ADS assets for this user/subclient
-            print(f"DEBUG: Deactivating other GOOGLE_ADS assets for user {user_id}, subclient {subclient_id}")
-            deactivate_statement = select(DigitalAsset).where(
-                and_(
-                    DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    DigitalAsset.provider == "Google",
-                    DigitalAsset.is_active == True
-                )
-            )
-            other_assets = session.exec(deactivate_statement).all()
-            for asset in other_assets:
-                asset.is_active = False
-                print(f"DEBUG: Deactivated asset {asset.id}: {asset.name}")
-            session.commit()
-            
-            # Create or get digital asset
+            # First, find or create the digital asset
             digital_asset_statement = select(DigitalAsset).where(
                 and_(
                     DigitalAsset.subclient_id == subclient_id,
@@ -165,6 +154,12 @@ class GoogleAdsService:
                 session.add(digital_asset)
                 session.commit()
                 session.refresh(digital_asset)
+            else:
+                # Activate existing asset
+                digital_asset.is_active = True
+                digital_asset.name = account_name  # Update name in case it changed
+                session.add(digital_asset)
+                session.commit()
             
             # Encrypt tokens
             access_token_enc = self._encrypt_token(access_token)
@@ -215,6 +210,23 @@ class GoogleAdsService:
             
             session.commit()
             session.refresh(connection)
+            
+            # Automatically save this account as the selected property for the user
+            from app.services.property_selection_service import PropertySelectionService
+            property_selection_service = PropertySelectionService()
+            
+            try:
+                await property_selection_service.save_property_selection(
+                    user_id=user_id,
+                    subclient_id=subclient_id,
+                    service="google_ads",
+                    property_id=account_id,
+                    property_name=account_name
+                )
+                print(f"DEBUG: Automatically saved Google Ads account selection for {account_name}")
+            except Exception as e:
+                print(f"DEBUG: Failed to save Google Ads account selection: {e}")
+                # Don't fail the connection creation if property selection save fails
             
             print(f"✅ Google Ads connection created/updated: {connection.id}")
             print(f"   Account: {account_name} ({account_id})")
@@ -314,6 +326,69 @@ class GoogleAdsService:
                     reauth_url = self.generate_reauth_url(connection_id, connection.account_email)
                     raise ValueError(f"Google Ads token refresh failed. Please re-authorize your Google Ads connection: {reauth_url}")
 
+    def validate_refresh_token(self, refresh_token: str) -> bool:
+        """
+        Validate refresh token without making API calls
+        
+        Args:
+            refresh_token: The refresh token to validate
+            
+        Returns:
+            True if token appears valid, False otherwise
+        """
+        try:
+            # Basic validation checks
+            if not refresh_token or len(refresh_token) < 10:
+                print("❌ Invalid refresh token format")
+                return False
+            
+            # Check if it looks like a valid Google OAuth2 refresh token
+            # Google refresh tokens typically start with '1//' and are base64-like
+            if not refresh_token.startswith('1//'):
+                print("❌ Refresh token doesn't match Google OAuth2 format")
+                return False
+            
+            # Try to create a Credentials object to validate the token structure
+            # This doesn't make an API call, just validates the format
+            try:
+                credentials = Credentials(
+                    token=None,
+                    refresh_token=refresh_token,
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=get_google_client_id(),
+                    client_secret=get_google_client_secret(),
+                    scopes=self.GOOGLE_ADS_SCOPES
+                )
+                # If we can create the credentials object, the token format is valid
+                print("✅ Refresh token format appears valid")
+                return True
+            except Exception as cred_error:
+                print(f"❌ Refresh token credentials validation failed: {cred_error}")
+                return False
+            
+        except Exception as e:
+            print(f"❌ Refresh token validation error: {e}")
+            return False
+    
+    def is_token_expired(self, expires_at: datetime) -> bool:
+        """
+        Check if token is expired with buffer
+        
+        Args:
+            expires_at: Token expiration datetime
+            
+        Returns:
+            True if expired or expiring soon, False otherwise
+        """
+        if not expires_at:
+            return True  # No expiry time means assume expired
+        
+        current_time = datetime.utcnow()
+        time_until_expiry = expires_at - current_time
+        
+        # Consider expired if it expires within 5 minutes
+        return time_until_expiry <= timedelta(minutes=5)
+    
     def generate_reauth_url(self, connection_id: int, user_email: str) -> str:
         """Generate a new OAuth URL for re-authorization when refresh tokens are invalid"""
         from urllib.parse import urlencode
@@ -364,22 +439,77 @@ class GoogleAdsService:
         print(f"🔄 Fetching Google Ads data for customer {customer_id}")
         print(f"   Metrics: {metrics}")
         print(f"   Dimensions: {dimensions}")
+        print(f"   Date range: {start_date} to {end_date}")
         
-        # Get connection and refresh token if needed
+        # Use default dates if not provided, otherwise assume dates are already in correct format
+        if not start_date or not end_date:
+            end_date_iso = datetime.now().strftime("%Y-%m-%d")
+            start_date_iso = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            print(f"   Using default dates: {start_date_iso} to {end_date_iso}")
+        else:
+            # Assume dates are already in correct format (conversion handled by calling tool)
+            start_date_iso, end_date_iso = start_date, end_date
+            print(f"   Using provided dates: {start_date_iso} to {end_date_iso}")
+        
+        # Get connection and ensure token is valid before proceeding
         with get_session() as session:
             connection = session.get(Connection, connection_id)
             if not connection:
                 raise ValueError(f"Connection {connection_id} not found")
             
-            # Check if token needs refresh
-            if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=5):
-                print(f"🔄 Token expires soon, refreshing...")
-                await self.refresh_google_ads_token(connection_id)
-                session.refresh(connection)
+            # Check if token needs refresh (efficient check without API calls)
+            token_needs_refresh = self.is_token_expired(connection.expires_at)
             
-            # Decrypt access token
-            access_token = self._decrypt_token(connection.access_token_enc)
+            if token_needs_refresh:
+                # Use refresh lock to prevent simultaneous refresh attempts
+                if connection_id not in self._refresh_locks:
+                    self._refresh_locks[connection_id] = asyncio.Lock()
+                
+                async with self._refresh_locks[connection_id]:
+                    # Double-check if token still needs refresh (another process might have refreshed it)
+                    session.refresh(connection)  # Reload from DB
+                    if not self.is_token_expired(connection.expires_at):
+                        print(f"🔄 Google Ads Token was already refreshed by another process")
+                    else:
+                        current_time = datetime.utcnow()
+                        if connection.expires_at:
+                            time_until_expiry = connection.expires_at - current_time
+                            print(f"🔄 Token expires soon ({time_until_expiry}), refreshing...")
+                        else:
+                            print(f"🔄 No token expiry time set, refreshing...")
+                        
+                        try:
+                            await self.refresh_google_ads_token(connection_id)
+                            session.refresh(connection)
+                            print(f"✅ Token refreshed successfully")
+                        except Exception as refresh_error:
+                            print(f"❌ Token refresh failed: {refresh_error}")
+                            raise ValueError(f"Failed to refresh Google Ads token: {refresh_error}")
+            
+            # Validate refresh token format (no API call needed)
             refresh_token = self._decrypt_token(connection.refresh_token_enc)
+            if not self.validate_refresh_token(refresh_token):
+                print(f"❌ Refresh token format is invalid, attempting refresh...")
+                try:
+                    await self.refresh_google_ads_token(connection_id)
+                    session.refresh(connection)
+                    # Re-validate after refresh
+                    new_refresh_token = self._decrypt_token(connection.refresh_token_enc)
+                    if not self.validate_refresh_token(new_refresh_token):
+                        raise ValueError("Refresh token is invalid and cannot be fixed")
+                    print(f"✅ Refresh token validation successful after refresh")
+                except Exception as validation_error:
+                    print(f"❌ Refresh token validation and refresh failed: {validation_error}")
+                    raise ValueError(f"Google Ads refresh token is invalid: {validation_error}")
+            
+            # Decrypt tokens
+            try:
+                access_token = self._decrypt_token(connection.access_token_enc)
+                refresh_token = self._decrypt_token(connection.refresh_token_enc)
+                print(f"✅ Tokens decrypted successfully")
+            except Exception as decrypt_error:
+                print(f"❌ Token decryption failed: {decrypt_error}")
+                raise ValueError(f"Failed to decrypt Google Ads tokens: {decrypt_error}")
         
         # Create Google Ads client
         try:
@@ -411,29 +541,81 @@ class GoogleAdsService:
                         metrics.conversions,
                         segments.date
                     FROM campaign
-                    WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+                    WHERE segments.date BETWEEN '{start_date_iso}' AND '{end_date_iso}'
                     AND campaign.status = 'ENABLED'
                     ORDER BY segments.date DESC
                     LIMIT {limit}
                 """
                 
                 # Execute the query
-                response = ga_service.search(customer_id=customer_id, query=query)
-                
-                real_data = []
-                for row in response:
-                    real_data.append({
-                        "date": row.segments.date,
-                        "campaign_id": row.campaign.id,
-                        "campaign_name": row.campaign.name,
-                        "impressions": row.metrics.impressions,
-                        "clicks": row.metrics.clicks,
-                        "cost": row.metrics.cost_micros / 1_000_000,  # Convert from micros to currency units
-                        "conversions": row.metrics.conversions
-                    })
-                
-                print(f"✅ Retrieved {len(real_data)} real Google Ads records using Google Ads API")
-                demo_data = real_data
+                try:
+                    response = ga_service.search(customer_id=customer_id, query=query)
+                    
+                    real_data = []
+                    for row in response:
+                        real_data.append({
+                            "date": row.segments.date,
+                            "campaign_id": row.campaign.id,
+                            "campaign_name": row.campaign.name,
+                            "impressions": row.metrics.impressions,
+                            "clicks": row.metrics.clicks,
+                            "cost": row.metrics.cost_micros / 1_000_000,  # Convert from micros to currency units
+                            "conversions": row.metrics.conversions
+                        })
+                    
+                    print(f"✅ Retrieved {len(real_data)} real Google Ads records using Google Ads API")
+                    demo_data = real_data
+                    
+                except GoogleAdsException as gads_error:
+                    error_msg = str(gads_error)
+                    print(f"❌ Google Ads API error: {error_msg}")
+                    
+                    # Check if it's an authentication error
+                    if any(keyword in error_msg.lower() for keyword in ['authentication', 'unauthorized', 'invalid_grant', '401', 'credentials']):
+                        print(f"🔄 Authentication error detected, attempting token refresh...")
+                        try:
+                            # Try to refresh the token
+                            await self.refresh_google_ads_token(connection_id)
+                            print(f"✅ Token refreshed successfully, retrying query...")
+                            
+                            # Retry the query with refreshed token
+                            # Recreate the client with new token
+                            with get_session() as retry_session:
+                                retry_connection = retry_session.get(Connection, connection_id)
+                                retry_refresh_token = self._decrypt_token(retry_connection.refresh_token_enc)
+                            
+                            retry_client = GoogleAdsClient.load_from_dict({
+                                "developer_token": developer_token,
+                                "client_id": get_google_client_id(),
+                                "client_secret": get_google_client_secret(),
+                                "refresh_token": retry_refresh_token,
+                                "use_proto_plus": True
+                            })
+                            
+                            retry_ga_service = retry_client.get_service("GoogleAdsService")
+                            response = retry_ga_service.search(customer_id=customer_id, query=query)
+                            
+                            real_data = []
+                            for row in response:
+                                real_data.append({
+                                    "date": row.segments.date,
+                                    "campaign_id": row.campaign.id,
+                                    "campaign_name": row.campaign.name,
+                                    "impressions": row.metrics.impressions,
+                                    "clicks": row.metrics.clicks,
+                                    "cost": row.metrics.cost_micros / 1_000_000,
+                                    "conversions": row.metrics.conversions
+                                })
+                            
+                            print(f"✅ Retrieved {len(real_data)} records after token refresh")
+                            demo_data = real_data
+                            
+                        except Exception as refresh_error:
+                            print(f"❌ Token refresh failed: {refresh_error}")
+                            raise ValueError(f"Google Ads authentication failed and token refresh unsuccessful: {error_msg}")
+                    else:
+                        # Not an auth error, re-raise
+                        raise
                 
             else:
                 # No Developer Token available - return error instead of fake data

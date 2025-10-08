@@ -25,3 +25,16 @@ update-connector-payload.json
 __pycache__/
 *.pyc
 .next/
+
+# Setup scripts with sensitive credentials
+setup-*.sh
+
+# Documentation files with sensitive information
+*DEPLOYMENT*.md
+*REFACTORING*.md
+*RESTRUCTURE*.md
+*ARCHITECTURE*.md
+*WORKFLOW*.md
+*GUIDE*.md
+*PLAN*.md
+facebook_token_analysis.md

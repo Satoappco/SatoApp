@@ -11,6 +11,7 @@ import os
 
 from app.services.google_ads_service import GoogleAdsService
 from app.utils.async_utils import run_async_in_thread
+from app.utils.date_utils import convert_relative_dates_to_iso
 
 
 class GoogleAdsAnalyticsInput(BaseModel):
@@ -40,6 +41,7 @@ class GoogleAdsAnalyticsTool(BaseTool):
         # Use object.__setattr__ to bypass Pydantic validation
         object.__setattr__(self, 'user_id', user_id)
         object.__setattr__(self, 'subclient_id', subclient_id)
+    
 
     def _run(self, metrics: List[str], dimensions: List[str] = None, start_date: str = None, end_date: str = None, limit: int = 100) -> str:
         """Execute Google Ads data fetch with REAL DATA based on agent's specifications"""
@@ -53,6 +55,11 @@ class GoogleAdsAnalyticsTool(BaseTool):
                     "status": "error",
                     "message": "No user/subclient context available for Google Ads data fetching. Tool needs to be initialized with user_id and subclient_id."
                 }, indent=2)
+            
+            # Convert relative dates to YYYY-MM-DD format if needed (Google Ads API requires ISO format)
+            if start_date and end_date:
+                start_date, end_date = convert_relative_dates_to_iso(start_date, end_date)
+                print(f"🔄 Converted dates for Google Ads API: {start_date} to {end_date}")
             
             # Initialize Google Ads service
             google_ads_service = GoogleAdsService()
@@ -91,12 +98,12 @@ class GoogleAdsAnalyticsTool(BaseTool):
             # Return the raw data for the agent to analyze
             result = {
                 "status": "success",
-                "data": ads_data.get("rows", []),
+                "data": ads_data.get("data", []),  # Fixed: service returns "data", not "rows"
                 "metadata": {
                     "metrics_requested": metrics,
                     "dimensions_requested": dimensions,
                     "date_range": f"{start_date} to {end_date}",
-                    "row_count": ads_data.get("row_count", 0),
+                    "row_count": ads_data.get("total_rows", 0),  # Fixed: service returns "total_rows", not "row_count"
                     "account": {
                         "customer_id": customer_id,
                         "descriptive_name": connection.get("account_name", "Unknown"),

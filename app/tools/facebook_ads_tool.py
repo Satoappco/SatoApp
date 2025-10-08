@@ -69,6 +69,9 @@ class FacebookAdsTool(BaseTool):
             if dimensions is None:
                 dimensions = []
 
+            # Master agent should provide ISO dates via DateConversionTool
+            # No date conversion needed here - master agent handles it
+
             # Initialize Facebook service
             facebook_service = FacebookService()
 
@@ -102,12 +105,22 @@ class FacebookAdsTool(BaseTool):
                 })
             
             if "error" in connection_info:
-                return json.dumps({
-                    "error": connection_info["error"],
-                    "status": "error",
-                    "requires_reauth": connection_info.get("requires_reauth", False),
-                    "suggestion": "Please re-authenticate your Facebook account in the Connections tab"
-                })
+                # If refresh failed, try to use the connection anyway - maybe the token is still valid
+                print(f"⚠️ Facebook token refresh failed: {connection_info['error']}")
+                print(f"🔄 Attempting to use existing token for API call...")
+                
+                # Try to get the connection ID and use it directly
+                if "connection_id" in connection_info:
+                    connection_id = connection_info["connection_id"]
+                else:
+                    return json.dumps({
+                        "error": connection_info["error"],
+                        "status": "error",
+                        "requires_reauth": connection_info.get("requires_reauth", False),
+                        "suggestion": "Please re-authenticate your Facebook account in the Connections tab"
+                    })
+            else:
+                connection_id = connection_info["connection_id"]
 
             # Fetch ad insights data
             try:
@@ -180,6 +193,7 @@ class FacebookAdsTool(BaseTool):
             
             result = session.exec(statement).first()
             return result[0] if result else None
+
 
     def _format_ads_data(self, data: Dict[str, Any], metrics: List[str], dimensions: List[str], level: str) -> Dict[str, Any]:
         """Format Facebook ads data for agent consumption"""

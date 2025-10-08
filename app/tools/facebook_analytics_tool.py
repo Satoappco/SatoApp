@@ -65,10 +65,13 @@ class FacebookAnalyticsTool(BaseTool):
                     "status": "error"
                 })
 
+            # Master agent should provide ISO dates via DateConversionTool
+            # No date conversion needed here - master agent handles it
+
             # Initialize Facebook service
             facebook_service = FacebookService()
 
-            # Get Facebook connection with token refresh
+            # Get Facebook connection with token refresh (this method handles refresh automatically)
             try:
                 # Try to get the current event loop
                 loop = asyncio.get_running_loop()
@@ -97,87 +100,49 @@ class FacebookAnalyticsTool(BaseTool):
                 })
             
             if "error" in connection_info:
-                return json.dumps({
-                    "error": connection_info["error"],
-                    "status": "error",
-                    "requires_reauth": connection_info.get("requires_reauth", False),
-                    "suggestion": "Please re-authenticate your Facebook account in the Connections tab"
-                })
+                # If refresh failed, try to use the connection anyway - maybe the token is still valid
+                print(f"⚠️ Facebook token refresh failed: {connection_info['error']}")
+                print(f"🔄 Attempting to use existing token for API call...")
+                
+                # Try to get the connection ID and use it directly
+                if "connection_id" in connection_info:
+                    connection_id = connection_info["connection_id"]
+                else:
+                    return json.dumps({
+                        "error": connection_info["error"],
+                        "status": "error",
+                        "requires_reauth": connection_info.get("requires_reauth", False),
+                        "suggestion": "Please re-authenticate your Facebook account in the Connections tab"
+                    })
+            else:
+                connection_id = connection_info["connection_id"]
 
-            # Fetch data based on type
+            # Fetch data based on type using the connection ID (fetch_facebook_data will handle refresh)
             try:
                 # Try to get the current event loop
                 loop = asyncio.get_running_loop()
                 # If we're in a running loop, we need to use a different approach
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    if data_type == "page_insights":
-                        future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
-                            connection_id=connection_info["connection_id"],
-                            data_type="page_insights",
-                            start_date=start_date,
-                            end_date=end_date,
-                            metrics=metrics,
-                            limit=limit
-                        ))
-                    elif data_type == "page_posts":
-                        future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
-                            connection_id=connection_info["connection_id"],
-                            data_type="page_posts",
-                            start_date=start_date,
-                            end_date=end_date,
-                            limit=limit
-                        ))
-                    elif data_type == "ad_insights":
-                        future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
-                            connection_id=connection_info["connection_id"],
-                            data_type="ad_insights",
-                            start_date=start_date,
-                            end_date=end_date,
-                            metrics=metrics,
-                            limit=limit
-                        ))
-                    else:
-                        return json.dumps({
-                            "error": f"Unsupported data type: {data_type}",
-                            "status": "error",
-                            "supported_types": ["page_insights", "page_posts", "ad_insights"]
-                        })
+                    future = executor.submit(asyncio.run, facebook_service.fetch_facebook_data(
+                        connection_id=connection_info["connection_id"],
+                        data_type=data_type,
+                        start_date=start_date,
+                        end_date=end_date,
+                        metrics=metrics,
+                        limit=limit
+                    ))
                     result = future.result()
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run()
-                if data_type == "page_insights":
-                    result = asyncio.run(facebook_service.fetch_facebook_data(
-                        connection_id=connection_info["connection_id"],
-                        data_type="page_insights",
-                        start_date=start_date,
-                        end_date=end_date,
-                        metrics=metrics,
-                        limit=limit
-                    ))
-                elif data_type == "page_posts":
-                    result = asyncio.run(facebook_service.fetch_facebook_data(
-                        connection_id=connection_info["connection_id"],
-                        data_type="page_posts",
-                        start_date=start_date,
-                        end_date=end_date,
-                        limit=limit
-                    ))
-                elif data_type == "ad_insights":
-                    result = asyncio.run(facebook_service.fetch_facebook_data(
-                        connection_id=connection_info["connection_id"],
-                        data_type="ad_insights",
-                        start_date=start_date,
-                        end_date=end_date,
-                        metrics=metrics,
-                        limit=limit
-                    ))
-                else:
-                    return json.dumps({
-                        "error": f"Unsupported data type: {data_type}",
-                        "status": "error",
-                        "supported_types": ["page_insights", "page_posts", "ad_insights"]
-                    })
+                result = asyncio.run(facebook_service.fetch_facebook_data(
+                    connection_id=connection_info["connection_id"],
+                    data_type=data_type,
+                    start_date=start_date,
+                    end_date=end_date,
+                    metrics=metrics,
+                    limit=limit
+                ))
 
             # Format the response for the agent
             formatted_result = self._format_facebook_data(result, data_type)
@@ -200,6 +165,7 @@ class FacebookAnalyticsTool(BaseTool):
                 "data_type": data_type,
                 "source": "Facebook API"
             })
+
 
     def _get_facebook_connection(self) -> Optional[Connection]:
         """Get active Facebook connection for user/subclient"""

@@ -9,6 +9,7 @@ import base64
 import requests
 from datetime import datetime, timedelta
 import os
+import asyncio
 from typing import Dict, Any, Optional, List
 from cryptography.fernet import Fernet
 from sqlmodel import select, and_
@@ -21,6 +22,9 @@ from app.core.security import get_secret_key
 
 class FacebookService:
     """Service for managing Facebook OAuth and data fetching"""
+    
+    # Class-level refresh locks to prevent simultaneous token refresh attempts
+    _refresh_locks = {}
     
     # Facebook OAuth scopes - comprehensive set for marketing and analytics
     # Note: Advanced permissions require Facebook App Review or Business Manager access
@@ -199,12 +203,32 @@ class FacebookService:
         }
         
         print(f"🔄 Extending Facebook token...")
+        print(f"🔍 Facebook App ID: {settings.facebook_app_id}")
+        print(f"🔍 Facebook App Secret: {'*' * len(settings.facebook_app_secret) if settings.facebook_app_secret else 'NOT SET'}")
+        print(f"🔍 Token length: {len(access_token)}")
+        
         response = requests.get(url, params=params)
+        
+        print(f"🔍 Facebook API Response Status: {response.status_code}")
+        print(f"🔍 Facebook API Response Headers: {dict(response.headers)}")
         
         if response.status_code != 200:
             error_data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
             error_msg = error_data.get('error', {}).get('message', f"HTTP {response.status_code}")
-            raise Exception(f"Facebook token extension failed: {error_msg}")
+            error_code = error_data.get('error', {}).get('code', 0)
+            error_subcode = error_data.get('error', {}).get('error_subcode', 0)
+            
+            print(f"❌ Facebook token extension failed: {error_msg}")
+            print(f"❌ Error code: {error_code}, subcode: {error_subcode}")
+            print(f"❌ Full error response: {error_data}")
+            
+            # Check if this is an invalid token error (not just expired)
+            if error_code == 190 and error_subcode == 460:
+                # Token is completely invalid - user needs to re-authenticate
+                raise ValueError("Facebook token is completely invalid. User needs to re-authenticate their Facebook account.")
+            else:
+                # Other errors (rate limits, etc.)
+                raise Exception(f"Facebook token extension failed: {error_msg}")
         
         result = response.json()
         print(f"✅ Facebook token extended successfully")
@@ -387,6 +411,42 @@ class FacebookService:
                 session.refresh(connection)
                 connections.append(connection)
             
+            # Automatically save the first page and first ad account as selected properties
+            from app.services.property_selection_service import PropertySelectionService
+            property_selection_service = PropertySelectionService()
+            
+            # Save first Facebook page as selected (if any)
+            facebook_pages = [asset for asset in created_assets if asset.asset_type == AssetType.SOCIAL_MEDIA]
+            if facebook_pages:
+                first_page = facebook_pages[0]
+                try:
+                    await property_selection_service.save_property_selection(
+                        user_id=user_id,
+                        subclient_id=subclient_id,
+                        service="facebook_page",
+                        property_id=first_page.external_id,
+                        property_name=first_page.name
+                    )
+                    print(f"DEBUG: Automatically saved Facebook page selection for {first_page.name}")
+                except Exception as e:
+                    print(f"DEBUG: Failed to save Facebook page selection: {e}")
+            
+            # Save first Facebook ad account as selected (if any)
+            facebook_ads = [asset for asset in created_assets if asset.asset_type == AssetType.ADVERTISING]
+            if facebook_ads:
+                first_ad_account = facebook_ads[0]
+                try:
+                    await property_selection_service.save_property_selection(
+                        user_id=user_id,
+                        subclient_id=subclient_id,
+                        service="facebook_ads",
+                        property_id=first_ad_account.external_id,
+                        property_name=first_ad_account.name
+                    )
+                    print(f"DEBUG: Automatically saved Facebook ads selection for {first_ad_account.name}")
+                except Exception as e:
+                    print(f"DEBUG: Failed to save Facebook ads selection: {e}")
+            
             return {
                 "connections": [
                     {
@@ -412,25 +472,117 @@ class FacebookService:
             'fields': 'id,name,username,category,access_token'
         }
         
-        response = requests.get(url, params=params)
-        response.raise_for_status()
+        print(f"🔍 DEBUG: Fetching Facebook pages from: {url}")
+        print(f"🔍 DEBUG: Request params: {params['fields']}")
         
-        data = response.json()
-        return data.get('data', [])
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            pages = data.get('data', [])
+            
+            print(f"📊 DEBUG: Raw Facebook Pages API response: {json.dumps(data, indent=2)}")
+            print(f"📊 DEBUG: Found {len(pages)} raw pages from API")
+            
+            # Check if Facebook returned an error
+            if 'error' in data:
+                print(f"❌ Facebook Pages API returned error: {data['error']}")
+                return []
+            
+            return pages
+            
+        except requests.exceptions.HTTPError as e:
+            print(f"❌ HTTP Error fetching pages: {e}")
+            print(f"❌ Response text: {e.response.text if hasattr(e, 'response') else 'N/A'}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching pages: {str(e)}")
+            return []
     
     async def _get_user_ad_accounts(self, access_token: str) -> List[Dict[str, Any]]:
         """Get user's Facebook ad accounts"""
+        
+        # First, check what permissions were granted
+        print(f"🔍 Checking granted permissions for access token...")
+        try:
+            permissions_url = f"{self.base_url}/me/permissions"
+            permissions_response = requests.get(permissions_url, params={'access_token': access_token})
+            if permissions_response.ok:
+                permissions_data = permissions_response.json()
+                granted_permissions = [p['permission'] for p in permissions_data.get('data', []) if p.get('status') == 'granted']
+                print(f"✅ Granted permissions: {', '.join(granted_permissions)}")
+                
+                # Check if ads permissions are granted
+                has_ads_read = 'ads_read' in granted_permissions
+                has_ads_management = 'ads_management' in granted_permissions
+                has_business_management = 'business_management' in granted_permissions
+                
+                if not has_ads_read and not has_ads_management:
+                    print(f"⚠️ WARNING: Neither ads_read nor ads_management permissions are granted!")
+                    print(f"   This means Facebook won't return any ad accounts.")
+                    print(f"   The user needs to re-authorize with these permissions.")
+                    return []
+            else:
+                print(f"⚠️ Could not fetch permissions: {permissions_response.text}")
+        except Exception as e:
+            print(f"⚠️ Error checking permissions: {str(e)}")
+        
         url = f"{self.base_url}/me/adaccounts"
         params = {
             'access_token': access_token,
-            'fields': 'id,name,currency,account_status'
+            'fields': 'id,name,currency,account_status,timezone_name'
         }
         
-        response = requests.get(url, params=params)
-        response.raise_for_status()
+        print(f"🔍 DEBUG: Fetching Facebook ad accounts from: {url}")
+        print(f"🔍 DEBUG: Request params: {params['fields']}")
         
-        data = response.json()
-        return data.get('data', [])
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            ad_accounts = data.get('data', [])
+            
+            print(f"📊 DEBUG: Raw Facebook API response: {json.dumps(data, indent=2)}")
+            print(f"📊 DEBUG: Found {len(ad_accounts)} raw ad accounts from API")
+            
+            # Check if Facebook returned an error
+            if 'error' in data:
+                print(f"❌ Facebook API returned error: {data['error']}")
+                return []
+            
+            # Format the ad accounts to include proper fields
+            formatted_accounts = []
+            for account in ad_accounts:
+                # Facebook ad account IDs come with 'act_' prefix
+                account_id = account.get('id', '')
+                account_name = account.get('name', 'Unknown Ad Account')
+                
+                print(f"🔍 DEBUG: Processing ad account - ID: {account_id}, Name: {account_name}")
+                
+                # Only include accounts that have the 'act_' prefix (real ad accounts)
+                if account_id.startswith('act_'):
+                    formatted_accounts.append({
+                        'id': account_id,
+                        'name': account_name,
+                        'currency': account.get('currency', 'USD'),
+                        'timezone': account.get('timezone_name', 'UTC'),
+                        'account_status': account.get('account_status', 1)
+                    })
+                else:
+                    print(f"⚠️ DEBUG: Skipping non-ad-account entry: {account_id}")
+            
+            print(f"✅ DEBUG: Returning {len(formatted_accounts)} formatted ad accounts")
+            return formatted_accounts
+            
+        except requests.exceptions.HTTPError as e:
+            print(f"❌ HTTP Error fetching ad accounts: {e}")
+            print(f"❌ Response text: {e.response.text if hasattr(e, 'response') else 'N/A'}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching ad accounts: {str(e)}")
+            return []
     
     async def fetch_facebook_data(
         self,
@@ -465,12 +617,53 @@ class FacebookService:
             
             connection, asset = result
             
-            # Check if token is expired
-            if connection.expires_at and connection.expires_at < datetime.utcnow():
-                raise ValueError("Facebook access token has expired. Please re-authenticate.")
-            
             # Decrypt access token
             access_token = self._decrypt_token(connection.access_token_enc)
+            
+            # Check if token is expired (with 5-minute buffer) and refresh if needed
+            buffer_time = timedelta(minutes=5)
+            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+                # Use refresh lock to prevent simultaneous refresh attempts
+                if connection_id not in self._refresh_locks:
+                    self._refresh_locks[connection_id] = asyncio.Lock()
+                
+                async with self._refresh_locks[connection_id]:
+                    # Double-check if token still needs refresh (another process might have refreshed it)
+                    session.refresh(connection)  # Reload from DB
+                    if not (connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time):
+                        print(f"🔄 Facebook token was already refreshed by another process")
+                        access_token = self._decrypt_token(connection.access_token_enc)
+                    else:
+                        print(f"🔄 Facebook token expired or expiring soon, refreshing...")
+                        
+                        # Facebook DOES support long-lived token refresh!
+                        # Try to extend the token using Facebook's token extension API
+                        try:
+                            extended_token = await self._extend_facebook_token(access_token)
+                            
+                            # Update the connection with the new token
+                            new_access_token = extended_token['access_token']
+                            new_expires_in = extended_token.get('expires_in', 3600)
+                            new_expires_at = datetime.utcnow() + timedelta(seconds=new_expires_in)
+                            
+                            # Encrypt and store the new token
+                            connection.access_token_enc = self._encrypt_token(new_access_token)
+                            connection.expires_at = new_expires_at
+                            connection.rotated_at = datetime.utcnow()
+                            session.add(connection)
+                            session.commit()
+                            
+                            print(f"✅ Successfully refreshed Facebook token for connection {connection_id}")
+                            access_token = new_access_token  # Use the new token
+                            
+                        except ValueError as e:
+                            # Token is completely invalid - user needs to re-authenticate
+                            print(f"❌ Facebook token is invalid: {e}")
+                            raise ValueError("Facebook token is completely invalid. Please re-authenticate your Facebook account.")
+                        except Exception as e:
+                            # Other errors (rate limits, network issues, etc.)
+                            print(f"❌ Failed to refresh Facebook token: {e}")
+                            raise ValueError("Facebook token refresh failed. Please re-authenticate your Facebook account.")
             
             # Update last used time
             connection.last_used_at = datetime.utcnow()
@@ -593,7 +786,23 @@ class FacebookService:
             'limit': limit
         }
         
+        print(f"🔍 Facebook Ads API Request:")
+        print(f"   URL: {url}")
+        print(f"   Ad Account ID: {ad_account_id}")
+        print(f"   Date Range: {start_date} to {end_date}")
+        print(f"   Metrics: {metrics}")
+        print(f"   Token length: {len(access_token)}")
+        
         response = requests.get(url, params=params)
+        
+        print(f"🔍 Facebook Ads API Response:")
+        print(f"   Status: {response.status_code}")
+        print(f"   Headers: {dict(response.headers)}")
+        
+        if response.status_code != 200:
+            print(f"❌ Facebook Ads API Error Response:")
+            print(f"   Content: {response.text}")
+        
         response.raise_for_status()
         
         data = response.json()
@@ -671,31 +880,47 @@ class FacebookService:
             # Check if token is expired (with 5-minute buffer)
             buffer_time = timedelta(minutes=5)
             if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
-                print(f"🔄 Facebook token expired or expiring soon, refreshing...")
+                # Use refresh lock to prevent simultaneous refresh attempts
+                if connection_id not in self._refresh_locks:
+                    self._refresh_locks[connection_id] = asyncio.Lock()
                 
-                # Facebook DOES support long-lived token refresh!
-                # Try to extend the token using Facebook's token extension API
-                try:
-                    extended_token = await self._extend_facebook_token(access_token)
-                    
-                    # Update the connection with the new token
-                    new_access_token = extended_token['access_token']
-                    new_expires_in = extended_token.get('expires_in', 3600)
-                    new_expires_at = datetime.utcnow() + timedelta(seconds=new_expires_in)
-                    
-                    # Encrypt and store the new token
-                    connection.access_token_enc = self._encrypt_token(new_access_token)
-                    connection.expires_at = new_expires_at
-                    connection.rotated_at = datetime.utcnow()
-                    session.add(connection)
-                    session.commit()
-                    
-                    print(f"✅ Successfully refreshed Facebook token for connection {connection_id}")
-                    access_token = new_access_token  # Use the new token
-                    
-                except Exception as e:
-                    print(f"❌ Failed to refresh Facebook token: {e}")
-                    raise ValueError("Facebook token has expired. Please re-authenticate your Facebook account.")
+                async with self._refresh_locks[connection_id]:
+                    # Double-check if token still needs refresh (another process might have refreshed it)
+                    session.refresh(connection)  # Reload from DB
+                    if not (connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time):
+                        print(f"🔄 Facebook token was already refreshed by another process")
+                        access_token = self._decrypt_token(connection.access_token_enc)
+                    else:
+                        print(f"🔄 Facebook token expired or expiring soon, refreshing...")
+                        
+                        # Facebook DOES support long-lived token refresh!
+                        # Try to extend the token using Facebook's token extension API
+                        try:
+                            extended_token = await self._extend_facebook_token(access_token)
+                            
+                            # Update the connection with the new token
+                            new_access_token = extended_token['access_token']
+                            new_expires_in = extended_token.get('expires_in', 3600)
+                            new_expires_at = datetime.utcnow() + timedelta(seconds=new_expires_in)
+                            
+                            # Encrypt and store the new token
+                            connection.access_token_enc = self._encrypt_token(new_access_token)
+                            connection.expires_at = new_expires_at
+                            connection.rotated_at = datetime.utcnow()
+                            session.add(connection)
+                            session.commit()
+                            
+                            print(f"✅ Successfully refreshed Facebook token for connection {connection_id}")
+                            access_token = new_access_token  # Use the new token
+                            
+                        except ValueError as e:
+                            # Token is completely invalid - user needs to re-authenticate
+                            print(f"❌ Facebook token is invalid: {e}")
+                            raise ValueError("Facebook token is completely invalid. Please re-authenticate your Facebook account.")
+                        except Exception as e:
+                            # Other errors (rate limits, network issues, etc.)
+                            print(f"❌ Failed to refresh Facebook token: {e}")
+                            raise ValueError("Facebook token refresh failed. Please re-authenticate your Facebook account.")
             
             # Update last used time
             connection.last_used_at = datetime.utcnow()
@@ -799,7 +1024,15 @@ class FacebookService:
                     "expires_at": refreshed_token["expires_at"]
                 }
             except ValueError as e:
-                if "expired" in str(e).lower():
+                if "invalid" in str(e).lower():
+                    return {
+                        "error": "Facebook token is completely invalid. Please re-authenticate your Facebook account.",
+                        "connection_id": connection.id,
+                        "digital_asset_id": digital_asset.id,
+                        "asset_name": digital_asset.name,
+                        "requires_reauth": True
+                    }
+                elif "expired" in str(e).lower():
                     return {
                         "error": "Facebook token has expired. Please re-authenticate your Facebook account.",
                         "connection_id": connection.id,

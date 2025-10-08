@@ -37,6 +37,8 @@ async def test_endpoint():
     return {"status": "ok", "message": "Facebook Marketing OAuth endpoints are working"}
 
 
+
+
 @router.get("/oauth-url")
 async def get_oauth_url(redirect_uri: str, state: str = None):
     """
@@ -139,13 +141,41 @@ async def handle_oauth_callback(
                 )
             
             # Get available Facebook ad accounts (only ad accounts, not pages)
+            print(f"🔍 DEBUG: Fetching Facebook ad accounts for Marketing connection...")
+            print(f"🔍 DEBUG: Using access token: {token_data['access_token'][:20]}...")
+            
             ad_accounts = await facebook_service._get_user_ad_accounts(token_data['access_token'])
             
-            print(f"DEBUG: Found {len(ad_accounts)} Facebook ad accounts for Marketing connection")
+            print(f"✅ DEBUG: Found {len(ad_accounts)} Facebook ad accounts for Marketing connection")
+            print(f"🔍 DEBUG: Ad accounts data: {ad_accounts}")
+            
+            # Also check what pages would be returned for comparison
+            pages = await facebook_service._get_user_pages(token_data['access_token'])
+            print(f"🔍 DEBUG: For comparison - Found {len(pages)} Facebook pages")
+            print(f"🔍 DEBUG: Pages data: {pages}")
+            
+            # Check if we got any ad accounts
+            if len(ad_accounts) == 0:
+                print(f"⚠️ WARNING: No ad accounts found. This could mean:")
+                print(f"   1. User doesn't have any Facebook Ads accounts")
+                print(f"   2. Facebook app doesn't have ads_read/ads_management permissions approved")
+                print(f"   3. User didn't grant ads permissions during OAuth")
+                
+                return OAuthCallbackResponse(
+                    success=False,
+                    message="No Facebook ad accounts found. Please ensure: (1) You have at least one Facebook Ads account, (2) The Facebook app has ads_read and ads_management permissions approved via App Review, (3) You granted ads permissions during the OAuth process.",
+                    ad_accounts=[],
+                    access_token=token_data['access_token'],
+                    expires_in=token_data['expires_in'],
+                    user_name=token_data['user_name'],
+                    user_email=user_email,
+                    state=request.state,
+                    user_id=user.id if user else None
+                )
         
         return OAuthCallbackResponse(
             success=True,
-            message=f"Found {len(ad_accounts)} Facebook ad accounts available for connection.",
+            message=f"Found {len(ad_accounts)} Facebook ad account(s) available for connection.",
             ad_accounts=ad_accounts,  # Return ad accounts for selection
             access_token=token_data['access_token'],
             expires_in=token_data['expires_in'],

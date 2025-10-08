@@ -57,6 +57,67 @@ def get_all_agents(_: bool = Depends(authenticate_user_or_api_key)):
         raise HTTPException(status_code=500, detail=f"Failed to get agents: {str(e)}")
 
 
+@router.get("/status")
+async def get_agents_status(current_user: User = Depends(get_current_user)):
+    """Get all agents with their status - Used by frontend AgentsManager"""
+    try:
+        agent_service = AgentService()
+        all_agents_data = agent_service.get_all_agents()
+        
+        # Convert to frontend format
+        agents = []
+        
+        # Add master agent
+        master_agent = all_agents_data.get("master_agent")
+        if master_agent:
+            agents.append({
+                "id": master_agent.get("id"),
+                "type": master_agent.get("agent_type"),
+                "name": master_agent.get("name"),
+                "role": master_agent.get("role"),
+                "goal": master_agent.get("goal"),
+                "backstory": master_agent.get("backstory"),
+                "task": master_agent.get("task"),
+                "is_active": master_agent.get("is_active", True),
+                "capabilities": master_agent.get("capabilities", []),
+                "allow_delegation": master_agent.get("allow_delegation", True),
+                "verbose": master_agent.get("verbose", True),
+                "max_iterations": master_agent.get("max_iterations", 3),
+                "created_at": master_agent.get("created_at"),
+                "updated_at": master_agent.get("updated_at")
+            })
+        
+        # Add specialist agents
+        specialist_agents = all_agents_data.get("specialist_agents", [])
+        for specialist in specialist_agents:
+            agents.append({
+                "id": specialist.get("id"),
+                "type": specialist.get("agent_type"),
+                "name": specialist.get("name"),
+                "role": specialist.get("role"),
+                "goal": specialist.get("goal"),
+                "backstory": specialist.get("backstory"),
+                "task": specialist.get("task"),
+                "is_active": specialist.get("is_active", True),
+                "capabilities": specialist.get("capabilities", []),
+                "allow_delegation": specialist.get("allow_delegation", False),
+                "verbose": specialist.get("verbose", True),
+                "max_iterations": specialist.get("max_iterations", 3),
+                "created_at": specialist.get("created_at"),
+                "updated_at": specialist.get("updated_at")
+            })
+        
+        return {
+            "success": True,
+            "agents": agents,
+            "total_count": len(agents)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get agents status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get agents status: {str(e)}")
+
+
 @router.post("/get", response_model=AgentConfigResponse)
 def get_agent_config(request: GetAgentRequest, _: bool = Depends(authenticate_user_or_api_key)):
     """POST /api/v1/agents/get - Get specific agent configuration by type"""

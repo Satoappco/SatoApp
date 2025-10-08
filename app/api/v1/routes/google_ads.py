@@ -4,12 +4,16 @@ Handles Google Ads data fetching and analysis
 """
 
 import os
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from sqlmodel import select
 
 from app.core.auth import get_current_user
 from app.models.users import User
+from app.models.analytics import DigitalAsset, Connection, AssetType
+from app.config.database import get_session
 
 router = APIRouter(prefix="/google-ads", tags=["Google Ads Data"])
 
@@ -17,6 +21,9 @@ router = APIRouter(prefix="/google-ads", tags=["Google Ads Data"])
 def get_google_ads_service():
     from app.services.google_ads_service import GoogleAdsService
     return GoogleAdsService()
+
+# Initialize service for use in endpoints
+google_ads_service = get_google_ads_service()
 
 
 class GoogleAdsDataRequest(BaseModel):
@@ -204,7 +211,32 @@ async def revoke_google_ads_connection(
             
             connection, asset = result
             
-            # Mark connection as revoked
+            # First, revoke the token with Google
+            try:
+                import requests
+                from app.services.google_analytics_service import GoogleAnalyticsService
+                
+                ga_service = GoogleAnalyticsService()
+                access_token = ga_service._decrypt_token(connection.access_token_enc)
+                
+                # Revoke the token with Google OAuth2
+                revoke_url = "https://oauth2.googleapis.com/revoke"
+                response = requests.post(
+                    revoke_url,
+                    params={'token': access_token},
+                    headers={'content-type': 'application/x-www-form-urlencoded'}
+                )
+                
+                if response.status_code == 200:
+                    print(f"Successfully revoked Google Ads token with Google for connection {connection_id}")
+                else:
+                    print(f"Warning: Google revocation returned status {response.status_code} for connection {connection_id}")
+                    
+            except Exception as e:
+                print(f"Error revoking token with Google for connection {connection_id}: {str(e)}")
+                # Continue anyway to mark as revoked in our DB
+            
+            # Mark connection as revoked in our database
             connection.revoked = True
             session.add(connection)
             session.commit()
@@ -414,3 +446,187 @@ async def get_available_metrics():
             "segments.click_type"
         ]
     }
+
+
+@router.get("/available-accounts/{subclient_id}")
+async def get_available_google_ads_accounts(
+    subclient_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get ALL available Google Ads accounts from Google using an existing connection's tokens.
+    This allows users to see all their Google Ads accounts even if not all are connected.
+    """
+    
+    try:
+        with get_session() as session:
+            # Find any active Google Ads connection for this user and subclient
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.user_id == current_user.id,
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                Connection.revoked == False
+            ).limit(1)
+            
+            result = session.exec(statement).first()
+            
+            if not result:
+                return {
+                    "success": False,
+                    "message": "No Google Ads connection found. Please connect to Google Ads first.",
+                    "accounts": []
+                }
+            
+            connection, digital_asset = result
+            
+            # Check if token needs refresh (with 5-minute buffer)
+            from datetime import timedelta
+            buffer_time = timedelta(minutes=5)
+            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+                print(f"🔄 Google Ads token expired or expiring soon, refreshing...")
+                # Refresh the token
+                refresh_result = await google_ads_service.refresh_google_ads_token(connection.id)
+                if not refresh_result.get("success"):
+                    print(f"❌ Failed to refresh Google Ads token")
+                    return {
+                        "success": False,
+                        "message": "Token expired. Please reconnect to Google Ads.",
+                        "accounts": []
+                    }
+                print(f"✅ Successfully refreshed Google Ads token")
+                # Reload connection with new token
+                session.refresh(connection)
+            
+            # Decrypt access token
+            access_token = google_ads_service._decrypt_token(connection.access_token_enc)
+            refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc) if connection.refresh_token_enc else None
+            
+            # Fetch all available Google Ads accounts
+            from google.oauth2.credentials import Credentials
+            from google.ads.googleads.client import GoogleAdsClient
+            from app.config.settings import get_settings
+            
+            settings = get_settings()
+            
+            credentials = Credentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.google_client_id,
+                client_secret=settings.google_client_secret
+            )
+            
+            accounts = []
+            
+            print(f"DEBUG: Fetching all available Google Ads accounts for user {current_user.id}")
+            
+            try:
+                # Get developer token from environment
+                developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN")
+                if not developer_token:
+                    return {
+                        "success": False,
+                        "message": "Google Ads Developer Token not configured",
+                        "accounts": []
+                    }
+                
+                # Create Google Ads client
+                google_ads_client = GoogleAdsClient(
+                    credentials=credentials,
+                    developer_token=developer_token,
+                    login_customer_id=None  # Will list all accessible accounts
+                )
+                
+                # Get the CustomerService
+                customer_service = google_ads_client.get_service("CustomerService")
+                
+                # List accessible customers
+                accessible_customers = customer_service.list_accessible_customers()
+                
+                print(f"DEBUG: Found {len(accessible_customers.resource_names)} accessible customers")
+                
+                # Get details for each customer
+                for resource_name in accessible_customers.resource_names:
+                    customer_id = resource_name.split('/')[-1]
+                    
+                    try:
+                        # Create a new client for this customer
+                        customer_client = GoogleAdsClient(
+                            credentials=credentials,
+                            developer_token=developer_token,
+                            login_customer_id=customer_id
+                        )
+                        
+                        ga_service = customer_client.get_service("GoogleAdsService")
+                        
+                        query = """
+                            SELECT
+                                customer.id,
+                                customer.descriptive_name,
+                                customer.currency_code,
+                                customer.time_zone,
+                                customer.manager
+                            FROM customer
+                            LIMIT 1
+                        """
+                        
+                        response = ga_service.search(customer_id=customer_id, query=query)
+                        
+                        for row in response:
+                            # Skip manager accounts
+                            if not row.customer.manager:
+                                accounts.append({
+                                    'customer_id': str(row.customer.id),
+                                    'customer_name': row.customer.descriptive_name,
+                                    'currency_code': row.customer.currency_code,
+                                    'time_zone': row.customer.time_zone
+                                })
+                                print(f"DEBUG: Found Google Ads account: {row.customer.descriptive_name} (ID: {row.customer.id})")
+                    
+                    except Exception as e:
+                        print(f"DEBUG: Failed to get details for customer {customer_id}: {str(e)}")
+                        continue
+            
+            except Exception as e:
+                print(f"DEBUG: Failed to fetch Google Ads accounts: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return {
+                    "success": False,
+                    "error": f"Failed to fetch Google Ads accounts: {str(e)}",
+                    "accounts": []
+                }
+            
+            print(f"DEBUG: Found {len(accounts)} total Google Ads accounts")
+            
+            # Mark which accounts are already connected
+            connected_account_ids = []
+            assets_statement = select(DigitalAsset).where(
+                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.asset_type == AssetType.GOOGLE_ADS
+            )
+            connected_assets = session.exec(assets_statement).all()
+            connected_account_ids = [asset.external_id for asset in connected_assets]
+            
+            # Add connected flag to each account
+            for account in accounts:
+                account['is_connected'] = account['customer_id'] in connected_account_ids
+            
+            return {
+                "success": True,
+                "accounts": accounts,
+                "message": f"Found {len(accounts)} Google Ads accounts",
+                "access_token": access_token,
+                "refresh_token": refresh_token
+            }
+    
+    except Exception as e:
+        print(f"DEBUG: Error fetching available Google Ads accounts: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch available Google Ads accounts: {str(e)}"
+        )

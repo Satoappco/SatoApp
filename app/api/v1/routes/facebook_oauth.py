@@ -11,21 +11,6 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/facebook", tags=["facebook-oauth"])
 
 
-@router.get("/debug")
-async def debug_oauth_config():
-    """Debug endpoint to check OAuth configuration"""
-    from app.config.settings import get_settings, clear_settings_cache
-    clear_settings_cache()  # Clear cache to get fresh settings
-    settings = get_settings()
-    return {
-        "facebook_app_id": settings.facebook_app_id,
-        "facebook_app_secret": "SET" if settings.facebook_app_secret else "NOT_SET",
-        "facebook_redirect_uri": settings.facebook_redirect_uri,
-        "facebook_api_version": settings.facebook_api_version,
-        "env_file_exists": os.path.exists(".env")
-    }
-
-
 @router.get("/test")
 async def test_endpoint():
     """Simple test endpoint"""

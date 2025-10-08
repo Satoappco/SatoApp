@@ -158,10 +158,35 @@ class GA4AnalyticsTool(BaseTool):
             return result
             
         except Exception as e:
-            return {
-                'error': f'GA4 API error: {str(e)}',
-                'suggestion': 'Check if the GA4 connection is valid and has proper permissions'
-            }
+            error_msg = str(e)
+            
+            # Provide more specific error information
+            if "authentication" in error_msg.lower() or "401" in error_msg:
+                return {
+                    'error': f'GA4 Authentication Error: {error_msg}',
+                    'suggestion': 'Please re-authorize your Google Analytics connection in the Connections tab',
+                    'requires_reauth': True
+                }
+            elif "permission" in error_msg.lower() or "403" in error_msg:
+                return {
+                    'error': f'GA4 Permission Error: {error_msg}',
+                    'suggestion': 'Check if your account has access to the GA4 property and has the required permissions'
+                }
+            elif "quota" in error_msg.lower():
+                return {
+                    'error': f'GA4 Quota Error: {error_msg}',
+                    'suggestion': 'You may have exceeded the GA4 API quota limit. Please try again later'
+                }
+            elif "property" in error_msg.lower():
+                return {
+                    'error': f'GA4 Property Error: {error_msg}',
+                    'suggestion': 'Check if the GA4 property ID is correct and accessible'
+                }
+            else:
+                return {
+                    'error': f'GA4 API Error: {error_msg}',
+                    'suggestion': 'Check if the GA4 connection is valid and has proper permissions'
+                }
     
     def _get_user_ga_connection(self, user_id: int, property_id: str) -> Optional[int]:
         """Get user's GA4 connection ID for the specified property and subclient"""
@@ -192,7 +217,8 @@ class GA4AnalyticsTool(BaseTool):
             'demographics': ['sessions', 'newUsers', 'screenPageViews', 'bounceRate'],
             'conversions': ['sessions', 'conversions', 'totalRevenue', 'purchaseRevenue'],
             'content': ['screenPageViews', 'sessions', 'bounceRate'],
-            'ecommerce': ['purchaseRevenue', 'totalRevenue', 'transactions', 'conversions']
+            'ecommerce': ['purchaseRevenue', 'totalRevenue', 'transactions', 'conversions'],
+            'campaigns': ['sessions', 'newUsers', 'conversions', 'totalRevenue']  # Valid GA4 metrics for campaigns
         }
         
         return metric_sets.get(analysis_type, metric_sets['basic'])
@@ -206,7 +232,8 @@ class GA4AnalyticsTool(BaseTool):
             'demographics': ['date', 'country', 'city', 'deviceCategory'],
             'conversions': ['date', 'eventName'],
             'content': ['date', 'pagePath', 'pageTitle'],
-            'ecommerce': ['date', 'transactionId']
+            'ecommerce': ['date', 'transactionId'],
+            'campaigns': ['date', 'campaignName', 'source', 'medium']  # Valid GA4 dimensions for campaigns
         }
         
         return dimension_sets.get(analysis_type, dimension_sets['basic'])

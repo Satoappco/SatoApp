@@ -12,7 +12,6 @@ from .routes import (
     google_analytics_oauth, 
     google_ads, 
     google_ads_oauth, 
-    crewai_analysis, 
     facebook, 
     facebook_oauth, 
     facebook_page_oauth, 
@@ -22,7 +21,8 @@ from .routes import (
     property_selections,
     digital_assets,
     users,
-    crewai
+    crewai,
+    database_management
 )
 
 
@@ -41,12 +41,12 @@ api_router.include_router(facebook.router, tags=["facebook"])
 api_router.include_router(facebook_oauth.router, tags=["facebook-oauth"])
 api_router.include_router(facebook_page_oauth.router, tags=["facebook-page-oauth"])
 api_router.include_router(facebook_marketing_oauth.router, tags=["facebook-marketing-oauth"])
-api_router.include_router(crewai_analysis.router, tags=["crewai"])
 api_router.include_router(crewai.router, tags=["crewai"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(customers.router, tags=["customers"])
 api_router.include_router(property_selections.router, tags=["property-selections"])
 api_router.include_router(digital_assets.router, tags=["digital-assets"])
 api_router.include_router(users.router, tags=["users"])
+api_router.include_router(database_management.router, tags=["database-management"])
 
 __all__ = ["api_router"]

@@ -12,61 +12,10 @@ from google_auth_oauthlib.flow import Flow
 router = APIRouter(prefix="/google-ads-oauth", tags=["google-ads-oauth"])
 
 
-@router.get("/debug")
-async def debug_oauth_config():
-    """Debug endpoint to check OAuth configuration"""
-    import os
-    return {
-        "google_client_id": os.getenv("GOOGLE_CLIENT_ID", "NOT_SET"),
-        "google_client_secret": "SET" if os.getenv("GOOGLE_CLIENT_SECRET") else "NOT_SET",
-        "env_file_exists": os.path.exists(".env")
-    }
-
-
 @router.get("/test")
 async def test_endpoint():
     """Simple test endpoint"""
     return {"status": "ok", "message": "Google Ads OAuth endpoints are working"}
-
-
-@router.get("/debug-connections")
-async def debug_connections():
-    """Debug endpoint to check existing Google Ads connections and their scopes"""
-    try:
-        from app.config.database import get_session
-        from app.models.analytics import Connection, DigitalAsset, AssetType
-        from sqlmodel import select, and_
-        
-        with get_session() as session:
-            # Get all Google Ads connections
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                and_(
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    Connection.auth_type == "oauth2"
-                )
-            )
-            results = session.exec(statement).all()
-            
-            connection_info = []
-            for conn, asset in results:
-                connection_info.append({
-                    "id": conn.id,
-                    "account_email": conn.account_email,
-                    "scopes": conn.scopes,
-                    "expires_at": conn.expires_at.isoformat() if conn.expires_at else None,
-                    "revoked": conn.revoked,
-                    "last_used_at": conn.last_used_at.isoformat() if conn.last_used_at else None,
-                    "asset_type": asset.asset_type.value
-                })
-            
-            return {
-                "total_connections": len(connection_info),
-                "connections": connection_info
-            }
-    except Exception as e:
-        return {"error": str(e)}
 
 
 @router.post("/clear-invalid-scopes")
@@ -303,6 +252,12 @@ async def handle_oauth_callback(
             # Check if we have a developer token, but don't require it
             developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
             
+            print(f"🔍 DEBUG: Checking for Google Ads Developer Token...")
+            print(f"🔍 DEBUG: Token present: {bool(developer_token)}")
+            print(f"🔍 DEBUG: Token length: {len(developer_token) if developer_token else 0}")
+            if developer_token:
+                print(f"🔍 DEBUG: Token (first 10 chars): {developer_token[:10]}...")
+            
             if developer_token:
                 # Use Google Ads API with developer token
                 from google.ads.googleads.client import GoogleAdsClient
@@ -326,18 +281,33 @@ async def handle_oauth_callback(
                     customer_id = customer_resource_name.split("/")[-1]
                     
                     try:
-                        # Get customer details
-                        customer_client = client.get_service("CustomerClientService")
-                        customer = customer_client.get_customer(customer_resource_name)
+                        # Get customer details using GoogleAdsService and a query
+                        # This is the correct way in Google Ads API v21
+                        ga_service = client.get_service("GoogleAdsService")
                         
-                        accounts.append({
-                            'account_id': customer_id,
-                            'account_name': customer.descriptive_name or f"Account {customer_id}",
-                            'manager_account': customer.manager,
-                            'currency_code': customer.currency_code,
-                            'time_zone': customer.time_zone
-                        })
-                        print(f"DEBUG: Found Google Ads account: {customer.descriptive_name} (ID: {customer_id})")
+                        query = """
+                            SELECT
+                                customer.id,
+                                customer.descriptive_name,
+                                customer.currency_code,
+                                customer.time_zone,
+                                customer.manager
+                            FROM customer
+                            LIMIT 1
+                        """
+                        
+                        response = ga_service.search(customer_id=customer_id, query=query)
+                        
+                        for row in response:
+                            # Skip manager accounts (MCC accounts)
+                            if not row.customer.manager:
+                                accounts.append({
+                                    'account_id': str(row.customer.id),
+                                    'account_name': row.customer.descriptive_name,
+                                    'currency_code': row.customer.currency_code,
+                                    'time_zone': row.customer.time_zone
+                                })
+                                print(f"DEBUG: Found Google Ads account: {row.customer.descriptive_name} (ID: {row.customer.id})")
                         
                     except GoogleAdsException as e:
                         print(f"DEBUG: Could not access account {customer_id}: {e}")
@@ -541,18 +511,33 @@ async def get_google_ads_accounts(request: dict):
                 customer_id = customer_resource_name.split("/")[-1]
                 
                 try:
-                    # Get customer details
-                    customer_client = client.get_service("CustomerClientService")
-                    customer = customer_client.get_customer(customer_resource_name)
+                    # Get customer details using GoogleAdsService and a query
+                    # This is the correct way in Google Ads API v21
+                    ga_service = client.get_service("GoogleAdsService")
                     
-                    accounts.append({
-                        'account_id': customer_id,
-                        'account_name': customer.descriptive_name or f"Account {customer_id}",
-                        'manager_account': customer.manager,
-                        'currency_code': customer.currency_code,
-                        'time_zone': customer.time_zone
-                    })
-                    print(f"DEBUG: Found Google Ads account: {customer.descriptive_name} (ID: {customer_id})")
+                    query = """
+                        SELECT
+                            customer.id,
+                            customer.descriptive_name,
+                            customer.currency_code,
+                            customer.time_zone,
+                            customer.manager
+                        FROM customer
+                        LIMIT 1
+                    """
+                    
+                    response = ga_service.search(customer_id=customer_id, query=query)
+                    
+                    for row in response:
+                        # Skip manager accounts (MCC accounts)
+                        if not row.customer.manager:
+                            accounts.append({
+                                'account_id': str(row.customer.id),
+                                'account_name': row.customer.descriptive_name,
+                                'currency_code': row.customer.currency_code,
+                                'time_zone': row.customer.time_zone
+                            })
+                            print(f"DEBUG: Found Google Ads account: {row.customer.descriptive_name} (ID: {row.customer.id})")
                     
                 except GoogleAdsException as e:
                     print(f"DEBUG: Could not access account {customer_id}: {e}")

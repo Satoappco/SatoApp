@@ -79,7 +79,6 @@ class ToolName(str, Enum):
     # Facebook Tools
     FACEBOOK_ANALYTICS_TOOL = "FacebookAnalyticsTool"
     FACEBOOK_ADS_TOOL = "FacebookAdsTool"
-    FACEBOOK_MARKETING_TOOL = "FacebookMarketingTool"
     
     # User Tools
     USER_PROFILE_TOOL = "UserProfileTool"
@@ -134,19 +133,18 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
     # Master agent - gets delegation tools AND DateConversionTool
     AgentType.MASTER: [ToolName.DELEGATE_WORK_TO_COWORKER, "DateConversionTool"],
     
-    # Date specialist - needs DateConversionTool (deactivated - Master now handles this)
-    "date_timeframe_specialist": ["DateConversionTool"],
+    # Date specialist - deactivated, Master now handles date conversion directly
     
     # Google specialists - ONLY Google tools
     AgentType.GOOGLE_DATABASE_ANALYSIS_EXPERT: [ToolName.GA4_ANALYTICS_TOOL, ToolName.GOOGLE_ADS_ANALYTICS_TOOL],
     AgentType.GOOGLE_ANALYTICS: [ToolName.GA4_ANALYTICS_TOOL],
     AgentType.GOOGLE_ADS_EXPERT: [ToolName.GOOGLE_ADS_ANALYTICS_TOOL],
     
-    # Facebook specialists - ONLY Facebook tools
-    AgentType.FACEBOOK_DATABASE_ANALYSIS_EXPERT: [ToolName.FACEBOOK_MARKETING_TOOL, ToolName.FACEBOOK_ANALYTICS_TOOL, ToolName.FACEBOOK_ADS_TOOL],
-    AgentType.FACEBOOK_ADS: [ToolName.FACEBOOK_MARKETING_TOOL, ToolName.FACEBOOK_ANALYTICS_TOOL, ToolName.FACEBOOK_ADS_TOOL],
-    AgentType.SOCIAL_MEDIA_EXPERT: [ToolName.FACEBOOK_MARKETING_TOOL, ToolName.FACEBOOK_ANALYTICS_TOOL],
-    AgentType.META_ADS_EXPERT: [ToolName.FACEBOOK_MARKETING_TOOL, ToolName.FACEBOOK_ADS_TOOL],
+    # Facebook specialists - SPECIALIZED tools only
+    AgentType.FACEBOOK_DATABASE_ANALYSIS_EXPERT: [ToolName.FACEBOOK_ANALYTICS_TOOL, ToolName.FACEBOOK_ADS_TOOL],
+    AgentType.FACEBOOK_ADS: [ToolName.FACEBOOK_ADS_TOOL],
+    AgentType.SOCIAL_MEDIA_EXPERT: [ToolName.FACEBOOK_ANALYTICS_TOOL],
+    AgentType.META_ADS_EXPERT: [ToolName.FACEBOOK_ADS_TOOL],
     
     # Future specialists (tools to be added)
     AgentType.ADVERTISING_ANALYSIS_EXPERT: [],
@@ -177,8 +175,7 @@ AGENT_DATA_SOURCE_MAPPING: Dict[str, List[str]] = {
     # Master agent - can work with any data source
     AgentType.MASTER: [DataSource.GA4, DataSource.GOOGLE_ADS, DataSource.FACEBOOK, DataSource.FB],
     
-    # Date specialist - works with ANY data source (needed for all timeframe requests)
-    "date_timeframe_specialist": [DataSource.GA4, DataSource.GOOGLE_ADS, DataSource.FACEBOOK, DataSource.FB],
+    # Date specialist - deactivated, Master now handles date conversion directly
     
     # Google specialists - ONLY Google data sources
     AgentType.GOOGLE_DATABASE_ANALYSIS_EXPERT: [DataSource.GA4, DataSource.GOOGLE_ADS],
@@ -243,11 +240,77 @@ AGENT_TYPE_ALIASES: Dict[str, str] = {
 }
 
 
-# Data source aliases for backward compatibility
+# Data source aliases for backward compatibility and case variations
 DATA_SOURCE_ALIASES: Dict[str, str] = {
     # Frontend aliases to standard sources
     "facebook_ads": DataSource.FACEBOOK,
     "google_analytics": DataSource.GA4,
+    
+    # Case variations for GA4
+    "GA4": DataSource.GA4,
+    "Google_Analytics": DataSource.GA4,
+    "GOOGLE_ANALYTICS": DataSource.GA4,
+    "google_analytics_4": DataSource.GA4,
+    "Google_Analytics_4": DataSource.GA4,
+    "GOOGLE_ANALYTICS_4": DataSource.GA4,
+    
+    # Case variations for Google Ads
+    "GOOGLE_ADS": DataSource.GOOGLE_ADS,
+    "Google_Ads": DataSource.GOOGLE_ADS,
+    "googleadwords": DataSource.GOOGLE_ADS,
+    "GoogleAdWords": DataSource.GOOGLE_ADS,
+    "GOOGLEADWORDS": DataSource.GOOGLE_ADS,
+    
+    # Case variations for Facebook
+    "FACEBOOK": DataSource.FACEBOOK,
+    "Facebook": DataSource.FACEBOOK,
+    "FB": DataSource.FB,
+    "fb": DataSource.FB,
+    "FACEBOOK_ADS": DataSource.FACEBOOK,
+    "Facebook_Ads": DataSource.FACEBOOK,
+    "facebook_ads": DataSource.FACEBOOK,
+    "meta": DataSource.FACEBOOK,
+    "META": DataSource.FACEBOOK,
+    "Meta": DataSource.FACEBOOK,
+    
+    # Case variations for other platforms
+    "GOOGLE_SEARCH_CONSOLE": DataSource.GOOGLE_SEARCH_CONSOLE,
+    "Google_Search_Console": DataSource.GOOGLE_SEARCH_CONSOLE,
+    "google_search_console": DataSource.GOOGLE_SEARCH_CONSOLE,
+    "search_console": DataSource.GOOGLE_SEARCH_CONSOLE,
+    "Search_Console": DataSource.GOOGLE_SEARCH_CONSOLE,
+    "SEARCH_CONSOLE": DataSource.GOOGLE_SEARCH_CONSOLE,
+    
+    "BING_ADS": DataSource.BING_ADS,
+    "Bing_Ads": DataSource.BING_ADS,
+    "bing_ads": DataSource.BING_ADS,
+    "bing": DataSource.BING_ADS,
+    "Bing": DataSource.BING_ADS,
+    "BING": DataSource.BING_ADS,
+    
+    "LINKEDIN_ADS": DataSource.LINKEDIN_ADS,
+    "LinkedIn_Ads": DataSource.LINKEDIN_ADS,
+    "linkedin_ads": DataSource.LINKEDIN_ADS,
+    "linkedin": DataSource.LINKEDIN_ADS,
+    "LinkedIn": DataSource.LINKEDIN_ADS,
+    "LINKEDIN": DataSource.LINKEDIN_ADS,
+    
+    "TWITTER_ADS": DataSource.TWITTER_ADS,
+    "Twitter_Ads": DataSource.TWITTER_ADS,
+    "twitter_ads": DataSource.TWITTER_ADS,
+    "twitter": DataSource.TWITTER_ADS,
+    "Twitter": DataSource.TWITTER_ADS,
+    "TWITTER": DataSource.TWITTER_ADS,
+    "x_ads": DataSource.TWITTER_ADS,
+    "X_Ads": DataSource.TWITTER_ADS,
+    "X_ADS": DataSource.TWITTER_ADS,
+    
+    "TIKTOK_ADS": DataSource.TIKTOK_ADS,
+    "TikTok_Ads": DataSource.TIKTOK_ADS,
+    "tiktok_ads": DataSource.TIKTOK_ADS,
+    "tiktok": DataSource.TIKTOK_ADS,
+    "TikTok": DataSource.TIKTOK_ADS,
+    "TIKTOK": DataSource.TIKTOK_ADS,
 }
 
 
@@ -257,14 +320,96 @@ def get_standard_agent_type(agent_type: str) -> str:
 
 
 def get_standard_data_source(data_source: str) -> str:
-    """Convert any data source to the standard format"""
-    return DATA_SOURCE_ALIASES.get(data_source, data_source)
+    """Convert any data source to the standard format with case-insensitive matching"""
+    if not data_source:
+        return data_source
+    
+    # First try exact match
+    if data_source in DATA_SOURCE_ALIASES:
+        return DATA_SOURCE_ALIASES[data_source]
+    
+    # Try case-insensitive match
+    data_source_lower = data_source.lower()
+    for alias, standard in DATA_SOURCE_ALIASES.items():
+        if alias.lower() == data_source_lower:
+            return standard
+    
+    # Try partial matching for common patterns
+    if "ga4" in data_source_lower or "google_analytics" in data_source_lower:
+        return DataSource.GA4
+    if "google_ads" in data_source_lower or "adwords" in data_source_lower:
+        return DataSource.GOOGLE_ADS
+    if "facebook" in data_source_lower or "meta" in data_source_lower:
+        return DataSource.FACEBOOK
+    if "search_console" in data_source_lower:
+        return DataSource.GOOGLE_SEARCH_CONSOLE
+    if "bing" in data_source_lower:
+        return DataSource.BING_ADS
+    if "linkedin" in data_source_lower:
+        return DataSource.LINKEDIN_ADS
+    if "twitter" in data_source_lower or "x_" in data_source_lower:
+        return DataSource.TWITTER_ADS
+    if "tiktok" in data_source_lower:
+        return DataSource.TIKTOK_ADS
+    
+    # Return original if no match found
+    return data_source
 
 
 def get_agent_display_name(agent_type: str) -> str:
     """Get human-readable display name for agent type"""
     standard_type = get_standard_agent_type(agent_type)
     return AgentDisplayName.get(standard_type, standard_type)
+
+
+def validate_data_sources(data_sources: List[str]) -> tuple[List[str], List[str]]:
+    """
+    Validate and standardize data sources.
+    Returns (standardized_sources, invalid_sources)
+    """
+    if not data_sources:
+        return [], []
+    
+    standardized = []
+    invalid = []
+    
+    for source in data_sources:
+        if not source:
+            continue
+            
+        standardized_source = get_standard_data_source(source)
+        
+        # Check if the standardized source is valid
+        if standardized_source in VALID_DATA_SOURCES:
+            standardized.append(standardized_source)
+        else:
+            invalid.append(source)
+    
+    return standardized, invalid
+
+
+def get_data_source_suggestions(invalid_source: str) -> List[str]:
+    """
+    Get suggestions for invalid data sources based on similarity.
+    """
+    suggestions = []
+    invalid_lower = invalid_source.lower()
+    
+    # Get all valid data sources
+    all_valid = [ds for ds in VALID_DATA_SOURCES]
+    
+    # Find similar sources
+    for valid_source in all_valid:
+        if (invalid_lower in valid_source.lower() or 
+            valid_source.lower() in invalid_lower or
+            any(word in valid_source.lower() for word in invalid_lower.split('_'))):
+            suggestions.append(valid_source)
+    
+    # If no similar sources found, return all valid sources
+    if not suggestions:
+        suggestions = all_valid[:5]  # Limit to 5 suggestions
+    
+    return suggestions
 
 
 def get_tools_for_agent(agent_type: str) -> List[str]:

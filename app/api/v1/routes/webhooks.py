@@ -236,52 +236,8 @@ async def send_dialogcx_text_message(session_id: str, message: str):
         }
 
 
-def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id: int = None, customer_id: int = None, subclient_id: int = None) -> List:
-    """AUTO-DISCOVERY: Dynamically assign tools based on agent type naming conventions"""
-    from app.core.constants import get_tools_for_agent as get_standard_tools
-    
-    tools = []
-    
-    # Use the provided subclient_id directly - NO FALLBACK MAPPING!
-    # If subclient_id is not provided, tools will fail with clear error messages
-    
-    # Get tools using standardized constants
-    tool_names = get_standard_tools(agent_type)
-    
-    for tool_name in tool_names:
-        try:
-            if tool_name == "GA4AnalyticsTool":
-                from app.tools.ga4_analytics_tool import GA4AnalyticsTool
-                tools.append(GA4AnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added GA4AnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "GoogleAdsAnalyticsTool":
-                from app.tools.google_ads_tool import GoogleAdsAnalyticsTool
-                tools.append(GoogleAdsAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added GoogleAdsAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookAnalyticsTool":
-                from app.tools.facebook_analytics_tool import FacebookAnalyticsTool
-                tools.append(FacebookAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookAdsTool":
-                from app.tools.facebook_ads_tool import FacebookAdsTool
-                tools.append(FacebookAdsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookAdsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookMarketingTool":
-                from app.tools.facebook_marketing_tool import FacebookMarketingTool
-                tools.append(FacebookMarketingTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookMarketingTool for {agent_type} (subclient_id={subclient_id})")
-                
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import {tool_name}: {e}")
-        except Exception as e:
-            logger.error(f"❌ Error creating {tool_name}: {e}")
-    
-    logger.info(f"🔧 Agent '{agent_type}' assigned {len(tools)} tools: {[tool.__class__.__name__ for tool in tools]}")
-    return tools
+# Import the centralized function from utils
+from app.utils.agent_utils import get_tools_for_agent
 
 
 async def run_crewai_analysis_async(
@@ -408,7 +364,7 @@ async def run_crewai_analysis_async(
         
         # Create Master Agent using ONLY database configuration with timing
         master_agent = timing_wrapper.create_timed_agent(
-            role=master_agent_data["role"],
+            role=master_agent_data["name"],  # Use name field for short, clean agent role
             goal=master_agent_data["goal"],
             backstory=master_agent_data["backstory"],
             verbose=master_agent_data.get("verbose", True),
@@ -420,6 +376,9 @@ async def run_crewai_analysis_async(
         
         # Create Master Task using database configuration
         master_task_description = master_agent_data.get("task", "")
+        
+        # Master agent will use its DateConversionTool naturally during task execution
+        
         if master_task_description:
             # Replace placeholders in task with actual values
             master_task_description = master_task_description.format(
@@ -443,6 +402,8 @@ async def run_crewai_analysis_async(
         tasks.append(master_task)
         
         # 5. CREATE SPECIALIST AGENTS DYNAMICALLY FROM DATABASE
+        specialist_tasks = []  # Track specialist tasks to set context
+        
         for specialist_data in specialist_agents_data:
             # Only include relevant specialists
             if not _should_include_specialist(specialist_data, data_sources, intent_name, user_question):
@@ -453,26 +414,26 @@ async def run_crewai_analysis_async(
             
             # Get tools for this agent dynamically
             # Note: customer_id in this context is actually subclient_id
-            agent_tools = _get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=customer_id)
+            agent_tools = get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=customer_id)
             
             # Create specialist agent using ONLY database configuration with timing
             specialist_agent = timing_wrapper.create_timed_agent(
-                role=specialist_data["role"],
+                role=specialist_data["name"],  # Use name field for short, clean agent role
                 goal=specialist_data["goal"], 
                 backstory=specialist_data["backstory"],
                 tools=agent_tools,
                 verbose=specialist_data.get("verbose", True),
-                allow_delegation=specialist_data.get("allow_delegation", False),
+                allow_delegation=False,  # Specialists should NOT delegate
                 llm=llm
             )
             
             agents.append(specialist_agent)
-            logger.info(f"✅ Created Specialist: {specialist_data['name']} (delegation: {specialist_data.get('allow_delegation', False)}, verbose: {specialist_data.get('verbose', True)}, tools: {len(agent_tools)})")
+            logger.info(f"✅ Created Specialist: {specialist_data['name']} (delegation: False, verbose: {specialist_data.get('verbose', True)}, tools: {len(agent_tools)})")
             
             # Create specialist task using database configuration
             specialist_task_description = specialist_data.get("task", "")
             if specialist_task_description:
-                # Let the LLM parse the date range from the user question naturally
+                # Use converted dates from master agent's DateConversionTool
                 # Replace placeholders in task with actual values
                 specialist_task_description = specialist_task_description.format(
                     objective=user_question,
@@ -481,7 +442,7 @@ async def run_crewai_analysis_async(
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
                     data_source=", ".join(data_sources),  # Support both naming conventions
-                    date_range="as specified in the user question",  # Let LLM interpret this
+                    date_range="as specified in the user question",
                     timezone="UTC",
                     currency="USD",
                     attribution_window="30d"
@@ -490,13 +451,18 @@ async def run_crewai_analysis_async(
                 # Fallback if no task in database
                 specialist_task_description = f"Analyze {agent_type} data for: {user_question}"
             
+            # CRITICAL FIX: Set context=[master_task] so specialist output feeds back to master
             specialist_task = Task(
                 description=specialist_task_description,
                 agent=specialist_agent,
-                expected_output=f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema"
+                expected_output=f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema",
+                context=[master_task]  # ✅ This ensures output goes to master, not directly to user
             )
-            tasks.append(specialist_task)
-            logger.info(f"✅ Created task for: {specialist_data['name']}")
+            specialist_tasks.append(specialist_task)
+            logger.info(f"✅ Created task for: {specialist_data['name']} with context=[master_task]")
+        
+        # Add specialist tasks after master task so they execute after and feed back
+        tasks.extend(specialist_tasks)
         
         # 6. EXECUTE DYNAMIC CREW WITH DATABASE-DRIVEN CONFIGURATION AND TIMING
         crew = timing_wrapper.create_timed_crew(
@@ -742,249 +708,90 @@ async def run_crewai_analysis_async(
         }
 
 
-def _extract_timeframe_info(user_question: str) -> Dict[str, any]:
-    """
-    Extract timeframe information from user question.
-    
-    Examples:
-    - "last 90 days" -> {"timeframe": "90 days", "date_range": "last_90_days"}
-    - "this month" -> {"timeframe": "this month", "date_range": "this_month"}
-    - "last week" -> {"timeframe": "7 days", "date_range": "last_7_days"}
-    """
-    import re
-    from datetime import datetime, timedelta
-    
-    timeframe_info = {}
-    question_lower = user_question.lower()
-    
-    # Extract number of days
-    days_match = re.search(r'(\d+)\s*days?', question_lower)
-    if days_match:
-        days = int(days_match.group(1))
-        timeframe_info.update({
-            "timeframe": f"{days} days",
-            "date_range": f"last_{days}_days",
-            "duration_days": days
-        })
-    
-    # Extract specific time periods
-    if "last week" in question_lower:
-        timeframe_info.update({
-            "timeframe": "7 days",
-            "date_range": "last_7_days",
-            "duration_days": 7
-        })
-    elif "last month" in question_lower:
-        timeframe_info.update({
-            "timeframe": "30 days", 
-            "date_range": "last_30_days",
-            "duration_days": 30
-        })
-    elif "this month" in question_lower:
-        timeframe_info.update({
-            "timeframe": "this month",
-            "date_range": "this_month",
-            "duration_days": 30
-        })
-    elif "this week" in question_lower:
-        timeframe_info.update({
-            "timeframe": "this week",
-            "date_range": "this_week", 
-            "duration_days": 7
-        })
-    
-    # Extract analysis type
-    if "day of the week" in question_lower:
-        timeframe_info["analysis_type"] = "day_of_week"
-    elif "hour" in question_lower:
-        timeframe_info["analysis_type"] = "hourly"
-    elif "month" in question_lower:
-        timeframe_info["analysis_type"] = "monthly"
-    
-    return timeframe_info
 
 
-async def refresh_user_ga4_tokens(ga_service, user_id: int) -> None:
-    """
-    Automatically refresh expired GA4 tokens for a user before executing agents.
+# Import token refresh functions from utils
+from app.utils.token_utils import refresh_user_ga4_tokens, refresh_user_facebook_tokens
+
+
+def _should_include_specialist(specialist_config: Dict, data_sources: List[str], intent_name: str, user_question: str) -> bool:
+    """Determine if a specialist should be included based on context"""
+    from app.core.constants import should_include_agent
     
-    This prevents the "re-authorization required" error by proactively refreshing
-    tokens that are expired or close to expiring.
-    """
+    agent_type = specialist_config["agent_type"]
+    
+    # Use standardized logic
+    return should_include_agent(agent_type, data_sources, user_question)
+
+
+@router.get("/customer-logs")
+async def get_customer_logs(
+    limit: int = 5,
+    offset: int = 0,
+    user_id: int = None,
+    session_id: str = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get customer logs with filtering options - Used by frontend LogsViewer"""
     try:
-        logger.info(f"🔍 Checking GA4 token status for user {user_id}...")
+        from app.config.database import get_session
         
-        # Get all user's GA4 connections from the database
-        from app.core.database import DatabaseManager
-        db_manager = DatabaseManager()
-        
-        # Get user's connections (this should include expiry info)
-        with db_manager.get_session() as session:
-            from sqlmodel import select
-            from app.models.analytics import Connection
-            from app.models.analytics import DigitalAsset
+        with get_session() as session:
+            query = session.query(CustomerLog)
             
-            # Find all GA4 connections for this user
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                Connection.user_id == user_id,
-                Connection.revoked == False,
-                DigitalAsset.asset_type == "analytics",  # GA4 connections
-                DigitalAsset.provider == "Google"
-            )
+            # Apply filters - use current user's ID if not specified
+            target_user_id = user_id if user_id else current_user.id
+            query = query.filter(CustomerLog.user_id == target_user_id)
+            if session_id:
+                query = query.filter(CustomerLog.session_id == session_id)
             
-            results = session.exec(statement).all()
+            # Order by date_time descending (newest first)
+            query = query.order_by(CustomerLog.date_time.desc())
             
-            if not results:
-                logger.info(f"No GA4 connections found for user {user_id}")
-                return
+            # Apply pagination
+            total_count = query.count()
+            logs = query.offset(offset).limit(limit).all()
             
-            logger.info(f"Found {len(results)} GA4 connections to check")
+            # Convert to response format
+            log_data = []
+            for log in logs:
+                log_data.append({
+                    "id": log.id,
+                    "session_id": log.session_id,
+                    "date_time": log.date_time.isoformat(),
+                    "user_intent": log.user_intent,
+                    "original_query": log.original_query,
+                    "crewai_input_prompt": log.crewai_input_prompt,
+                    "master_answer": log.master_answer,
+                    "crewai_log": json.loads(log.crewai_log) if log.crewai_log else {},
+                    "total_execution_time_ms": log.total_execution_time_ms,
+                    "timing_breakdown": json.loads(log.timing_breakdown) if log.timing_breakdown else {},
+                    "user_id": log.user_id,
+                    "analysis_id": log.analysis_id,
+                    "success": log.success,
+                    "error_message": log.error_message,
+                    "agents_used": [agent.get('name', agent) if isinstance(agent, dict) else str(agent) for agent in (json.loads(log.agents_used) if log.agents_used else [])],
+                    "tools_used": json.loads(log.tools_used) if log.tools_used else []
+                })
             
-            # Check and refresh each connection
-            for connection, asset in results:
-                try:
-                    # Check if token is expired or will expire soon (within 5 minutes)
-                    now = datetime.now(timezone.utc)
-                    expires_at = connection.expires_at
-                    
-                    # Add 5 minutes buffer to refresh tokens before they expire
-                    buffer_time = timedelta(minutes=5)
-                    
-                    if expires_at and expires_at.replace(tzinfo=timezone.utc) <= (now + buffer_time):
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now
-                        if time_until_expiry.total_seconds() <= 0:
-                            logger.info(f"🔄 Token expired for connection {connection.id}, refreshing...")
-                        else:
-                            logger.info(f"🔄 Token expires soon for connection {connection.id} (in {time_until_expiry}), refreshing...")
-                        
-                        # Use the GA service to refresh the token
-                        try:
-                            result = await ga_service.refresh_ga_token(connection.id)
-                            logger.info(f"✅ Successfully refreshed token for connection {connection.id}")
-                        except ValueError as e:
-                            error_msg = str(e)
-                            if "Please re-authorize" in error_msg:
-                                logger.error(f"❌ GA4 connection {connection.id} requires re-authorization: {error_msg}")
-                                # Don't fail the entire analysis, but log the issue
-                            else:
-                                logger.error(f"❌ Failed to refresh token for connection {connection.id}: {error_msg}")
-                        except Exception as e:
-                            logger.error(f"❌ Unexpected error refreshing token for connection {connection.id}: {e}")
-                    else:
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now if expires_at else None
-                        if time_until_expiry:
-                            logger.info(f"✅ Token for connection {connection.id} is valid (expires in {time_until_expiry})")
-                        else:
-                            logger.info(f"✅ Token for connection {connection.id} has no expiry set")
-                            
-                except Exception as e:
-                    logger.error(f"❌ Error checking/refreshing connection {connection.id}: {e}")
-                    continue
-                    
+            return {
+                "success": True,
+                "total_count": total_count,
+                "logs": log_data,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": (offset + limit) < total_count,
+                    "total_pages": (total_count + limit - 1) // limit,
+                    "current_page": (offset // limit) + 1,
+                    "total_count": total_count
+                }
+            }
+            
     except Exception as e:
-        logger.error(f"❌ Error in refresh_user_ga4_tokens: {e}")
-        # Don't raise - we want the webhook to continue even if token refresh fails
+        logger.error(f"Failed to get customer logs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get customer logs: {str(e)}")
 
-
-async def refresh_user_facebook_tokens(facebook_service, user_id: int) -> None:
-    """
-    Automatically refresh expired Facebook tokens for a user before executing agents.
-    
-    This prevents the "re-authorization required" error by proactively refreshing
-    tokens that are expired or close to expiring.
-    """
-    try:
-        logger.info(f"🔍 Checking Facebook token status for user {user_id}...")
-        
-        # Get all user's Facebook connections from the database
-        from app.core.database import DatabaseManager
-        db_manager = DatabaseManager()
-        
-        # Get user's connections (this should include expiry info)
-        with db_manager.get_session() as session:
-            from sqlmodel import select
-            from app.models.analytics import Connection
-            from app.models.analytics import DigitalAsset
-            
-            # Find all Facebook connections for this user
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
-            ).where(
-                Connection.user_id == user_id,
-                Connection.revoked == False,
-                DigitalAsset.provider == "Facebook"
-            )
-            
-            results = session.exec(statement).all()
-            
-            if not results:
-                logger.info(f"No Facebook connections found for user {user_id}")
-                return
-            
-            logger.info(f"Found {len(results)} Facebook connections to check")
-            
-            # Check and refresh each connection
-            for connection, asset in results:
-                try:
-                    # Check if token is expired or will expire soon (within 5 minutes)
-                    now = datetime.now(timezone.utc)
-                    expires_at = connection.expires_at
-                    
-                    # Add 5 minutes buffer to refresh tokens before they expire
-                    buffer_time = timedelta(minutes=5)
-                    
-                    if expires_at and expires_at.replace(tzinfo=timezone.utc) <= (now + buffer_time):
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now
-                        if time_until_expiry.total_seconds() <= 0:
-                            logger.info(f"🔄 Facebook token expired for connection {connection.id}, refreshing...")
-                        else:
-                            logger.info(f"🔄 Facebook token expires soon for connection {connection.id} (in {time_until_expiry}), refreshing...")
-                        
-                        # Use the Facebook service to refresh the token
-                        try:
-                            result = await facebook_service.refresh_facebook_token(connection.id)
-                            logger.info(f"✅ Successfully refreshed Facebook token for connection {connection.id}")
-                        except ValueError as e:
-                            error_msg = str(e)
-                            if "expired" in error_msg.lower() or "re-authenticate" in error_msg.lower():
-                                logger.error(f"❌ Facebook connection {connection.id} requires re-authorization: {error_msg}")
-                                # Don't fail the entire analysis, but log the issue
-                            else:
-                                logger.error(f"❌ Failed to refresh Facebook token for connection {connection.id}: {error_msg}")
-                        except Exception as e:
-                            logger.error(f"❌ Unexpected error refreshing Facebook token for connection {connection.id}: {e}")
-                    else:
-                        time_until_expiry = expires_at.replace(tzinfo=timezone.utc) - now if expires_at else None
-                        if time_until_expiry:
-                            logger.info(f"✅ Facebook token for connection {connection.id} is valid (expires in {time_until_expiry})")
-                        else:
-                            logger.info(f"✅ Facebook token for connection {connection.id} has no expiry set")
-                            
-                except Exception as e:
-                    logger.error(f"❌ Error checking/refreshing Facebook connection {connection.id}: {e}")
-                    continue
-                    
-    except Exception as e:
-        logger.error(f"❌ Error in refresh_user_facebook_tokens: {e}")
-        # Don't raise - we want the webhook to continue even if token refresh fails
-
-
-def verify_jwt_token(authorization: str = Header(None)):
-    """JWT token verification for webhook - DEPRECATED"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-    
-    token = authorization.split(" ")[1]
-    
-    try:
-        # Use the existing JWT verification from auth.py
-        from app.core.auth import verify_token
-        payload = verify_token(token, "access")
-        return True
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 @router.post("/dialogcx")
 @router.post("/dialogcx/")  # Handle both with and without trailing slash
@@ -1098,14 +905,22 @@ async def handle_dialogcx_webhook(
                 data_sources = ["ga4"]  # Default fallback
             
             # Validate individual data sources using standardized constants
-            from app.core.constants import VALID_DATA_SOURCES, get_standard_data_source
+            from app.core.constants import VALID_DATA_SOURCES, validate_data_sources, get_data_source_suggestions
             
-            # Convert data sources to standard format
-            standard_data_sources = [get_standard_data_source(ds) for ds in data_sources]
-            invalid_sources = [ds for ds in standard_data_sources if ds not in VALID_DATA_SOURCES]
+            # Validate and standardize data sources
+            standard_data_sources, invalid_sources = validate_data_sources(data_sources)
+            
             if invalid_sources:
-                logger.error(f"❌ Invalid data sources: {invalid_sources}. Valid sources: {VALID_DATA_SOURCES}")
-                raise HTTPException(status_code=400, detail=f"Invalid data sources: {invalid_sources}. Valid sources: {VALID_DATA_SOURCES}")
+                # Provide helpful error messages with suggestions
+                error_details = []
+                for invalid_source in invalid_sources:
+                    suggestions = get_data_source_suggestions(invalid_source)
+                    suggestion_text = f" Did you mean: {', '.join(suggestions[:3])}?" if suggestions else ""
+                    error_details.append(f"'{invalid_source}'{suggestion_text}")
+                
+                error_message = f"Invalid data sources: {', '.join(error_details)}. Valid sources: {', '.join(VALID_DATA_SOURCES)}"
+                logger.error(f"❌ {error_message}")
+                raise HTTPException(status_code=400, detail=error_message)
             
             # Use standardized data sources for processing
             data_sources = standard_data_sources
@@ -1196,10 +1011,8 @@ async def handle_dialogcx_webhook(
                 "session_parameters": parameters
             }
         
-        # Extract timeframe information from user question
-        timeframe_info = _extract_timeframe_info(user_question)
-        if timeframe_info:
-            matching_parameters.update(timeframe_info)
+        # Master agent will handle date extraction using its DateConversionTool
+        # No need for hardcoded regex patterns - let the LLM handle it naturally
         
         # FALLBACK: If no user_id found, try to get from default user (user_id: 5, customer_id: 5)
         if not user_id:
@@ -1391,422 +1204,3 @@ async def handle_dialogcx_webhook(
         return {
             "fulfillment_response": f"I apologize, but I encountered an error while processing your request: {error_details}"
         }
-
-
-@router.get("/user-context/{user_id}")
-def get_user_context(
-    user_id: str,
-    _: bool = Depends(get_current_user)
-):
-    """Get user context data for DialogCX initialization
-    
-    This endpoint provides user_id, connected assets/services to DialogCX
-    so it can include them in webhook parameters
-    """
-    try:
-        # For now, return a simple context since we're not using DialogCXService
-        context = {
-            "user_id": user_id,
-            "status": "active",
-            "message": "User context retrieved successfully"
-        }
-        
-        return {
-            "status": "success",
-            "user_context": context,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to get user context: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get user context: {str(e)}")
-
-
-def _get_tools_for_agent(agent_type: str, user_connections: List[Dict], user_id: int = None, customer_id: int = None, subclient_id: int = None) -> List:
-    """Dynamically get tools for an agent based on its type and user connections"""
-    from app.core.constants import get_tools_for_agent as get_standard_tools
-    
-    tools = []
-    
-    # Use the provided subclient_id directly - NO FALLBACK MAPPING!
-    # If subclient_id is not provided, tools will fail with clear error messages
-    
-    # Get tools using standardized constants
-    tool_names = get_standard_tools(agent_type)
-    
-    for tool_name in tool_names:
-        try:
-            if tool_name == "GA4AnalyticsTool":
-                from app.tools.ga4_analytics_tool import GA4AnalyticsTool
-                tools.append(GA4AnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added GA4AnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "GoogleAdsAnalyticsTool":
-                from app.tools.google_ads_tool import GoogleAdsAnalyticsTool
-                tools.append(GoogleAdsAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added GoogleAdsAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookAnalyticsTool":
-                from app.tools.facebook_analytics_tool import FacebookAnalyticsTool
-                tools.append(FacebookAnalyticsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookAnalyticsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookAdsTool":
-                from app.tools.facebook_ads_tool import FacebookAdsTool
-                tools.append(FacebookAdsTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookAdsTool for {agent_type} (subclient_id={subclient_id})")
-                
-            elif tool_name == "FacebookMarketingTool":
-                from app.tools.facebook_marketing_tool import FacebookMarketingTool
-                tools.append(FacebookMarketingTool(user_id=user_id, subclient_id=subclient_id))
-                logger.info(f"✅ Added FacebookMarketingTool for {agent_type} (subclient_id={subclient_id})")
-                
-        except ImportError as e:
-            logger.warning(f"⚠️ Could not import {tool_name}: {e}")
-        except Exception as e:
-            logger.error(f"❌ Error creating {tool_name}: {e}")
-    
-    logger.info(f"🔧 Agent '{agent_type}' assigned {len(tools)} tools: {[tool.__class__.__name__ for tool in tools]}")
-    return tools
-
-
-def _should_include_specialist(specialist_config: Dict, data_sources: List[str], intent_name: str, user_question: str) -> bool:
-    """Determine if a specialist should be included based on context"""
-    from app.core.constants import should_include_agent
-    
-    agent_type = specialist_config["agent_type"]
-    
-    # Use standardized logic
-    return should_include_agent(agent_type, data_sources, user_question)
-
-
-@router.get("/customer-logs")
-async def get_customer_logs(
-    limit: int = 50,
-    offset: int = 0,
-    user_id: int = None,
-    session_id: str = None,
-    current_user: User = Depends(get_current_user)
-):
-    """Get customer logs with filtering options"""
-    try:
-        from app.config.database import get_session
-        
-        with get_session() as session:
-            query = session.query(CustomerLog)
-            
-            # Apply filters - use current user's ID if not specified
-            target_user_id = user_id if user_id else current_user.id
-            query = query.filter(CustomerLog.user_id == target_user_id)
-            if session_id:
-                query = query.filter(CustomerLog.session_id == session_id)
-            
-            # Order by date_time descending (newest first)
-            query = query.order_by(CustomerLog.date_time.desc())
-            
-            # Apply pagination
-            total_count = query.count()
-            logs = query.offset(offset).limit(limit).all()
-            
-            # Convert to response format
-            log_data = []
-            for log in logs:
-                log_data.append({
-                    "id": log.id,
-                    "session_id": log.session_id,
-                    "date_time": log.date_time.isoformat(),
-                    "user_intent": log.user_intent,
-                    "original_query": log.original_query,
-                    "crewai_input_prompt": log.crewai_input_prompt,
-                    "master_answer": log.master_answer,
-                    "crewai_log": json.loads(log.crewai_log) if log.crewai_log else {},
-                    "total_execution_time_ms": log.total_execution_time_ms,
-                    "timing_breakdown": json.loads(log.timing_breakdown) if log.timing_breakdown else {},
-                    "user_id": log.user_id,
-                    "analysis_id": log.analysis_id,
-                    "success": log.success,
-                    "error_message": log.error_message,
-                    "agents_used": json.loads(log.agents_used) if log.agents_used else [],
-                    "tools_used": json.loads(log.tools_used) if log.tools_used else []
-                })
-            
-            return {
-                "success": True,
-                "total_count": total_count,
-                "logs": log_data,
-                "pagination": {
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": (offset + limit) < total_count
-                }
-            }
-            
-    except Exception as e:
-        logger.error(f"Failed to get customer logs: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get customer logs: {str(e)}")
-
-
-@router.get("/customer-logs/{session_id}")
-async def get_customer_log_by_session(
-    session_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    """Get customer log for a specific session"""
-    try:
-        from app.config.database import get_session
-        
-        with get_session() as session:
-            log = session.query(CustomerLog).filter(
-                CustomerLog.session_id == session_id,
-                CustomerLog.user_id == current_user.id
-            ).first()
-            
-            if not log:
-                raise HTTPException(status_code=404, detail="Customer log not found")
-            
-            return {
-                "success": True,
-                "log": {
-                    "id": log.id,
-                    "session_id": log.session_id,
-                    "date_time": log.date_time.isoformat(),
-                    "user_intent": log.user_intent,
-                    "original_query": log.original_query,
-                    "crewai_input_prompt": log.crewai_input_prompt,
-                    "master_answer": log.master_answer,
-                    "crewai_log": json.loads(log.crewai_log) if log.crewai_log else {},
-                    "total_execution_time_ms": log.total_execution_time_ms,
-                    "timing_breakdown": json.loads(log.timing_breakdown) if log.timing_breakdown else {},
-                    "user_id": log.user_id,
-                    "analysis_id": log.analysis_id,
-                    "success": log.success,
-                    "error_message": log.error_message,
-                    "agents_used": json.loads(log.agents_used) if log.agents_used else [],
-                    "tools_used": json.loads(log.tools_used) if log.tools_used else []
-                }
-            }
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get customer log for session {session_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get customer log: {str(e)}")
-
-
-@router.get("/execution-timings/{session_id}")
-async def get_execution_timings(
-    session_id: str,
-    _: bool = Depends(get_current_user)
-):
-    """Get detailed execution timings for a specific session"""
-    try:
-        from app.config.database import get_session
-        
-        with get_session() as session:
-            timings = session.query(ExecutionTiming).filter(
-                ExecutionTiming.session_id == session_id
-            ).order_by(ExecutionTiming.start_time).all()
-            
-            timing_data = []
-            for timing in timings:
-                timing_data.append({
-                    "id": timing.id,
-                    "session_id": timing.session_id,
-                    "analysis_id": timing.analysis_id,
-                    "component_type": timing.component_type,
-                    "component_name": timing.component_name,
-                    "start_time": timing.start_time.isoformat(),
-                    "end_time": timing.end_time.isoformat() if timing.end_time else None,
-                    "duration_ms": timing.duration_ms,
-                    "status": timing.status,
-                    "input_data": timing.input_data,
-                    "output_data": timing.output_data,
-                    "error_message": timing.error_message,
-                    "parent_session_id": timing.parent_session_id
-                })
-            
-            return {
-                "success": True,
-                "session_id": session_id,
-                "timings": timing_data,
-                "total_components": len(timing_data)
-            }
-            
-    except Exception as e:
-        logger.error(f"Failed to get execution timings for session {session_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get execution timings: {str(e)}")
-
-
-@router.get("/customer-logs/stats")
-async def get_customer_log_stats(
-    days: int = 7,
-    _: bool = Depends(get_current_user)
-):
-    """Get customer log statistics"""
-    try:
-        from app.config.database import get_session
-        from datetime import datetime, timedelta
-        
-        with get_session() as session:
-            # Calculate date range
-            end_date = datetime.utcnow()
-            start_date = end_date - timedelta(days=days)
-            
-            # Get basic stats
-            total_logs = session.query(CustomerLog).filter(
-                CustomerLog.date_time >= start_date,
-                CustomerLog.date_time <= end_date
-            ).count()
-            
-            successful_logs = session.query(CustomerLog).filter(
-                CustomerLog.date_time >= start_date,
-                CustomerLog.date_time <= end_date,
-                CustomerLog.success == True
-            ).count()
-            
-            failed_logs = total_logs - successful_logs
-            
-            # Get average execution time
-            avg_time_result = session.query(
-                session.func.avg(CustomerLog.total_execution_time_ms)
-            ).filter(
-                CustomerLog.date_time >= start_date,
-                CustomerLog.date_time <= end_date,
-                CustomerLog.success == True
-            ).scalar()
-            
-            avg_execution_time_ms = int(avg_time_result) if avg_time_result else 0
-            
-            # Get most common user intents
-            intent_counts = session.query(
-                CustomerLog.user_intent,
-                session.func.count(CustomerLog.id).label('count')
-            ).filter(
-                CustomerLog.date_time >= start_date,
-                CustomerLog.date_time <= end_date
-            ).group_by(CustomerLog.user_intent).order_by(
-                session.func.count(CustomerLog.id).desc()
-            ).limit(10).all()
-            
-            return {
-                "success": True,
-                "period_days": days,
-                "total_logs": total_logs,
-                "successful_logs": successful_logs,
-                "failed_logs": failed_logs,
-                "success_rate": (successful_logs / total_logs * 100) if total_logs > 0 else 0,
-                "avg_execution_time_ms": avg_execution_time_ms,
-                "top_intents": [{"intent": intent, "count": count} for intent, count in intent_counts]
-            }
-            
-    except Exception as e:
-        logger.error(f"Failed to get customer log stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get customer log stats: {str(e)}")
-
-
-@router.get("/execution-steps/{session_id}")
-async def get_execution_steps(
-    session_id: str,
-    _: bool = Depends(get_current_user)
-):
-    """Get detailed execution steps for a session"""
-    try:
-        with get_session() as session:
-            # Get all execution timings for this session
-            timings = session.query(ExecutionTiming).filter(
-                ExecutionTiming.session_id == session_id
-            ).order_by(ExecutionTiming.start_time).all()
-            
-            # Group by component type
-            steps = {
-                "crew_steps": [],
-                "agent_steps": [],
-                "tool_calls": [],
-                "api_calls": [],
-                "other_steps": []
-            }
-            
-            for timing in timings:
-                try:
-                    input_data = None
-                    output_data = None
-                    
-                    if timing.input_data:
-                        try:
-                            input_data = json.loads(timing.input_data)
-                        except json.JSONDecodeError:
-                            input_data = {"raw": timing.input_data}
-                    
-                    if timing.output_data:
-                        try:
-                            output_data = json.loads(timing.output_data)
-                        except json.JSONDecodeError:
-                            output_data = {"raw": timing.output_data}
-                    
-                    step_data = {
-                        "id": timing.id,
-                        "component_name": timing.component_name,
-                        "component_type": timing.component_type,
-                        "start_time": timing.start_time.isoformat(),
-                        "end_time": timing.end_time.isoformat() if timing.end_time else None,
-                        "duration_ms": timing.duration_ms,
-                        "status": timing.status,
-                        "input_data": input_data,
-                        "output_data": output_data,
-                        "error_message": timing.error_message
-                    }
-                except Exception as e:
-                    logger.error(f"Error processing timing record {timing.id}: {str(e)}")
-                    continue
-                
-                if timing.component_type == "crew_step":
-                    steps["crew_steps"].append(step_data)
-                elif timing.component_type == "agent_step":
-                    steps["agent_steps"].append(step_data)
-                elif timing.component_type == "tool":
-                    steps["tool_calls"].append(step_data)
-                elif timing.component_type == "api_call":
-                    steps["api_calls"].append(step_data)
-                else:
-                    steps["other_steps"].append(step_data)
-            
-            return {
-                "success": True,
-                "session_id": session_id,
-                "total_steps": len(timings),
-                "steps": steps
-            }
-            
-    except Exception as e:
-        logger.error(f"Error getting execution steps: {str(e)}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to get execution steps: {str(e)}")
-
-
-@router.get("/detailed-execution-logs/{session_id}")
-async def get_detailed_execution_logs(
-    session_id: str,
-    _: bool = Depends(get_current_user)
-):
-    """Get detailed execution logs for a session - mirrors terminal output"""
-    try:
-        from app.services.detailed_execution_logger import get_detailed_logger
-        
-        detailed_logger = get_detailed_logger(session_id)
-        logs = detailed_logger.get_execution_logs()
-        
-        return {
-            "success": True,
-            "session_id": session_id,
-            "total_logs": len(logs),
-            "logs": logs
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting detailed execution logs: {str(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to get detailed execution logs: {str(e)}")
-

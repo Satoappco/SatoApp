@@ -29,13 +29,31 @@ class TimedAgent(Agent):
         self._execution_steps = []
         self._tools_used = []
         self._detailed_logger = get_detailed_logger(session_id, analysis_id)
+        
+        # Extract clean agent name from role (take first 50 chars or first sentence)
+        self._clean_name = self._extract_clean_name(self.role)
+    
+    def _extract_clean_name(self, role: str) -> str:
+        """Extract clean, short name from agent role"""
+        if not role:
+            return "Unknown Agent"
+        
+        # Take first sentence or first 50 characters
+        if '.' in role:
+            clean_name = role.split('.')[0].strip()
+        elif ',' in role:
+            clean_name = role.split(',')[0].strip()
+        else:
+            clean_name = role[:50].strip()
+        
+        return clean_name if clean_name else role[:50]
     
     def execute_task(self, task: Task, context: Dict[str, Any] = None, tools: List = None) -> str:
         """Execute task with detailed timing and step-by-step logging"""
         with timing_service.time_component(
             session_id=self._session_id,
             component_type="agent",
-            component_name=self.role,
+            component_name=self._clean_name,  # Use clean name instead of full role
             input_data=task.description,
             analysis_id=self._analysis_id
         ) as timing_id:
@@ -46,73 +64,73 @@ class TimedAgent(Agent):
             if tools is None:
                 tools = getattr(self, 'tools', [])
             
-        # Debug logging to understand tool execution
-        logger.info(f"🔍 Agent {self.role} - Tools available: {[tool.name if hasattr(tool, 'name') else str(tool) for tool in tools]}")
-        
-        # Check if this agent has tools and try to intercept at a different level
-        if tools:
-            logger.info(f"🔧 Agent {self.role} will execute with {len(tools)} tools")
+            # Debug logging to understand tool execution
+            logger.info(f"🔍 Agent {self.role} - Tools available: {[tool.name if hasattr(tool, 'name') else str(tool) for tool in tools]}")
             
-            # Log agent start with detailed logger
-            self._detailed_logger.log_agent_start(
-                agent_name=self.role,
-                task_description=task.description
-            )
-            
-            # Also log to old system for backward compatibility
-            self._log_step("agent_start", {
-                "agent_role": self.role,
-                "task_description": task.description,
-                "task_expected_output": getattr(task, 'expected_output', 'Not specified'),
-                "tools_available": [tool.name if hasattr(tool, 'name') else str(tool) for tool in tools],
-                "context_keys": list(context.keys()) if context and isinstance(context, dict) else []
-            })
-            
-            try:
-                # Monkey patch tools to capture their execution
-                if tools:
-                    self._patch_tools(tools)
-                    logger.info(f"🔧 Patched {len(tools)} tools for agent {self.role}")
+            # Check if this agent has tools and try to intercept at a different level
+            if tools:
+                logger.info(f"🔧 Agent {self.role} will execute with {len(tools)} tools")
                 
-                # Call parent execute_task with all parameters
-                if tools:
-                    result = super().execute_task(task, context, tools)
-                else:
-                    result = super().execute_task(task, context)
-                
-                # Analyze result to infer tool execution
-                tool_analysis = self._analyze_result_for_tool_execution(str(result), tools)
-                
-                # Log agent final answer with detailed logger
-                self._detailed_logger.log_agent_final_answer(
+                # Log agent start with detailed logger
+                self._detailed_logger.log_agent_start(
                     agent_name=self.role,
-                    final_answer=str(result)
+                    task_description=task.description
                 )
                 
-                # Log agent completion with tool usage summary (old system)
-                self._log_step("agent_complete", {
+                # Also log to old system for backward compatibility
+                self._log_step("agent_start", {
                     "agent_role": self.role,
-                    "result_length": len(str(result)) if result else 0,
-                    "result_preview": str(result)[:200] + "..." if result and len(str(result)) > 200 else str(result),
-                    "tools_used": self._tools_used,
-                    "total_tools_called": len(self._tools_used),
-                    "successful_tools": len([t for t in self._tools_used if t.get('success', False)]),
-                    "failed_tools": len([t for t in self._tools_used if not t.get('success', True)]),
-                    "inferred_tool_execution": tool_analysis
+                    "task_description": task.description,
+                    "task_expected_output": getattr(task, 'expected_output', 'Not specified'),
+                    "tools_available": [tool.name if hasattr(tool, 'name') else str(tool) for tool in tools],
+                    "context_keys": list(context.keys()) if context and isinstance(context, dict) else []
                 })
                 
-                logger.info(f"✅ Agent {self.role} completed task using {len(self._tools_used)} tools")
-                return result
-            except Exception as e:
-                # Log agent error
-                self._log_step("agent_error", {
-                    "agent_role": self.role,
-                    "error_type": type(e).__name__,
-                    "error_message": str(e),
-                    "tools_used": self._tools_used
-                })
-                logger.error(f"❌ Agent {self.role} failed: {str(e)}")
-                raise
+                try:
+                    # Monkey patch tools to capture their execution
+                    if tools:
+                        self._patch_tools(tools)
+                        logger.info(f"🔧 Patched {len(tools)} tools for agent {self.role}")
+                    
+                    # Call parent execute_task with all parameters
+                    if tools:
+                        result = super().execute_task(task, context, tools)
+                    else:
+                        result = super().execute_task(task, context)
+                    
+                    # Analyze result to infer tool execution
+                    tool_analysis = self._analyze_result_for_tool_execution(str(result), tools)
+                    
+                    # Log agent final answer with detailed logger
+                    self._detailed_logger.log_agent_final_answer(
+                        agent_name=self.role,
+                        final_answer=str(result)
+                    )
+                    
+                    # Log agent completion with tool usage summary (old system)
+                    self._log_step("agent_complete", {
+                        "agent_role": self.role,
+                        "result_length": len(str(result)) if result else 0,
+                        "result_preview": str(result)[:200] + "..." if result and len(str(result)) > 200 else str(result),
+                        "tools_used": self._tools_used,
+                        "total_tools_called": len(self._tools_used),
+                        "successful_tools": len([t for t in self._tools_used if t.get('success', False)]),
+                        "failed_tools": len([t for t in self._tools_used if not t.get('success', True)]),
+                        "inferred_tool_execution": tool_analysis
+                    })
+                    
+                    logger.info(f"✅ Agent {self.role} completed task using {len(self._tools_used)} tools")
+                    return result
+                except Exception as e:
+                    # Log agent error
+                    self._log_step("agent_error", {
+                        "agent_role": self.role,
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "tools_used": self._tools_used
+                    })
+                    logger.error(f"❌ Agent {self.role} failed: {str(e)}")
+                    raise
     
     def _log_step(self, step_type: str, data: Dict[str, Any]):
         """Log a detailed execution step"""
@@ -186,8 +204,15 @@ class TimedAgent(Agent):
                     })
                     
                     try:
-                        # Execute the tool
-                        result = orig_func(*args, **kwargs)
+                        # Execute the tool WITH TIMING to ExecutionTiming table
+                        with timing_service.time_component(
+                            session_id=self._session_id,
+                            component_type="tool",
+                            component_name=t_name,
+                            input_data=tool_input,
+                            analysis_id=self._analysis_id
+                        ):
+                            result = orig_func(*args, **kwargs)
                         
                         tool_end = datetime.utcnow()
                         duration_ms = int((tool_end - tool_start).total_seconds() * 1000)
@@ -198,20 +223,6 @@ class TimedAgent(Agent):
                         # Log tool output with detailed logger
                         tool_output = str(result)[:1000] + "..." if result and len(str(result)) > 1000 else str(result)
                         self._detailed_logger.log_tool_output(t_name, tool_output, duration_ms)
-                        
-                        # Log tool completion with detailed data (old system)
-                        self._log_step("tool_complete", {
-                            "tool_name": t_name,
-                            "agent_role": self.role,
-                            "duration_ms": duration_ms,
-                            "success": True,
-                            "result_length": len(str(result)) if result else 0,
-                            "result_preview": str(result)[:200] + "..." if result and len(str(result)) > 200 else str(result),
-                            "result_data": result_data,
-                            "api_response": result_data.get("api_response"),
-                            "data_points": result_data.get("data_points", 0),
-                            "error_details": result_data.get("error_details")
-                        })
                         
                         # Track tool usage
                         self._tools_used.append({
@@ -607,7 +618,7 @@ class TimedCrew(Crew):
             'tasks': [{
                 'description': task.description,
                 'expected_output': getattr(task, 'expected_output', 'Not specified'),
-                'agent': getattr(task, 'agent', 'Not assigned')
+                'agent': getattr(task, 'agent', 'Not assigned').role if hasattr(getattr(task, 'agent', None), 'role') else str(getattr(task, 'agent', 'Not assigned'))
             } for task in self.tasks],
             'process': str(self.process),
             'inputs': inputs
@@ -649,7 +660,7 @@ class TimedCrew(Crew):
                 duration_seconds=duration
             )
             
-            # Log crew completion with detailed information (old system)
+            # Log crew completion summary to execution log
             crew_complete_data = {
                 'timestamp': end_time.isoformat(),
                 'event': 'crew_completed',
@@ -661,14 +672,8 @@ class TimedCrew(Crew):
             
             self._execution_log.append(crew_complete_data)
             
-            # Log to timing service
-            timing_service.log_detailed_step(
-                session_id=self._session_id,
-                component_type="crew_step",
-                component_name="crew_complete",
-                step_data=crew_complete_data,
-                analysis_id=self._analysis_id
-            )
+            # REMOVED: log_detailed_step() was creating duplicate ExecutionTiming records
+            # The timing_service.time_component() context manager already creates the timing record
             
             logger.info(f"✅ CrewAI execution completed in {duration:.2f} seconds")
             return result
@@ -684,7 +689,7 @@ class TimedCrew(Crew):
                 duration_seconds=duration
             )
             
-            # Log crew error with detailed information (old system)
+            # Log crew error summary to execution log
             crew_error_data = {
                 'timestamp': end_time.isoformat(),
                 'event': 'crew_error',
@@ -696,14 +701,8 @@ class TimedCrew(Crew):
             
             self._execution_log.append(crew_error_data)
             
-            # Log to timing service
-            timing_service.log_detailed_step(
-                session_id=self._session_id,
-                component_type="crew_step",
-                component_name="crew_error",
-                step_data=crew_error_data,
-                analysis_id=self._analysis_id
-            )
+            # REMOVED: log_detailed_step() was creating duplicate ExecutionTiming records
+            # The timing_service.time_component() context manager already handles error logging
             
             logger.error(f"❌ CrewAI execution failed after {duration:.2f} seconds: {str(e)}")
             raise
