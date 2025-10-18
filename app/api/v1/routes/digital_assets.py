@@ -1,5 +1,5 @@
 """
-Digital Assets API routes for fetching subcustomer's connected services
+Digital Assets API routes for fetching customer's connected services
 """
 
 from typing import List, Dict, Any
@@ -7,21 +7,21 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, and_
 
 from app.core.auth import get_current_user
-from app.models.users import User
+from app.models.users import Campaigner
 from app.models.analytics import DigitalAsset, Connection, AssetType
 from app.config.database import get_session
 
 router = APIRouter(prefix="/digital-assets", tags=["digital-assets"])
 
 
-@router.get("/subcustomer/{subcustomer_id}")
-async def get_subcustomer_digital_assets(
-    subcustomer_id: int,
-    current_user: User = Depends(get_current_user),
+@router.get("/customer/{customer_id}")
+async def get_customer_digital_assets(
+    customer_id: int,
+    current_campaigner: Campaigner = Depends(get_current_user),
     active_only: bool = Query(True, description="Return only active assets")
 ):
     """
-    Get all digital assets (data sources) for a specific subcustomer.
+    Get all digital assets (data sources) for a specific customer.
     Returns array of data source strings like ["ga4", "google_ads", "facebook"]
     
     This is used to send initial data_sources array to DialogCX.
@@ -30,7 +30,7 @@ async def get_subcustomer_digital_assets(
         with get_session() as session:
             # Build query conditions
             conditions = [
-                DigitalAsset.subclient_id == subcustomer_id,
+                DigitalAsset.customer_id == customer_id,
             ]
             
             if active_only:
@@ -56,7 +56,7 @@ async def get_subcustomer_digital_assets(
             
             return {
                 "success": True,
-                "subcustomer_id": subcustomer_id,
+                "customer_id": customer_id,
                 "data_sources": data_sources,  # Simple array of strings: ["ga4", "google_ads"]
                 "total": len(data_sources)
             }
@@ -89,20 +89,20 @@ def _map_asset_type_to_source(asset_type: AssetType) -> str:
     return mapping.get(asset_type, asset_type.value.lower())
 
 
-@router.get("/subcustomer/{subcustomer_id}/summary")
-async def get_subcustomer_assets_summary(
-    subcustomer_id: int,
-    current_user: User = Depends(get_current_user)
+@router.get("/customer/{customer_id}/summary")
+async def get_customer_assets_summary(
+    customer_id: int,
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get a summary of digital assets by type for a subcustomer.
+    Get a summary of digital assets by type for a customer.
     Useful for dashboard displays.
     """
     try:
         with get_session() as session:
-            # Query all digital assets for this subcustomer
+            # Query all digital assets for this customer
             statement = select(DigitalAsset).where(
-                DigitalAsset.subclient_id == subcustomer_id
+                DigitalAsset.customer_id == customer_id
             )
             
             assets = session.exec(statement).all()
@@ -132,7 +132,7 @@ async def get_subcustomer_assets_summary(
             
             return {
                 "success": True,
-                "subcustomer_id": subcustomer_id,
+                "customer_id": customer_id,
                 "summary": summary,
                 "total_assets": len(assets)
             }

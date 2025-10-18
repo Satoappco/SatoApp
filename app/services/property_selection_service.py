@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlmodel import select, and_
 from app.config.database import get_session
 from app.models.analytics import UserPropertySelection
-from app.models.users import User
+from app.models.users import Campaigner
 
 
 class PropertySelectionService:
@@ -19,20 +19,20 @@ class PropertySelectionService:
     
     async def save_property_selection(
         self,
-        user_id: int,
-        subclient_id: int,
+        campaigner_id: int,
+        customer_id: int,
         service: str,
         property_id: str,
         property_name: str
     ) -> Dict[str, Any]:
-        """Save or update a user's property selection for a specific service"""
+        """Save or update a campaigner's property selection for a specific service"""
         
         with get_session() as session:
             # Check if selection already exists
             statement = select(UserPropertySelection).where(
                 and_(
-                    UserPropertySelection.user_id == user_id,
-                    UserPropertySelection.subclient_id == subclient_id,
+                    UserPropertySelection.campaigner_id == campaigner_id,
+                    UserPropertySelection.customer_id == customer_id,
                     UserPropertySelection.service == service
                 )
             )
@@ -58,8 +58,8 @@ class PropertySelectionService:
             else:
                 # Create new selection
                 new_selection = UserPropertySelection(
-                    user_id=user_id,
-                    subclient_id=subclient_id,
+                    campaigner_id=campaigner_id,
+                    customer_id=customer_id,
                     service=service,
                     selected_property_id=property_id,
                     property_name=property_name,
@@ -79,16 +79,16 @@ class PropertySelectionService:
     
     async def get_property_selections(
         self,
-        user_id: int,
-        subclient_id: int
+        campaigner_id: int,
+        customer_id: int
     ) -> Dict[str, Any]:
-        """Get all property selections for a user and subclient"""
+        """Get all property selections for a campaigner and customer"""
         
         with get_session() as session:
             statement = select(UserPropertySelection).where(
                 and_(
-                    UserPropertySelection.user_id == user_id,
-                    UserPropertySelection.subclient_id == subclient_id,
+                    UserPropertySelection.campaigner_id == campaigner_id,
+                    UserPropertySelection.customer_id == customer_id,
                     UserPropertySelection.is_active == True
                 )
             )
@@ -110,8 +110,8 @@ class PropertySelectionService:
     
     async def clear_property_selection(
         self,
-        user_id: int,
-        subclient_id: int,
+        campaigner_id: int,
+        customer_id: int,
         service: str
     ) -> Dict[str, Any]:
         """Clear a specific property selection"""
@@ -119,8 +119,8 @@ class PropertySelectionService:
         with get_session() as session:
             statement = select(UserPropertySelection).where(
                 and_(
-                    UserPropertySelection.user_id == user_id,
-                    UserPropertySelection.subclient_id == subclient_id,
+                    UserPropertySelection.campaigner_id == campaigner_id,
+                    UserPropertySelection.customer_id == customer_id,
                     UserPropertySelection.service == service
                 )
             )

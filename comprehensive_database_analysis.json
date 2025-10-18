@@ -1,0 +1,1896 @@
+{
+  "agent_configs": {
+    "status": "ACTIVE",
+    "total_records": 3,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "agent_type": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "role": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "goal": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "backstory": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "capabilities": {
+        "status": "\u2705 ACTIVE",
+        "usage": "66.7%",
+        "used_count": 2,
+        "total_count": 3,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "66.7% usage"
+      },
+      "tools": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "prompt_template": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 3,
+        "null_count": 3,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      },
+      "output_schema": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "33.3%",
+        "used_count": 1,
+        "total_count": 3,
+        "null_count": 2,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "33.3% usage"
+      },
+      "max_iterations": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "is_active": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "created_by_user_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "task": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "allow_delegation": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "verbose": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 3,
+        "total_count": 3,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "alembic_version": {
+    "status": "ACTIVE",
+    "total_records": 1,
+    "columns": {
+      "version_num": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "analysis_executions": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  },
+  "analytics_cache": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  },
+  "campaign_kpis": {
+    "status": "ACTIVE",
+    "total_records": 5,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "subcustomer_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "date": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "campaign_num": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "campaign_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "advertising_channel": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "campaign_name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "campaign_objective": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "daily_budget": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "weekly_budget": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "target_audience": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "primary_kpi_1": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "secondary_kpi_1": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "secondary_kpi_2": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "secondary_kpi_3": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "landing_page": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "summary_text": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "is_active": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 5,
+        "total_count": 5,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "chat_messages": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  },
+  "connections": {
+    "status": "ACTIVE",
+    "total_records": 26,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "digital_asset_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 26,
+        "total_count": 26,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "user_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 26,
+        "total_count": 26,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "auth_type": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 26,
+        "total_count": 26,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "account_email": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "30.8%",
+        "used_count": 8,
+        "total_count": 26,
+        "null_count": 15,
+        "empty_count": 3,
+        "empty_json_count": 0,
+        "reason": "30.8% usage"
+      },
+      "scopes": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "42.3%",
+        "used_count": 11,
+        "total_count": 26,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 15,
+        "reason": "42.3% usage"
+      },
+      "access_token_enc": {
+        "status": "\u2705 ACTIVE",
+        "usage": "96.2%",
+        "used_count": 25,
+        "total_count": 26,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "96.2% usage"
+      },
+      "refresh_token_enc": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "11.5%",
+        "used_count": 3,
+        "total_count": 26,
+        "null_count": 23,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "11.5% usage"
+      },
+      "token_hash": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "42.3%",
+        "used_count": 11,
+        "total_count": 26,
+        "null_count": 15,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "42.3% usage"
+      },
+      "expires_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "96.2%",
+        "used_count": 25,
+        "total_count": 26,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "96.2% usage"
+      },
+      "revoked": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 26,
+        "total_count": 26,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "rotated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "50.0%",
+        "used_count": 13,
+        "total_count": 26,
+        "null_count": 13,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "50.0% usage"
+      },
+      "last_used_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "96.2%",
+        "used_count": 25,
+        "total_count": 26,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "96.2% usage"
+      }
+    }
+  },
+  "customer_logs": {
+    "status": "ACTIVE",
+    "total_records": 371,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "session_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "date_time": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "user_intent": {
+        "status": "\u2705 ACTIVE",
+        "usage": "99.2%",
+        "used_count": 368,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 3,
+        "empty_json_count": 0,
+        "reason": "99.2% usage"
+      },
+      "original_query": {
+        "status": "\u2705 ACTIVE",
+        "usage": "98.9%",
+        "used_count": 367,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 4,
+        "empty_json_count": 0,
+        "reason": "98.9% usage"
+      },
+      "crewai_input_prompt": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "master_answer": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "crewai_log": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "total_execution_time_ms": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "timing_breakdown": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "user_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "99.2%",
+        "used_count": 368,
+        "total_count": 371,
+        "null_count": 3,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "99.2% usage"
+      },
+      "analysis_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "success": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "error_message": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "17.3%",
+        "used_count": 64,
+        "total_count": 371,
+        "null_count": 307,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "17.3% usage"
+      },
+      "agents_used": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "tools_used": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 371,
+        "total_count": 371,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "customers": {
+    "status": "ACTIVE",
+    "total_records": 1,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "type": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "status": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "plan": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "billing_currency": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "vat_id": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 1,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      },
+      "address": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 1,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "primary_contact_user_id": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 1,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      },
+      "domains": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 1,
+        "reason": "100% empty/NULL"
+      },
+      "tags": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 1,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 1,
+        "reason": "100% empty/NULL"
+      },
+      "notes": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 1,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      }
+    }
+  },
+  "detailed_execution_logs": {
+    "status": "ACTIVE",
+    "total_records": 2978,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "session_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "99.7%",
+        "used_count": 2970,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 8,
+        "empty_json_count": 0,
+        "reason": "99.7% usage"
+      },
+      "analysis_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "timestamp": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "sequence_number": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "log_type": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "parent_log_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "75.7%",
+        "used_count": 2254,
+        "total_count": 2978,
+        "null_count": 724,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "75.7% usage"
+      },
+      "depth_level": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "crew_id": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "24.3%",
+        "used_count": 724,
+        "total_count": 2978,
+        "null_count": 2254,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "24.3% usage"
+      },
+      "task_id": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 2978,
+        "null_count": 2978,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      },
+      "agent_name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "75.7%",
+        "used_count": 2254,
+        "total_count": 2978,
+        "null_count": 724,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "75.7% usage"
+      },
+      "tool_name": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 2978,
+        "null_count": 2978,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      },
+      "status": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "duration_ms": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "12.1%",
+        "used_count": 361,
+        "total_count": 2978,
+        "null_count": 2617,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "12.1% usage"
+      },
+      "title": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "content": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "input_data": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "38.2%",
+        "used_count": 1137,
+        "total_count": 2978,
+        "null_count": 1841,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "38.2% usage"
+      },
+      "output_data": {
+        "status": "\u26a0\ufe0f  PARTIALLY USED",
+        "usage": "47.6%",
+        "used_count": 1419,
+        "total_count": 2978,
+        "null_count": 1559,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "47.6% usage"
+      },
+      "error_details": {
+        "status": "\u26a0\ufe0f  RARELY USED",
+        "usage": "2.0%",
+        "used_count": 59,
+        "total_count": 2978,
+        "null_count": 2919,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "2.0% usage"
+      },
+      "log_metadata": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "icon": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "color": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "is_collapsible": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2978,
+        "total_count": 2978,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "digital_assets": {
+    "status": "ACTIVE",
+    "total_records": 23,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "subclient_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 23,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "asset_type": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 23,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "provider": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 23,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 23,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "handle": {
+        "status": "\u26a0\ufe0f  RARELY USED",
+        "usage": "4.3%",
+        "used_count": 1,
+        "total_count": 23,
+        "null_count": 22,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "4.3% usage"
+      },
+      "url": {
+        "status": "\u26a0\ufe0f  RARELY USED",
+        "usage": "8.7%",
+        "used_count": 2,
+        "total_count": 23,
+        "null_count": 21,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "8.7% usage"
+      },
+      "external_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 23,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "meta": {
+        "status": "\u2705 ACTIVE",
+        "usage": "95.7%",
+        "used_count": 22,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 1,
+        "reason": "95.7% usage"
+      },
+      "is_active": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 23,
+        "total_count": 23,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "execution_timings": {
+    "status": "ACTIVE",
+    "total_records": 4438,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "session_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "99.7%",
+        "used_count": 4426,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 12,
+        "empty_json_count": 0,
+        "reason": "99.7% usage"
+      },
+      "analysis_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "component_type": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "component_name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "start_time": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "end_time": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "duration_ms": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "status": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "input_data": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 4438,
+        "total_count": 4438,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "output_data": {
+        "status": "\u2705 ACTIVE",
+        "usage": "62.5%",
+        "used_count": 2775,
+        "total_count": 4438,
+        "null_count": 1663,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "62.5% usage"
+      },
+      "error_message": {
+        "status": "\u26a0\ufe0f  RARELY USED",
+        "usage": "1.5%",
+        "used_count": 65,
+        "total_count": 4438,
+        "null_count": 4373,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "1.5% usage"
+      },
+      "parent_session_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "62.4%",
+        "used_count": 2771,
+        "total_count": 4438,
+        "null_count": 1663,
+        "empty_count": 4,
+        "empty_json_count": 0,
+        "reason": "62.4% usage"
+      }
+    }
+  },
+  "kpi_catalog": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  },
+  "narrative_reports": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  },
+  "performance_metrics": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  },
+  "routing_rules": {
+    "status": "ACTIVE",
+    "total_records": 24,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "intent_pattern": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 24,
+        "total_count": 24,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "required_specialists": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 24,
+        "total_count": 24,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "conditions": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 24,
+        "total_count": 24,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "priority": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 24,
+        "total_count": 24,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "is_active": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 24,
+        "total_count": 24,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "sub_customers": {
+    "status": "ACTIVE",
+    "total_records": 2,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "customer_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2,
+        "total_count": 2,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2,
+        "total_count": 2,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "subtype": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2,
+        "total_count": 2,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "status": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 2,
+        "total_count": 2,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "external_ids": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 2,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 1,
+        "reason": "100% empty/NULL"
+      },
+      "timezone": {
+        "status": "\u2705 ACTIVE",
+        "usage": "50.0%",
+        "used_count": 1,
+        "total_count": 2,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "50.0% usage"
+      },
+      "markets": {
+        "status": "\u2705 ACTIVE",
+        "usage": "50.0%",
+        "used_count": 1,
+        "total_count": 2,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "50.0% usage"
+      },
+      "budget_monthly": {
+        "status": "\u2705 ACTIVE",
+        "usage": "50.0%",
+        "used_count": 1,
+        "total_count": 2,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "50.0% usage"
+      },
+      "tags": {
+        "status": "\u2705 ACTIVE",
+        "usage": "50.0%",
+        "used_count": 1,
+        "total_count": 2,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "50.0% usage"
+      },
+      "notes": {
+        "status": "\u2705 ACTIVE",
+        "usage": "50.0%",
+        "used_count": 1,
+        "total_count": 2,
+        "null_count": 1,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "50.0% usage"
+      }
+    }
+  },
+  "user_property_selections": {
+    "status": "ACTIVE",
+    "total_records": 7,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "user_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "subclient_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "service": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "selected_property_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "property_name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "is_active": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      }
+    }
+  },
+  "user_sessions": {
+    "status": "ACTIVE",
+    "total_records": 42,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "user_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "session_token": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "access_token": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "refresh_token": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "expires_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "ip_address": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "user_agent": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "is_active": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 42,
+        "total_count": 42,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "revoked_at": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 42,
+        "null_count": 42,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      }
+    }
+  },
+  "users": {
+    "status": "ACTIVE",
+    "total_records": 7,
+    "columns": {
+      "id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "created_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "updated_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100%",
+        "reason": "Base field"
+      },
+      "email": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "full_name": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "phone": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 7,
+        "null_count": 7,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100% empty/NULL"
+      },
+      "role": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "status": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "primary_customer_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "additional_customer_ids": {
+        "status": "\u274c UNUSED",
+        "usage": "0.0%",
+        "used_count": 0,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 7,
+        "reason": "100% empty/NULL"
+      },
+      "locale": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "timezone": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "google_id": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "avatar_url": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "email_verified": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "provider": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      },
+      "last_login_at": {
+        "status": "\u2705 ACTIVE",
+        "usage": "100.0%",
+        "used_count": 7,
+        "total_count": 7,
+        "null_count": 0,
+        "empty_count": 0,
+        "empty_json_count": 0,
+        "reason": "100.0% usage"
+      }
+    }
+  },
+  "webhook_entries": {
+    "status": "EMPTY",
+    "total_records": 0,
+    "columns": {}
+  }
+}

@@ -39,7 +39,7 @@ class DigitalAsset(BaseModel, table=True):
     __tablename__ = "digital_assets"
     
     # Relationships
-    subclient_id: int = Field(foreign_key="sub_customers.id")
+    customer_id: int = Field(foreign_key="customers.id")
     
     # Asset identification
     asset_type: AssetType = Field()
@@ -65,7 +65,8 @@ class Connection(BaseModel, table=True):
     
     # Relationships
     digital_asset_id: int = Field(foreign_key="digital_assets.id")
-    user_id: int = Field(foreign_key="users.id")  # Who created the connection
+    customer_id: int = Field(foreign_key="customers.id")  # Direct customer relationship for better queries
+    campaigner_id: int = Field(foreign_key="campaigners.id")  # Who created the connection
     
     # Authentication details
     auth_type: AuthType = Field(default=AuthType.OAUTH2)
@@ -84,40 +85,20 @@ class Connection(BaseModel, table=True):
     last_used_at: Optional[datetime] = Field(default=None)
 
 
-class PerformanceMetric(BaseModel, table=True):
-    """Performance metrics for monitoring"""
-    __tablename__ = "performance_metrics"
-    
-    metric_name: str = Field(max_length=100)
-    metric_value: float = Field()
-    metric_unit: str = Field(max_length=50)
-    agent_type: Optional[str] = Field(default=None, max_length=50)
-    session_id: Optional[str] = Field(default=None, max_length=255)
-    user_id: Optional[int] = Field(default=None)
-    metric_metadata: Optional[str] = Field(default=None)  # JSON additional data
-
-
-class AnalyticsCache(BaseModel, table=True):
-    """Cache for analytics data"""
-    __tablename__ = "analytics_cache"
-    
-    cache_key: str = Field(max_length=255, unique=True)
-    cache_data: str = Field()  # JSON cached data
-    expires_at: datetime = Field()
-    user_id: Optional[int] = Field(default=None)
-    asset_id: Optional[int] = Field(default=None)
-
-
 class KpiCatalog(BaseModel, table=True):
-    """KPI catalog for standardized metrics"""
+    """Standardized KPI definitions for different sub-customer types"""
     __tablename__ = "kpi_catalog"
     
-    kpi_name: str = Field(max_length=100)
-    kpi_description: str = Field()
-    calculation_method: str = Field()
-    data_sources: str = Field()  # JSON array of data sources
-    category: str = Field(max_length=100)
-    is_active: bool = Field(default=True)
+    id: int = Field(primary_key=True)
+    subtype: str = Field(max_length=50, description="Sub-customer type (ecommerce, leadgen, etc.)")
+    primary_metric: str = Field(max_length=100, description="Primary KPI metric name")
+    primary_submetrics: str = Field(description="JSON array of primary sub-metrics")
+    secondary_metric: str = Field(max_length=100, description="Secondary KPI metric name")
+    secondary_submetrics: str = Field(description="JSON array of secondary sub-metrics")
+    lite_primary_metric: str = Field(max_length=100, description="Lite version primary metric")
+    lite_primary_submetrics: str = Field(description="JSON array of lite primary sub-metrics")
+    lite_secondary_metric: str = Field(max_length=100, description="Lite version secondary metric")
+    lite_secondary_submetrics: str = Field(description="JSON array of lite secondary sub-metrics")
 
 
 class UserPropertySelection(BaseModel, table=True):
@@ -125,8 +106,8 @@ class UserPropertySelection(BaseModel, table=True):
     __tablename__ = "user_property_selections"
     
     # Relationships
-    user_id: int = Field(foreign_key="users.id")
-    subclient_id: int = Field(foreign_key="sub_customers.id")
+    campaigner_id: int = Field(foreign_key="campaigners.id")
+    customer_id: int = Field(foreign_key="customers.id")
     
     # Service and selected property
     service: str = Field(max_length=50)  # "google_analytics", "google_ads", "facebook_page", "facebook_ads"
@@ -139,20 +120,83 @@ class UserPropertySelection(BaseModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class CampaignKPI(BaseModel, table=True):
-    """Campaign KPI data for tracking performance metrics"""
-    __tablename__ = "campaign_kpis"
+class KpiGoal(BaseModel, table=True):
+    """KPI Goals - Target KPIs for each campaign/ad"""
+    __tablename__ = "kpi_goals"
     
     # Relationships
-    subcustomer_id: int = Field(foreign_key="sub_customers.id")
+    customer_id: int = Field(foreign_key="customers.id")
     
     # Campaign identification
+    campaign_id: str = Field(max_length=50)
+    campaign_name: str = Field(max_length=255)
+    campaign_status: str = Field(max_length=50, default="ACTIVE")  # ACTIVE/PAUSED/INACTIVE
+    
+    # Ad Group information
+    ad_group_id: Optional[int] = Field(default=None)
+    ad_group_name: Optional[str] = Field(default=None, max_length=255)
+    ad_group_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
+    
+    # Ad information
+    ad_id: Optional[int] = Field(default=None)
+    ad_name: Optional[str] = Field(default=None, max_length=255)
+    ad_headline: Optional[str] = Field(default=None, max_length=500)
+    ad_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
+    ad_score: Optional[int] = Field(default=None)  # Numerical score like 99
+    
+    # Advertising channel and objective
+    advertising_channel: str = Field(max_length=100)  # Google AdSense, Google Search Ads, etc.
+    campaign_objective: str = Field(max_length=100)  # Sales, Traffic, Awareness, Lead generation
+    
+    # Budget information
+    daily_budget: Optional[float] = Field(default=None)
+    
+    # Target audience
+    target_audience: str = Field(max_length=255)
+    
+    # KPI Goals (Target values)
+    primary_kpi_1: Optional[str] = Field(default=None, max_length=255)  # e.g., "CPA <$15"
+    secondary_kpi_1: Optional[str] = Field(default=None, max_length=255)  # e.g., "Clicks > 10"
+    secondary_kpi_2: Optional[str] = Field(default=None, max_length=255)  # e.g., "CTR > 6%"
+    secondary_kpi_3: Optional[str] = Field(default=None, max_length=255)  # e.g., "Impressions > 160"
+    
+    # Campaign details
+    landing_page: Optional[str] = Field(default=None, max_length=500)
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class KpiValue(BaseModel, table=True):
+    """KPI Values - Actual measured KPI values for each campaign/ad"""
+    __tablename__ = "kpi_values"
+    
+    # Relationships
+    customer_id: int = Field(foreign_key="customers.id")
+    kpi_goal_id: Optional[int] = Field(default=None, foreign_key="kpi_goals.id")  # Link to goal
+    
+    # Campaign identification (matches KpiGoal)
     date: datetime = Field()
     campaign_num: int = Field()
     campaign_id: str = Field(max_length=50)
-    advertising_channel: str = Field(max_length=100)
     campaign_name: str = Field(max_length=255)
-    campaign_objective: str = Field(max_length=100)
+    campaign_status: str = Field(max_length=50, default="ACTIVE/PAUSED")
+    
+    # Ad Group information
+    ad_group_id: Optional[int] = Field(default=None)
+    ad_group_name: Optional[str] = Field(default=None, max_length=255)
+    ad_group_status: Optional[str] = Field(default=None, max_length=50)
+    
+    # Ad information
+    ad_id: Optional[int] = Field(default=None)
+    ad_status: Optional[str] = Field(default=None, max_length=50)
+    ad_score: Optional[int] = Field(default=99)
+    ad_headline: Optional[str] = Field(default=None, max_length=500)
+    
+    # Advertising channel and objective
+    advertising_channel: str = Field(max_length=100)  # Google AdSense, Google Search Ads, etc.
+    campaign_objective: str = Field(max_length=100)  # Sales, Traffic, Awareness, Lead generation
     
     # Budget information
     daily_budget: Optional[float] = Field(default=None)
@@ -161,17 +205,22 @@ class CampaignKPI(BaseModel, table=True):
     # Target audience
     target_audience: str = Field(max_length=255)
     
-    # KPI metrics
-    primary_kpi_1: Optional[str] = Field(default=None, max_length=255)
-    secondary_kpi_1: Optional[str] = Field(default=None, max_length=255)
-    secondary_kpi_2: Optional[str] = Field(default=None, max_length=255)
-    secondary_kpi_3: Optional[str] = Field(default=None, max_length=255)
+    # KPI Values (Actual measured values)
+    primary_kpi_1_value: Optional[float] = Field(default=None)  # e.g., 12.50 (actual CPA)
+    primary_kpi_1_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "USD"
+    secondary_kpi_1_value: Optional[float] = Field(default=None)  # e.g., 15 (actual clicks)
+    secondary_kpi_1_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "count"
+    secondary_kpi_2_value: Optional[float] = Field(default=None)  # e.g., 7.2 (actual CTR %)
+    secondary_kpi_2_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "%"
+    secondary_kpi_3_value: Optional[float] = Field(default=None)  # e.g., 180 (actual impressions)
+    secondary_kpi_3_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "count"
     
     # Campaign details
     landing_page: Optional[str] = Field(default=None, max_length=500)
-    summary_text: Optional[str] = Field(default=None)
     
-    # Note: secondary_kpi_* fields will store actual performance data from cron job
+    # Measurement metadata
+    measurement_date: datetime = Field(default_factory=datetime.utcnow)  # When values were measured
+    data_source: Optional[str] = Field(default=None, max_length=100)  # e.g., "Google Ads API", "Facebook API"
     
     # Additional metadata
     is_active: bool = Field(default=True)

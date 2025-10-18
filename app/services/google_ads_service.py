@@ -19,7 +19,7 @@ from sqlmodel import select, and_
 
 from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
-from app.models.users import User
+from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
 
@@ -98,8 +98,8 @@ class GoogleAdsService:
     
     async def save_google_ads_connection(
         self,
-        user_id: int,
-        subclient_id: int,
+        campaigner_id: int,
+        customer_id: int,
         account_id: str,
         account_name: str,
         access_token: str,
@@ -111,8 +111,8 @@ class GoogleAdsService:
         Save Google Ads OAuth connection to database
         
         Args:
-            user_id: ID of user creating the connection
-            subclient_id: ID of subclient this asset belongs to
+            campaigner_id: ID of campaigner creating the connection
+            customer_id: ID of customer this asset belongs to
             account_id: Google Ads account ID (e.g., "123-456-7890")
             account_name: Human-readable account name
             access_token: OAuth access token
@@ -127,7 +127,7 @@ class GoogleAdsService:
             # First, find or create the digital asset
             digital_asset_statement = select(DigitalAsset).where(
                 and_(
-                    DigitalAsset.subclient_id == subclient_id,
+                    DigitalAsset.customer_id == customer_id,
                     DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
                     DigitalAsset.external_id == account_id
                 )
@@ -137,7 +137,7 @@ class GoogleAdsService:
             if not digital_asset:
                 # Create new digital asset
                 digital_asset = DigitalAsset(
-                    subclient_id=subclient_id,
+                    customer_id=customer_id,
                     asset_type=AssetType.GOOGLE_ADS,
                     provider="Google",
                     name=account_name,
@@ -173,7 +173,7 @@ class GoogleAdsService:
             connection_statement = select(Connection).where(
                 and_(
                     Connection.digital_asset_id == digital_asset.id,
-                    Connection.user_id == user_id,
+                    Connection.campaigner_id == campaigner_id,
                     Connection.auth_type == AuthType.OAUTH2
                 )
             )
@@ -194,7 +194,7 @@ class GoogleAdsService:
                 # Create new connection
                 connection = Connection(
                     digital_asset_id=digital_asset.id,
-                    user_id=user_id,
+                    campaigner_id=campaigner_id,
                     auth_type=AuthType.OAUTH2,
                     account_email=account_email,
                     scopes=self.GOOGLE_ADS_SCOPES,
@@ -217,8 +217,8 @@ class GoogleAdsService:
             
             try:
                 await property_selection_service.save_property_selection(
-                    user_id=user_id,
-                    subclient_id=subclient_id,
+                    campaigner_id=campaigner_id,
+                    customer_id=customer_id,
                     service="google_ads",
                     property_id=account_id,
                     property_name=account_name
@@ -230,7 +230,7 @@ class GoogleAdsService:
             
             print(f"✅ Google Ads connection created/updated: {connection.id}")
             print(f"   Account: {account_name} ({account_id})")
-            print(f"   User: {user_id}")
+            print(f"   User: {campaigner_id}")
             print(f"   Expires at: {expires_at}")
             
             return {
@@ -644,12 +644,12 @@ class GoogleAdsService:
             traceback.print_exc()
             raise ValueError(f"Failed to fetch Google Ads data: {str(e)}")
     
-    async def get_user_google_ads_connections(self, user_id: int, subclient_id: int = None) -> List[Dict[str, Any]]:
+    async def get_user_google_ads_connections(self, campaigner_id: int, customer_id: int = None) -> List[Dict[str, Any]]:
         """Get all Google Ads connections for a user and subclient"""
         
         with get_session() as session:
             conditions = [
-                Connection.user_id == user_id,
+                Connection.campaigner_id == campaigner_id,
                 DigitalAsset.provider == "Google",
                 Connection.revoked == False
             ]
@@ -657,9 +657,9 @@ class GoogleAdsService:
             # Check for GOOGLE_ADS asset type (database uses 'GOOGLE_ADS' uppercase)
             conditions.append(DigitalAsset.asset_type == AssetType.GOOGLE_ADS_CAPS)
             
-            # Add subclient_id filter if provided
-            if subclient_id is not None:
-                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            # Add customer_id filter if provided
+            if customer_id is not None:
+                conditions.append(DigitalAsset.customer_id == customer_id)
             
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id

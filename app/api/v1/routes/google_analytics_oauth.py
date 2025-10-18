@@ -332,7 +332,7 @@ async def handle_oauth_callback(
             print(f"DEBUG: Property {i+1}: {prop['property_name']} (ID: {prop['property_id']})")
         
         # Find user by email
-        from app.models.users import User
+        from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
         
@@ -386,7 +386,7 @@ async def create_ga_connection(request: CreateConnectionRequest):
     
     try:
         # Find user by access token (in production, use proper session management)
-        from app.models.users import User
+        from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
         import requests

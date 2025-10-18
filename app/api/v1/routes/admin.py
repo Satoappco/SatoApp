@@ -10,7 +10,7 @@ from datetime import datetime
 from app.core.security import verify_api_key
 from app.config.database import get_session
 from app.models.analytics import Connection, DigitalAsset, AssetType
-from app.models.users import User
+from app.models.users import Campaigner
 from app.services.agent_service import AgentService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -112,7 +112,8 @@ async def get_all_connections(
             for connection, asset in results:
                 connections.append({
                     "connection_id": connection.id,
-                    "user_id": connection.user_id,
+                    "customer_id": connection.customer_id,
+                    "campaigner_id": connection.campaigner_id,
                     "asset_name": asset.name,
                     "asset_type": asset.asset_type,
                     "provider": asset.provider,

@@ -14,10 +14,10 @@ import os
 from app.services.crewai_timing_wrapper import CrewAITimingWrapper
 from app.core.auth import get_current_user
 from app.core.api_auth import verify_webhook_token
-from app.models.users import User
+from app.models.users import Campaigner
 from app.core.database import get_session
 from app.config.logging import get_logger
-from app.models.agents import CustomerLog, ExecutionTiming
+from app.models.agents import CustomerLog
 from app.core.websocket_manager import connection_manager
 
 logger = get_logger("api.webhooks")
@@ -71,6 +71,9 @@ async def send_dialogcx_custom_event(session_id: str, event_name: str, result: s
         
         if not private_key:
             raise ValueError("GOOGLE_PRIVATE_KEY not found in environment variables")
+        
+        # Fix private key format for JWT (handle escaped newlines)
+        private_key = private_key.replace('\\n', '\n')
         
         # Create JWT token for authentication
         import jwt
@@ -175,6 +178,9 @@ async def send_dialogcx_text_message(session_id: str, message: str):
         
         if not private_key:
             raise ValueError("GOOGLE_PRIVATE_KEY not found in environment variables")
+        
+        # Fix private key format for JWT (handle escaped newlines)
+        private_key = private_key.replace('\\n', '\n')
         
         # Create JWT token for authentication
         import jwt
@@ -730,7 +736,7 @@ async def get_customer_logs(
     offset: int = 0,
     user_id: int = None,
     session_id: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """Get customer logs with filtering options - Used by frontend LogsViewer"""
     try:
@@ -740,8 +746,11 @@ async def get_customer_logs(
             query = session.query(CustomerLog)
             
             # Apply filters - use current user's ID if not specified
-            target_user_id = user_id if user_id else current_user.id
-            query = query.filter(CustomerLog.user_id == target_user_id)
+            target_campaigner_id = user_id if user_id else current_user.id
+            
+            # Filter logs by campaigner_id
+            query = query.filter(CustomerLog.campaigner_id == target_campaigner_id)
+            
             if session_id:
                 query = query.filter(CustomerLog.session_id == session_id)
             
@@ -766,7 +775,7 @@ async def get_customer_logs(
                     "crewai_log": json.loads(log.crewai_log) if log.crewai_log else {},
                     "total_execution_time_ms": log.total_execution_time_ms,
                     "timing_breakdown": json.loads(log.timing_breakdown) if log.timing_breakdown else {},
-                    "user_id": log.user_id,
+                    "campaigner_id": log.campaigner_id,
                     "analysis_id": log.analysis_id,
                     "success": log.success,
                     "error_message": log.error_message,
@@ -981,9 +990,14 @@ async def handle_dialogcx_webhook(
             # Get data_sources from parameters - try both naming conventions
             data_sources = parameters.get('data_sources', parameters.get('data_source', []))
 
-            # Extract user information
-            user_id = parameters.get("user_id")
-            customer_id = parameters.get("customer_id")
+            # Extract user information with support for both old and new field names
+            campaigner_id = parameters.get("campaigner_id") or parameters.get("user_id")
+            agency_id = parameters.get("agency_id") or parameters.get("customer_id") 
+            customer_id = parameters.get("customer_id") or parameters.get("subcustomer_id")
+            
+            # Use new field names for internal processing
+            user_id = campaigner_id  # Map to internal user_id
+            customer_id = customer_id  # Map to internal customer_id
             intent_name = intent_info.get("displayName", "")
             
             # Extract additional parameters and VALIDATE session_id

@@ -11,7 +11,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from google.auth.transport import requests
 from google.oauth2 import id_token
 from app.config.settings import get_settings
-from app.models.users import User, UserSession
+from app.models.users import Campaigner, CampaignerSession
 from app.config.database import get_session
 
 settings = get_settings()
@@ -123,7 +123,7 @@ def verify_google_token(token: str) -> Dict[str, Any]:
         raise AuthenticationError("Invalid Google token")
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Campaigner:
     """Get current authenticated user from JWT token"""
     
     try:
@@ -136,12 +136,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         
         # Get user from database
         with get_session() as session:
-            user = session.get(User, user_id)
+            user = session.get(Campaigner, user_id)
             if user is None:
-                raise AuthenticationError("User not found")
+                raise AuthenticationError("Campaigner not found")
             
             if user.status != "active":
-                raise AuthenticationError("User account is not active")
+                raise AuthenticationError("Campaigner account is not active")
             
             return user
     
@@ -149,7 +149,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise AuthenticationError("Invalid token")
 
 
-def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
+def get_current_active_user(current_user: Campaigner = Depends(get_current_user)) -> Campaigner:
     """Get current active user (additional check)"""
     if current_user.status != "active":
         raise HTTPException(
@@ -160,17 +160,17 @@ def get_current_active_user(current_user: User = Depends(get_current_user)) -> U
 
 
 def create_user_session(
-    user: User, 
+    user: Campaigner, 
     access_token: str, 
     refresh_token: str,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None
-) -> UserSession:
+) -> CampaignerSession:
     """Create a new user session"""
     
     import secrets
     
-    session = UserSession(
+    session = CampaignerSession(
         user_id=user.id,
         session_token=secrets.token_urlsafe(32),
         access_token=access_token,
@@ -188,8 +188,8 @@ def revoke_user_session(session_token: str) -> bool:
     """Revoke a user session"""
     
     with get_session() as db_session:
-        session = db_session.query(UserSession).filter(
-            UserSession.session_token == session_token
+        session = db_session.query(CampaignerSession).filter(
+            CampaignerSession.session_token == session_token
         ).first()
         
         if session:
@@ -214,9 +214,9 @@ def refresh_access_token(refresh_token: str) -> Dict[str, str]:
     
     # Get user from database
     with get_session() as session:
-        user = session.get(User, user_id)
+        user = session.get(Campaigner, user_id)
         if user is None or user.status != "active":
-            raise AuthenticationError("User not found or inactive")
+            raise AuthenticationError("Campaigner not found or inactive")
         
         # Create new access token
         access_token_data = {

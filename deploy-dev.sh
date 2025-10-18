@@ -98,7 +98,7 @@ for line in lines:
         # Handle wss:// protocol first
         if value.startswith('wss://sato-backend-v2-397762748853.me-west1.run.app'):
             value = value.replace('wss://sato-backend-v2-397762748853.me-west1.run.app', 'wss://sato-backend-dev-397762748853.me-west1.run.app')
-        # Handle http:// and https:// protocols
+        # Handle https:// and https:// protocols
         elif 'sato-backend-v2-397762748853.me-west1.run.app' in value:
             value = value.replace('sato-backend-v2-397762748853.me-west1.run.app', 'sato-backend-dev-397762748853.me-west1.run.app')
         elif 'sato-frontend-397762748853.me-west1.run.app' in value:

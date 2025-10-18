@@ -24,16 +24,22 @@ def get_session():
 
 
 def init_database():
-    """Initialize database tables"""
+    """Initialize database tables
+    
+    Note: We use Alembic for migrations, so we don't need to create tables here.
+    This function just imports the models to ensure they're registered.
+    """
     from app.models import (
-        BaseModel, User, Customer, SubCustomer, UserSession,
-        AgentConfig, RoutingRule, AnalysisExecution,
-        DigitalAsset, Connection, PerformanceMetric, AnalyticsCache, KpiCatalog,
-        ChatMessage, WebhookEntry, NarrativeReport
+        BaseModel, Campaigner, Agency, Customer, CampaignerSession,
+        AgentConfig, RoutingRule,
+        DigitalAsset, Connection, KpiGoal, UserPropertySelection, KpiCatalog,
+        RTMTable, QuestionsTable
     )
     from sqlmodel import SQLModel
     
-    SQLModel.metadata.create_all(engine)
+    # Don't create tables - we use Alembic migrations for that
+    # SQLModel.metadata.create_all(engine)
+    pass
 
 
 def get_database_url():

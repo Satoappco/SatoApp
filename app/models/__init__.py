@@ -4,31 +4,31 @@ Database models for SatoApp
 
 from .base import BaseModel
 from .users import (
-    User, Customer, SubCustomer, UserSession,
+    Campaigner, Agency, Customer, CampaignerSession,
     UserRole, UserStatus, CustomerType, CustomerStatus, SubCustomerType
 )
-from .agents import AgentConfig, RoutingRule, AnalysisExecution
+from .agents import AgentConfig, RoutingRule
 from .analytics import (
-    DigitalAsset, Connection, PerformanceMetric, AnalyticsCache, KpiCatalog, CampaignKPI,
+    DigitalAsset, Connection, KpiGoal, KpiValue, UserPropertySelection, KpiCatalog,
     AssetType, AuthType
 )
-from .conversations import ChatMessage, WebhookEntry, NarrativeReport
+from .customer_data import RTMTable, QuestionsTable
 
 __all__ = [
     # Base
     "BaseModel",
     
     # Users and related models
-    "User", "Customer", "SubCustomer", "UserSession",
+    "Campaigner", "Agency", "Customer", "CampaignerSession",
     "UserRole", "UserStatus", "CustomerType", "CustomerStatus", "SubCustomerType",
     
     # Agents
-    "AgentConfig", "RoutingRule", "AnalysisExecution", 
+    "AgentConfig", "RoutingRule", 
     
     # Analytics and assets
-    "DigitalAsset", "Connection", "PerformanceMetric", "AnalyticsCache", "KpiCatalog", "CampaignKPI",
+    "DigitalAsset", "Connection", "KpiGoal", "KpiValue", "UserPropertySelection", "KpiCatalog",
     "AssetType", "AuthType",
     
-    # Conversations
-    "ChatMessage", "WebhookEntry", "NarrativeReport"
+    # Customer data tables
+    "RTMTable", "QuestionsTable"
 ]

@@ -56,6 +56,27 @@ elif [ "$1" = "dev" ] || [ "$1" = "development" ]; then
     echo ""
     echo -e "${YELLOW}⚠️  Remember: Development changes will NOT affect production!${NC}"
     
+elif [ "$1" = "dor" ]; then
+    echo -e "${CYAN}👤 Switching to DOR environment...${NC}"
+    
+    # Remove existing .env if it exists
+    if [ -L ".env" ]; then
+        rm .env
+    fi
+    
+    # Create symbolic link to dor
+    ln -s .env.dor .env
+    
+    echo -e "${GREEN}✅ Switched to DOR environment${NC}"
+    echo ""
+    echo -e "${BLUE}📋 Dor Configuration:${NC}"
+    echo "  Database: sato_dev (same as dev - safe for testing)"
+    echo "  Backend: sato-backend-dor-397762748853.me-west1.run.app"
+    echo "  Frontend: sato-frontend-dor-397762748853.me-west1.run.app"
+    echo "  Debug: true"
+    echo ""
+    echo -e "${CYAN}💡 Perfect for Dor's independent development!${NC}"
+
 elif [ "$1" = "prod" ] || [ "$1" = "production" ]; then
     echo -e "${RED}🚨 Switching to PRODUCTION environment...${NC}"
     
@@ -78,16 +99,17 @@ elif [ "$1" = "prod" ] || [ "$1" = "production" ]; then
     echo -e "${RED}⚠️  WARNING: Changes will affect LIVE PRODUCTION!${NC}"
     
 else
-    echo -e "${YELLOW}Usage: $0 [local|dev|prod]${NC}"
+    echo -e "${YELLOW}Usage: $0 [local|dev|dor|prod]${NC}"
     echo ""
     echo "Available environments:"
     echo "  local            - Switch to local environment (localhost URLs)"
     echo "  dev, development - Switch to development environment (Cloud Run dev)"
+    echo "  dor              - Switch to Dor environment (Cloud Run dor)"
     echo "  prod, production - Switch to production environment (Cloud Run prod)"
     echo ""
     echo "Database Configuration:"
-    echo "  ${CYAN}local & dev${NC} → sato_dev (safe for testing)"
-    echo "  ${RED}production${NC}   → sato (live production data)"
+    echo "  ${CYAN}local, dev & dor${NC} → sato_dev (safe for testing)"
+    echo "  ${RED}production${NC}        → sato (live production data)"
     echo ""
     echo "Current environment:"
     if [ -L ".env" ]; then
@@ -96,8 +118,8 @@ else
             echo -e "  ${CYAN}💻 LOCAL${NC}"
         elif [ "$CURRENT_ENV" = ".env.development" ]; then
             echo -e "  ${YELLOW}🛠️  DEVELOPMENT${NC}"
-        elif [ "$CURRENT_ENV" = ".env.production" ]; then
-            echo -e "  ${RED}🚨 PRODUCTION${NC}"
+        elif [ "$CURRENT_ENV" = ".env.dor" ]; then
+            echo -e "  ${CYAN}👤 DOR${NC}"
         else
             echo -e "  ${BLUE}❓ UNKNOWN ($CURRENT_ENV)${NC}"
         fi

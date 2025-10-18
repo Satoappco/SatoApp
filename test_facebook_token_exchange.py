@@ -126,3 +126,5 @@ def check_facebook_permissions():
 if __name__ == "__main__":
     test_facebook_token_exchange()
     check_facebook_permissions()
+
+

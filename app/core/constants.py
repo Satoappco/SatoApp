@@ -80,7 +80,7 @@ class ToolName(str, Enum):
     FACEBOOK_ANALYTICS_TOOL = "FacebookAnalyticsTool"
     FACEBOOK_ADS_TOOL = "FacebookAdsTool"
     
-    # User Tools
+    # Campaigner Tools
     USER_PROFILE_TOOL = "UserProfileTool"
     
     # Master Agent Tools

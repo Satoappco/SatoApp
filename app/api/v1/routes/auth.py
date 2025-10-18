@@ -8,11 +8,12 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel
 from sqlmodel import select
+from jose import jwt
 
-from app.core.auth import create_access_token, get_current_user, verify_google_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.auth import create_access_token, create_refresh_token, get_current_user, verify_google_token, ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM
 from app.config.database import get_session
 from app.config.settings import get_settings
-from app.models.users import User, Customer, CustomerType, CustomerStatus, UserRole, UserStatus
+from app.models.users import Campaigner, Agency, CustomerType, CustomerStatus, UserRole, UserStatus
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -22,26 +23,28 @@ class GoogleAuthRequest(BaseModel):
     user_info: Optional[dict] = None
 
 
-class UserResponse(BaseModel):
+class CampaignerResponse(BaseModel):
     id: int
     email: str
     full_name: str
     role: str
     status: str
-    primary_customer_id: int
-    additional_customer_ids: list
+    agency_id: int
+    phone: Optional[str]
+    google_id: Optional[str]
+    email_verified: bool
+    avatar_url: Optional[str]
     locale: str
     timezone: str
-    avatar_url: Optional[str]
-    email_verified: bool
     last_login_at: Optional[datetime]
 
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
     expires_in: int
-    user: UserResponse
+    user: CampaignerResponse
 
 
 @router.post("/google", response_model=TokenResponse)
@@ -66,14 +69,14 @@ async def authenticate_with_google(
         
         # Extract user information from Google token or user_info
         if google_user_info:
-            google_id = google_user_info.get("sub")
+            google_id = google_user_info.get("sub")  # Unique Google user ID
             email = google_user_info.get("email")
             full_name = google_user_info.get("name")
             avatar_url = google_user_info.get("picture")
             email_verified = google_user_info.get("email_verified", False)
         elif auth_request.user_info:
             # Use user_info from frontend
-            google_id = f"google_{auth_request.user_info.get('email', '')}"
+            google_id = f"google_{auth_request.user_info.get('email', '')}"  # Fallback ID
             email = auth_request.user_info.get("email")
             full_name = auth_request.user_info.get("name")
             avatar_url = auth_request.user_info.get("picture")
@@ -92,14 +95,15 @@ async def authenticate_with_google(
         
         with get_session() as session:
             # Check if user exists by Google ID or email
-            statement = select(User).where(
-                (User.google_id == google_id) | (User.email == email)
+            statement = select(Campaigner).where(
+                (Campaigner.google_id == google_id) | (Campaigner.email == email)
             )
             existing_user = session.exec(statement).first()
             
             if existing_user:
                 # Update existing user with Google info
                 existing_user.google_id = google_id
+                existing_user.full_name = full_name
                 existing_user.avatar_url = avatar_url
                 existing_user.email_verified = email_verified
                 existing_user.last_login_at = datetime.utcnow()
@@ -110,12 +114,12 @@ async def authenticate_with_google(
                 user = existing_user
                 
             else:
-                # Check if we have any customers, if not create a default one
+                # Check if we have any agencies, if not create a default one
                 
-                customers = session.exec(select(Customer)).all()
-                if not customers:
-                    # Create default customer first (without primary_contact_user_id for now)
-                    default_customer = Customer(
+                agencies = session.exec(select(Agency)).all()
+                if not agencies:
+                    # Create default agency first (without primary_contact_campaigner_id for now)
+                    default_agency = Agency(
                         name="Default Agency",
                         type=CustomerType.AGENCY,
                         status=CustomerStatus.ACTIVE,
@@ -123,28 +127,26 @@ async def authenticate_with_google(
                         billing_currency="USD",
                         address="Default Address"
                     )
-                    session.add(default_customer)
+                    session.add(default_agency)
                     session.commit()
-                    session.refresh(default_customer)
-                    customer_id = default_customer.id
+                    session.refresh(default_agency)
+                    agency_id = default_agency.id
                 else:
-                    customer_id = customers[0].id
+                    agency_id = agencies[0].id
                 
                 # Create new user
-                user = User(
+                user = Campaigner(
                     email=email,
                     full_name=full_name,
                     google_id=google_id,
                     avatar_url=avatar_url,
                     email_verified=email_verified,
-                    role=UserRole.VIEWER,  # Default role
-                    status=UserStatus.ACTIVE,
-                    provider="google",
                     locale="he-IL",
                     timezone="Asia/Jerusalem",
-                    primary_customer_id=customer_id,
-                    additional_customer_ids=[],
-                    last_login_at=datetime.utcnow()
+                    last_login_at=datetime.utcnow(),
+                    role=UserRole.VIEWER,  # Default role
+                    status=UserStatus.ACTIVE,
+                    agency_id=agency_id
                 )
                 
                 session.add(user)
@@ -156,27 +158,30 @@ async def authenticate_with_google(
                 "user_id": user.id,
                 "email": user.email,
                 "role": user.role,
-                "primary_customer_id": user.primary_customer_id
+                "agency_id": user.agency_id
             }
             
             access_token = create_access_token(data=token_data)
+            refresh_token = create_refresh_token(data=token_data)
             
             return TokenResponse(
                 access_token=access_token,
+                refresh_token=refresh_token,
                 token_type="bearer",
                 expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert minutes to seconds
-                user=UserResponse(
+                user=CampaignerResponse(
                     id=user.id,
                     email=user.email,
                     full_name=user.full_name,
                     role=user.role,
                     status=user.status,
-                    primary_customer_id=user.primary_customer_id,
-                    additional_customer_ids=user.additional_customer_ids,
+                    agency_id=user.agency_id,
+                    phone=user.phone,
+                    google_id=user.google_id,
+                    email_verified=user.email_verified,
+                    avatar_url=user.avatar_url,
                     locale=user.locale,
                     timezone=user.timezone,
-                    avatar_url=user.avatar_url,
-                    email_verified=user.email_verified,
                     last_login_at=user.last_login_at
                 )
             )
@@ -190,63 +195,133 @@ async def authenticate_with_google(
         )
 
 
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
+@router.get("/me", response_model=CampaignerResponse)
+async def get_current_user_info(current_user: Campaigner = Depends(get_current_user)):
     """
     Get current user information
     """
-    return UserResponse(
+    return CampaignerResponse(
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
         role=current_user.role,
         status=current_user.status,
-        primary_customer_id=current_user.primary_customer_id,
-        additional_customer_ids=current_user.additional_customer_ids,
+        agency_id=current_user.agency_id,
+        phone=current_user.phone,
+        google_id=current_user.google_id,
+        email_verified=current_user.email_verified,
+        avatar_url=current_user.avatar_url,
         locale=current_user.locale,
         timezone=current_user.timezone,
-        avatar_url=current_user.avatar_url,
-        email_verified=current_user.email_verified,
         last_login_at=current_user.last_login_at
     )
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/refresh")
-async def refresh_token(current_user: User = Depends(get_current_user)):
+async def refresh_token(request: RefreshTokenRequest):
     """
-    Refresh access token
+    Refresh access token using refresh token
     """
-    token_data = {
-        "user_id": current_user.id,
-        "email": current_user.email,
-        "role": current_user.role,
-        "primary_customer_id": current_user.primary_customer_id
-    }
-    
-    new_access_token = create_access_token(data=token_data)
-    
-    return {
-        "access_token": new_access_token,
-        "token_type": "bearer",
-        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert minutes to seconds
-    }
+    try:
+        # Verify the refresh token
+        payload = jwt.decode(
+            request.refresh_token,
+            get_settings().secret_key,
+            algorithms=[ALGORITHM]
+        )
+        
+        # Check token type
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
+        
+        # Check expiration
+        exp = payload.get("exp")
+        if exp is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired"
+            )
+        
+        exp_time = datetime.fromtimestamp(exp)
+        now = datetime.utcnow()
+        
+        if exp_time < now:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired"
+            )
+        
+        # Get user ID from refresh token
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
+        
+        # Get user from database
+        with get_session() as session:
+            statement = select(Campaigner).where(Campaigner.id == user_id)
+            user = session.exec(statement).first()
+            
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found"
+                )
+        
+        # Create new access token
+        token_data = {
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "agency_id": user.agency_id
+        }
+        
+        new_access_token = create_access_token(data=token_data)
+        new_refresh_token = create_refresh_token(data=token_data)
+        
+        return {
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert minutes to seconds
+        }
+        
+    except jwt.JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Token refresh failed: {str(e)}"
+        )
 
 
 @router.get("/sessions")
-async def get_user_sessions(current_user: User = Depends(get_current_user)):
+async def get_user_sessions(current_user: Campaigner = Depends(get_current_user)):
     """
     Get user's active sessions
     """
     # For now, return basic session info
     # In production, you might want to track sessions in Redis or database
     with get_session() as session:
-        user = session.get(User, current_user.id)
+        user = session.get(Campaigner, current_user.id)
         
         session_data = [{
             "session_id": f"session_{current_user.id}",
             "user_id": current_user.id,
             "email": current_user.email,
-            "last_login": user.last_login_at.isoformat() if user.last_login_at else None,
+            "phone": user.phone,
             "is_current": True
         }]
 

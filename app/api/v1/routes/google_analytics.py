@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr
 from sqlmodel import select
 
 from app.core.auth import get_current_user
-from app.models.users import User, SubCustomer
+from app.models.users import Campaigner, Customer
 from app.models.analytics import DigitalAsset, Connection, AssetType
 from app.services.google_analytics_service import GoogleAnalyticsService
 from app.config.database import get_session
@@ -22,7 +22,7 @@ ga_service = GoogleAnalyticsService()
 
 @router.get("/subclients")
 async def get_user_subclients(
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get all subclients for current user's customer, with default subclient first
@@ -31,7 +31,7 @@ async def get_user_subclients(
     try:
         with get_session() as session:
             # Get user's customer ID
-            customer_id = current_user.primary_customer_id
+            customer_id = current_user.agency_id
             
             # Get subclients for the user's customer, ordered by ID (default first)
             statement = select(SubCustomer).where(
@@ -113,7 +113,7 @@ class GA4DataResponse(BaseModel):
 @router.post("/connections", response_model=GAConnectionResponse)
 async def save_ga_connection(
     request: SaveGAConnectionRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Save Google Analytics OAuth connection
@@ -140,16 +140,16 @@ async def save_ga_connection(
 
 @router.get("/connections", response_model=GAConnectionListResponse)
 async def get_ga_connections(
-    subclient_id: int = Query(None, description="Filter connections by subclient ID"),
-    current_user: User = Depends(get_current_user)
+    customer_id: int = Query(None, description="Filter connections by customer ID"),
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get GA connections for the current authenticated user, optionally filtered by subclient
+    Get GA connections for the current authenticated user, optionally filtered by customer
     """
     
     try:
-        # Use real authenticated user ID and optional subclient filter
-        connections = await ga_service.get_user_ga_connections(current_user.id, subclient_id)
+        # Use real authenticated user ID and optional customer filter
+        connections = await ga_service.get_user_ga_connections(current_user.id, customer_id)
         return GAConnectionListResponse(connections=connections)
     
     except Exception as e:
@@ -162,7 +162,7 @@ async def get_ga_connections(
 @router.post("/connections/{connection_id}/refresh")
 async def refresh_ga_token(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Refresh GA access token - if refresh token is expired, returns re-auth URL
@@ -173,7 +173,7 @@ async def refresh_ga_token(
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             )
             connection = session.exec(statement).first()
             
@@ -212,7 +212,7 @@ async def refresh_ga_token(
 @router.post("/connections/{connection_id}/reauth")
 async def get_reauth_url(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get re-authorization URL for expired refresh tokens
@@ -223,7 +223,7 @@ async def get_reauth_url(
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             )
             connection = session.exec(statement).first()
             
@@ -254,7 +254,7 @@ async def update_connection_tokens(
     access_token: str = Query(..., description="New access token"),
     refresh_token: str = Query(..., description="New refresh token"),
     expires_in: int = Query(3600, description="Token expiry in seconds"),
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Update connection with fresh OAuth tokens after re-authorization
@@ -265,7 +265,7 @@ async def update_connection_tokens(
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             )
             connection = session.exec(statement).first()
             
@@ -301,7 +301,7 @@ async def update_connection_tokens(
 @router.delete("/connections/{connection_id}")
 async def revoke_ga_connection(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Revoke GA connection
@@ -312,7 +312,7 @@ async def revoke_ga_connection(
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             )
             connection = session.exec(statement).first()
             
@@ -344,7 +344,7 @@ async def revoke_ga_connection(
 @router.post("/data", response_model=GA4DataResponse)
 async def fetch_ga4_data(
     request: GA4DataRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Fetch data from Google Analytics 4
@@ -355,7 +355,7 @@ async def fetch_ga4_data(
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == request.connection_id,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             )
             connection = session.exec(statement).first()
             
@@ -392,7 +392,7 @@ async def fetch_ga4_data(
 @router.get("/properties/{connection_id}")
 async def get_ga_properties(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get GA properties accessible through this connection
@@ -405,7 +405,7 @@ async def get_ga_properties(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
                 Connection.id == connection_id,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             )
             result = session.exec(statement).first()
             
@@ -437,7 +437,7 @@ async def get_ga_properties(
 @router.get("/available-properties/{subclient_id}")
 async def get_available_ga_properties(
     subclient_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get ALL available GA properties from Google using an existing connection's tokens.
@@ -450,7 +450,7 @@ async def get_available_ga_properties(
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
-                Connection.user_id == current_user.id,
+                Connection.campaigner_id == current_user.id,
                 DigitalAsset.subclient_id == subclient_id,
                 DigitalAsset.asset_type == AssetType.GA4,
                 Connection.revoked == False
@@ -595,7 +595,7 @@ async def get_available_metrics():
     common_metrics = [
         "sessions",
         "users",
-        "newUsers",
+        "newCampaigners",
         "bounceRate",
         "sessionDuration",
         "pageviews",

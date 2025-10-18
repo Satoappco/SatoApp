@@ -200,3 +200,5 @@ def analyze_facebook_scopes():
 if __name__ == "__main__":
     test_facebook_oauth_flow()
     analyze_facebook_scopes()
+
+

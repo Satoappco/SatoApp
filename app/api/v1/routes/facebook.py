@@ -12,7 +12,7 @@ from app.config.database import get_session
 from app.models.analytics import Connection, DigitalAsset, AssetType
 from app.services.facebook_service import FacebookService
 from app.core.auth import get_current_user
-from app.models.users import User
+from app.models.users import Campaigner
 
 router = APIRouter(prefix="/facebook", tags=["facebook"])
 
@@ -60,27 +60,27 @@ class FacebookDataResponse(BaseModel):
 
 @router.get("/connections", response_model=FacebookConnectionsResponse)
 async def get_facebook_connections(
-    subclient_id: int = Query(None, description="Filter connections by subclient ID"),
-    current_user: User = Depends(get_current_user)
+    customer_id: int = Query(None, description="Filter connections by customer ID"),
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get Facebook connections for the current authenticated user, optionally filtered by subclient
+    Get Facebook connections for the current authenticated user, optionally filtered by customer
     """
     
     try:
         with get_session() as session:
-            # Build query conditions
+            # Build query conditions - now with direct customer relationship
             conditions = [
-                Connection.user_id == current_user.id,  # Real authenticated user ID
+                Connection.campaigner_id == current_user.id,  # Real authenticated user ID
                 DigitalAsset.provider == "Facebook",
                 Connection.revoked == False
             ]
             
-            # Add subclient filter if provided
-            if subclient_id is not None:
-                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            # Add customer filter if provided - now direct on connections table
+            if customer_id is not None:
+                conditions.append(Connection.customer_id == customer_id)
             
-            # Get Facebook connections for the current user
+            # Get Facebook connections for the current user - still need to join for asset info
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(and_(*conditions))
@@ -113,7 +113,7 @@ async def get_facebook_connections(
 @router.delete("/connections/{connection_id}")
 async def revoke_facebook_connection(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Revoke Facebook connection
@@ -187,7 +187,7 @@ async def revoke_facebook_connection(
 @router.post("/data", response_model=FacebookDataResponse)
 async def fetch_facebook_data(
     request: FacebookDataRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Fetch data from Facebook
@@ -242,7 +242,7 @@ async def fetch_facebook_data(
 @router.get("/pages/{connection_id}")
 async def get_facebook_pages(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get Facebook pages for a connection
@@ -303,7 +303,7 @@ async def get_facebook_pages(
 @router.get("/ad-accounts/{connection_id}")
 async def get_facebook_ad_accounts(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get Facebook ad accounts for a connection
@@ -363,7 +363,7 @@ async def get_facebook_ad_accounts(
 @router.get("/available-pages/{subclient_id}")
 async def get_available_facebook_pages(
     subclient_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get ALL available Facebook pages from Facebook using an existing connection's tokens.
@@ -376,7 +376,7 @@ async def get_available_facebook_pages(
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
-                Connection.user_id == current_user.id,
+                Connection.campaigner_id == current_user.id,
                 DigitalAsset.subclient_id == subclient_id,
                 DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
                 DigitalAsset.provider == "Facebook",
@@ -458,7 +458,7 @@ async def get_available_facebook_pages(
 @router.get("/available-ad-accounts/{subclient_id}")
 async def get_available_facebook_ad_accounts(
     subclient_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get ALL available Facebook ad accounts from Facebook using an existing connection's tokens.
@@ -471,7 +471,7 @@ async def get_available_facebook_ad_accounts(
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
-                Connection.user_id == current_user.id,
+                Connection.campaigner_id == current_user.id,
                 DigitalAsset.subclient_id == subclient_id,
                 DigitalAsset.asset_type == AssetType.ADVERTISING,
                 DigitalAsset.provider == "Facebook",

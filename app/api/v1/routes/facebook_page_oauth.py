@@ -111,7 +111,7 @@ async def handle_oauth_callback(
         print(f"DEBUG: Token exchange successful for user: {token_data['user_name']}")
         
         # Find user by email from Facebook
-        from app.models.users import User
+        from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
         

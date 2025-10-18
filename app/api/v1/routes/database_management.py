@@ -1,12 +1,11 @@
 """
 Database Management API routes
 Handles CRUD operations for all database tables:
-- KPI Catalog & Campaign KPIs
+- KPI Catalog & KPI Goals
 - Agent Config & Routing Rules
-- Analysis Executions
-- Performance Metrics
-- Analytics Cache
-- Narrative Reports
+- Customer Logs & Detailed Execution Logs
+- Digital Assets & Connections
+- User Management (Campaigners, Agencies, Customers)
 """
 
 from typing import List, Dict, Any, Optional
@@ -16,16 +15,14 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user
-from app.models.users import User, Customer, SubCustomer
-from app.models.analytics import KpiCatalog, CampaignKPI, PerformanceMetric, DigitalAsset, Connection
-from app.models.agents import AgentConfig, RoutingRule, AnalysisExecution, CustomerLog, ExecutionTiming, DetailedExecutionLog
-from app.models.conversations import NarrativeReport
+from app.models.users import Campaigner, Agency, Customer
+from app.models.analytics import KpiCatalog, KpiGoal, KpiValue, DigitalAsset, Connection, UserPropertySelection
+from app.models.agents import AgentConfig, RoutingRule, CustomerLog, DetailedExecutionLog
 from app.config.database import get_session
 
-# REMOVED IMPORTS (tables deleted):
-# - UserSession (from app.models.users)
-# - AnalyticsCache, UserPropertySelection (from app.models.analytics)
-# - ChatMessage, WebhookEntry (from app.models.conversations)
+# REMOVED IMPORTS (tables deleted from database):
+# - PerformanceMetric, AnalyticsCache, NarrativeReport (deleted tables)
+# - ChatMessage, WebhookEntry, AnalysisExecution (deleted tables)
 
 router = APIRouter(prefix="/database", tags=["database-management"])
 
@@ -34,63 +31,123 @@ router = APIRouter(prefix="/database", tags=["database-management"])
 
 class KpiCatalogCreate(BaseModel):
     """Schema for creating a KPI Catalog entry"""
-    kpi_name: str = Field(max_length=100)
-    kpi_description: str
-    calculation_method: str
-    data_sources: str
-    category: str = Field(max_length=100)
-    is_active: bool = True
+    subtype: str = Field(max_length=50)
+    primary_metric: str = Field(max_length=100)
+    primary_submetrics: str
+    secondary_metric: str = Field(max_length=100)
+    secondary_submetrics: str
+    lite_primary_metric: str = Field(max_length=100)
+    lite_primary_submetrics: str
+    lite_secondary_metric: str = Field(max_length=100)
+    lite_secondary_submetrics: str
 
 
 class KpiCatalogUpdate(BaseModel):
     """Schema for updating a KPI Catalog entry"""
-    kpi_name: Optional[str] = Field(None, max_length=100)
-    kpi_description: Optional[str] = None
-    calculation_method: Optional[str] = None
-    data_sources: Optional[str] = None
-    category: Optional[str] = None
-    is_active: Optional[bool] = None
+    subtype: Optional[str] = Field(None, max_length=50)
+    primary_metric: Optional[str] = Field(None, max_length=100)
+    primary_submetrics: Optional[str] = None
+    secondary_metric: Optional[str] = Field(None, max_length=100)
+    secondary_submetrics: Optional[str] = None
+    lite_primary_metric: Optional[str] = Field(None, max_length=100)
+    lite_primary_submetrics: Optional[str] = None
+    lite_secondary_metric: Optional[str] = Field(None, max_length=100)
+    lite_secondary_submetrics: Optional[str] = None
 
 
-class CampaignKPICreate(BaseModel):
-    """Schema for creating a Campaign KPI entry"""
-    subcustomer_id: int
-    date: datetime
-    campaign_num: int
+class KpiGoalCreate(BaseModel):
+    """Schema for creating a KPI Goal entry"""
+    customer_id: int
     campaign_id: str = Field(max_length=50)
-    advertising_channel: str = Field(max_length=100)
     campaign_name: str = Field(max_length=255)
+    campaign_status: str = Field(max_length=50, default="ACTIVE")
+    
+    # Ad Group fields
+    ad_group_id: Optional[int] = None
+    ad_group_name: Optional[str] = Field(None, max_length=255)
+    ad_group_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad fields
+    ad_id: Optional[int] = None
+    ad_name: Optional[str] = Field(None, max_length=255)
+    ad_headline: Optional[str] = Field(None, max_length=500)
+    ad_status: Optional[str] = Field(None, max_length=50)
+    ad_score: Optional[int] = None
+    
+    # Campaign details
+    advertising_channel: str = Field(max_length=100)
     campaign_objective: str = Field(max_length=100)
     daily_budget: Optional[float] = None
-    weekly_budget: Optional[float] = None
     target_audience: str = Field(max_length=255)
+    
+    # KPI Goals
     primary_kpi_1: Optional[str] = Field(None, max_length=255)
     secondary_kpi_1: Optional[str] = Field(None, max_length=255)
     secondary_kpi_2: Optional[str] = Field(None, max_length=255)
     secondary_kpi_3: Optional[str] = Field(None, max_length=255)
+    
+    # Additional fields
     landing_page: Optional[str] = Field(None, max_length=500)
-    summary_text: Optional[str] = None
+
+
+class KpiGoalUpdate(BaseModel):
+    """Schema for updating a KPI Goal entry"""
+    customer_id: Optional[int] = None
+    campaign_id: Optional[str] = Field(None, max_length=50)
+    campaign_name: Optional[str] = Field(None, max_length=255)
+    campaign_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad Group fields
+    ad_group_id: Optional[int] = None
+    ad_group_name: Optional[str] = Field(None, max_length=255)
+    ad_group_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad fields
+    ad_id: Optional[int] = None
+    ad_name: Optional[str] = Field(None, max_length=255)
+    ad_headline: Optional[str] = Field(None, max_length=500)
+    ad_status: Optional[str] = Field(None, max_length=50)
+    ad_score: Optional[int] = None
+    
+    # Campaign details
+    advertising_channel: Optional[str] = Field(None, max_length=100)
+    campaign_objective: Optional[str] = Field(None, max_length=100)
+    daily_budget: Optional[float] = None
+    target_audience: Optional[str] = Field(None, max_length=255)
+    
+    # KPI Goals
+    primary_kpi_1: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_1: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_2: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_3: Optional[str] = Field(None, max_length=255)
+    
+    # Additional fields
+    landing_page: Optional[str] = Field(None, max_length=500)
+
+
+class DigitalAssetCreate(BaseModel):
+    """Schema for creating a Digital Asset entry"""
+    customer_id: int
+    asset_type: str
+    provider: str = Field(max_length=100)
+    name: str = Field(max_length=255)
+    handle: Optional[str] = Field(None, max_length=100)
+    url: Optional[str] = Field(None, max_length=500)
+    external_id: str = Field(max_length=255)
+    meta: dict = Field(default_factory=dict)
     is_active: bool = True
 
 
-class CampaignKPIUpdate(BaseModel):
-    """Schema for updating a Campaign KPI entry"""
-    subcustomer_id: Optional[int] = None
-    date: Optional[datetime] = None
-    campaign_num: Optional[int] = None
-    campaign_id: Optional[str] = Field(None, max_length=50)
-    advertising_channel: Optional[str] = Field(None, max_length=100)
-    campaign_name: Optional[str] = Field(None, max_length=255)
-    campaign_objective: Optional[str] = Field(None, max_length=100)
-    daily_budget: Optional[float] = None
-    weekly_budget: Optional[float] = None
-    target_audience: Optional[str] = Field(None, max_length=255)
-    primary_kpi_1: Optional[str] = Field(None, max_length=255)
-    secondary_kpi_1: Optional[str] = Field(None, max_length=255)
-    secondary_kpi_2: Optional[str] = Field(None, max_length=255)
-    secondary_kpi_3: Optional[str] = Field(None, max_length=255)
-    landing_page: Optional[str] = Field(None, max_length=500)
-    summary_text: Optional[str] = None
+class DigitalAssetUpdate(BaseModel):
+    """Schema for updating a Digital Asset entry"""
+    customer_id: Optional[int] = None
+    asset_type: Optional[str] = None
+    provider: Optional[str] = Field(None, max_length=100)
+    name: Optional[str] = Field(None, max_length=255)
+    handle: Optional[str] = Field(None, max_length=100)
+    url: Optional[str] = Field(None, max_length=500)
+    external_id: Optional[str] = Field(None, max_length=255)
+    meta: Optional[dict] = None
     is_active: Optional[bool] = None
 
 
@@ -98,8 +155,7 @@ class CampaignKPIUpdate(BaseModel):
 
 @router.get("/catalog")
 async def get_kpi_catalog(
-    active_only: bool = Query(False, description="Return only active KPIs"),
-    category: Optional[str] = Query(None, description="Filter by category"),
+    subtype: Optional[str] = Query(None, description="Filter by subtype"),
 ):
     """Get all KPI catalog entries (admin view - shows all data)"""
     try:
@@ -108,15 +164,13 @@ async def get_kpi_catalog(
             
             # Apply filters
             conditions = []
-            if active_only:
-                conditions.append(KpiCatalog.is_active == True)
-            if category:
-                conditions.append(KpiCatalog.category == category)
+            if subtype:
+                conditions.append(KpiCatalog.subtype == subtype)
             
             if conditions:
                 statement = statement.where(and_(*conditions))
             
-            statement = statement.order_by(KpiCatalog.category, KpiCatalog.kpi_name)
+            statement = statement.order_by(KpiCatalog.subtype, KpiCatalog.primary_metric)
             kpis = session.exec(statement).all()
             
             return {
@@ -125,12 +179,15 @@ async def get_kpi_catalog(
                 "kpis": [
                     {
                         "id": kpi.id,
-                        "kpi_name": kpi.kpi_name,
-                        "kpi_description": kpi.kpi_description,
-                        "calculation_method": kpi.calculation_method,
-                        "data_sources": kpi.data_sources,
-                        "category": kpi.category,
-                        "is_active": kpi.is_active,
+                        "subtype": kpi.subtype,
+                        "primary_metric": kpi.primary_metric,
+                        "primary_submetrics": kpi.primary_submetrics,
+                        "secondary_metric": kpi.secondary_metric,
+                        "secondary_submetrics": kpi.secondary_submetrics,
+                        "lite_primary_metric": kpi.lite_primary_metric,
+                        "lite_primary_submetrics": kpi.lite_primary_submetrics,
+                        "lite_secondary_metric": kpi.lite_secondary_metric,
+                        "lite_secondary_submetrics": kpi.lite_secondary_submetrics,
                         "created_at": kpi.created_at.isoformat(),
                         "updated_at": kpi.updated_at.isoformat()
                     }
@@ -164,12 +221,15 @@ async def get_kpi_catalog_item(
                 "success": True,
                 "kpi": {
                     "id": kpi.id,
-                    "kpi_name": kpi.kpi_name,
-                    "kpi_description": kpi.kpi_description,
-                    "calculation_method": kpi.calculation_method,
-                    "data_sources": kpi.data_sources,
-                    "category": kpi.category,
-                    "is_active": kpi.is_active,
+                    "subtype": kpi.subtype,
+                    "primary_metric": kpi.primary_metric,
+                    "primary_submetrics": kpi.primary_submetrics,
+                    "secondary_metric": kpi.secondary_metric,
+                    "secondary_submetrics": kpi.secondary_submetrics,
+                    "lite_primary_metric": kpi.lite_primary_metric,
+                    "lite_primary_submetrics": kpi.lite_primary_submetrics,
+                    "lite_secondary_metric": kpi.lite_secondary_metric,
+                    "lite_secondary_submetrics": kpi.lite_secondary_submetrics,
                     "created_at": kpi.created_at.isoformat(),
                     "updated_at": kpi.updated_at.isoformat()
                 }
@@ -192,12 +252,15 @@ async def create_kpi_catalog(
     try:
         with get_session() as session:
             new_kpi = KpiCatalog(
-                kpi_name=kpi_data.kpi_name,
-                kpi_description=kpi_data.kpi_description,
-                calculation_method=kpi_data.calculation_method,
-                data_sources=kpi_data.data_sources,
-                category=kpi_data.category,
-                is_active=kpi_data.is_active,
+                subtype=kpi_data.subtype,
+                primary_metric=kpi_data.primary_metric,
+                primary_submetrics=kpi_data.primary_submetrics,
+                secondary_metric=kpi_data.secondary_metric,
+                secondary_submetrics=kpi_data.secondary_submetrics,
+                lite_primary_metric=kpi_data.lite_primary_metric,
+                lite_primary_submetrics=kpi_data.lite_primary_submetrics,
+                lite_secondary_metric=kpi_data.lite_secondary_metric,
+                lite_secondary_submetrics=kpi_data.lite_secondary_submetrics,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
@@ -211,12 +274,15 @@ async def create_kpi_catalog(
                 "message": "KPI created successfully",
                 "kpi": {
                     "id": new_kpi.id,
-                    "kpi_name": new_kpi.kpi_name,
-                    "kpi_description": new_kpi.kpi_description,
-                    "calculation_method": new_kpi.calculation_method,
-                    "data_sources": new_kpi.data_sources,
-                    "category": new_kpi.category,
-                    "is_active": new_kpi.is_active,
+                    "subtype": new_kpi.subtype,
+                    "primary_metric": new_kpi.primary_metric,
+                    "primary_submetrics": new_kpi.primary_submetrics,
+                    "secondary_metric": new_kpi.secondary_metric,
+                    "secondary_submetrics": new_kpi.secondary_submetrics,
+                    "lite_primary_metric": new_kpi.lite_primary_metric,
+                    "lite_primary_submetrics": new_kpi.lite_primary_submetrics,
+                    "lite_secondary_metric": new_kpi.lite_secondary_metric,
+                    "lite_secondary_submetrics": new_kpi.lite_secondary_submetrics,
                     "created_at": new_kpi.created_at.isoformat(),
                     "updated_at": new_kpi.updated_at.isoformat()
                 }
@@ -261,12 +327,15 @@ async def update_kpi_catalog(
                 "message": "KPI updated successfully",
                 "kpi": {
                     "id": kpi.id,
-                    "kpi_name": kpi.kpi_name,
-                    "kpi_description": kpi.kpi_description,
-                    "calculation_method": kpi.calculation_method,
-                    "data_sources": kpi.data_sources,
-                    "category": kpi.category,
-                    "is_active": kpi.is_active,
+                    "subtype": kpi.subtype,
+                    "primary_metric": kpi.primary_metric,
+                    "primary_submetrics": kpi.primary_submetrics,
+                    "secondary_metric": kpi.secondary_metric,
+                    "secondary_submetrics": kpi.secondary_submetrics,
+                    "lite_primary_metric": kpi.lite_primary_metric,
+                    "lite_primary_submetrics": kpi.lite_primary_submetrics,
+                    "lite_secondary_metric": kpi.lite_secondary_metric,
+                    "lite_secondary_submetrics": kpi.lite_secondary_submetrics,
                     "created_at": kpi.created_at.isoformat(),
                     "updated_at": kpi.updated_at.isoformat()
                 }
@@ -313,31 +382,29 @@ async def delete_kpi_catalog(
         )
 
 
-# ===== Campaign KPI Routes =====
+# ===== KPI Goals Routes =====
 
-@router.get("/campaigns")
-async def get_campaign_kpis(
-    subcustomer_id: Optional[int] = Query(None, description="Filter by subcustomer"),
+@router.get("/kpi-goals")
+async def get_kpi_goals(
+    customer_id: Optional[int] = Query(None, description="Filter by customer"),
     active_only: bool = Query(False, description="Return only active campaigns"),
     limit: int = Query(1000, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
 ):
-    """Get all campaign KPIs (admin view - shows all data)"""
+    """Get all KPI goals (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(CampaignKPI)
+            statement = select(KpiGoal)
             
             # Apply filters (no user filtering - this is admin tool)
             conditions = []
-            if active_only:
-                conditions.append(CampaignKPI.is_active == True)
-            if subcustomer_id:
-                conditions.append(CampaignKPI.subcustomer_id == subcustomer_id)
+            if customer_id:
+                conditions.append(KpiGoal.customer_id == customer_id)
             
             if conditions:
                 statement = statement.where(and_(*conditions))
             
-            statement = statement.order_by(CampaignKPI.date.desc()).offset(offset).limit(limit)
+            statement = statement.order_by(KpiGoal.created_at.desc()).offset(offset).limit(limit)
             campaigns = session.exec(statement).all()
             
             return {
@@ -346,23 +413,27 @@ async def get_campaign_kpis(
                 "campaigns": [
                     {
                         "id": campaign.id,
-                        "subcustomer_id": campaign.subcustomer_id,
-                        "date": campaign.date.isoformat(),
-                        "campaign_num": campaign.campaign_num,
+                        "customer_id": campaign.customer_id,
                         "campaign_id": campaign.campaign_id,
-                        "advertising_channel": campaign.advertising_channel,
                         "campaign_name": campaign.campaign_name,
+                        "campaign_status": campaign.campaign_status,
+                        "ad_group_id": campaign.ad_group_id,
+                        "ad_group_name": campaign.ad_group_name,
+                        "ad_group_status": campaign.ad_group_status,
+                        "ad_id": campaign.ad_id,
+                        "ad_name": campaign.ad_name,
+                        "ad_headline": campaign.ad_headline,
+                        "ad_status": campaign.ad_status,
+                        "ad_score": campaign.ad_score,
+                        "advertising_channel": campaign.advertising_channel,
                         "campaign_objective": campaign.campaign_objective,
                         "daily_budget": campaign.daily_budget,
-                        "weekly_budget": campaign.weekly_budget,
                         "target_audience": campaign.target_audience,
                         "primary_kpi_1": campaign.primary_kpi_1,
                         "secondary_kpi_1": campaign.secondary_kpi_1,
                         "secondary_kpi_2": campaign.secondary_kpi_2,
                         "secondary_kpi_3": campaign.secondary_kpi_3,
                         "landing_page": campaign.landing_page,
-                        "summary_text": campaign.summary_text,
-                        "is_active": campaign.is_active,
                         "created_at": campaign.created_at.isoformat(),
                         "updated_at": campaign.updated_at.isoformat()
                     }
@@ -373,46 +444,50 @@ async def get_campaign_kpis(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch campaign KPIs: {str(e)}"
+            detail=f"Failed to fetch KPI goals: {str(e)}"
         )
 
 
-@router.get("/campaigns/{campaign_kpi_id}")
-async def get_campaign_kpi(
-    campaign_kpi_id: int,
+@router.get("/kpi-goals/{kpi_goal_id}")
+async def get_kpi_goal(
+    kpi_goal_id: int,
 ):
-    """Get a specific campaign KPI entry"""
+    """Get a specific KPI goal entry"""
     try:
         with get_session() as session:
-            campaign = session.get(CampaignKPI, campaign_kpi_id)
+            campaign = session.get(KpiGoal, kpi_goal_id)
             
             if not campaign:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Campaign KPI not found"
+                    detail="KPI goal not found"
                 )
             
             return {
                 "success": True,
                 "campaign": {
                     "id": campaign.id,
-                    "subcustomer_id": campaign.subcustomer_id,
-                    "date": campaign.date.isoformat(),
-                    "campaign_num": campaign.campaign_num,
+                    "customer_id": campaign.customer_id,
                     "campaign_id": campaign.campaign_id,
-                    "advertising_channel": campaign.advertising_channel,
                     "campaign_name": campaign.campaign_name,
+                    "campaign_status": campaign.campaign_status,
+                    "ad_group_id": campaign.ad_group_id,
+                    "ad_group_name": campaign.ad_group_name,
+                    "ad_group_status": campaign.ad_group_status,
+                    "ad_id": campaign.ad_id,
+                    "ad_name": campaign.ad_name,
+                    "ad_headline": campaign.ad_headline,
+                    "ad_status": campaign.ad_status,
+                    "ad_score": campaign.ad_score,
+                    "advertising_channel": campaign.advertising_channel,
                     "campaign_objective": campaign.campaign_objective,
                     "daily_budget": campaign.daily_budget,
-                    "weekly_budget": campaign.weekly_budget,
                     "target_audience": campaign.target_audience,
                     "primary_kpi_1": campaign.primary_kpi_1,
                     "secondary_kpi_1": campaign.secondary_kpi_1,
                     "secondary_kpi_2": campaign.secondary_kpi_2,
                     "secondary_kpi_3": campaign.secondary_kpi_3,
                     "landing_page": campaign.landing_page,
-                    "summary_text": campaign.summary_text,
-                    "is_active": campaign.is_active,
                     "created_at": campaign.created_at.isoformat(),
                     "updated_at": campaign.updated_at.isoformat()
                 }
@@ -427,31 +502,35 @@ async def get_campaign_kpi(
         )
 
 
-@router.post("/campaigns")
-async def create_campaign_kpi(
-    campaign_data: CampaignKPICreate,
+@router.post("/kpi-goals")
+async def create_kpi_goal(
+    campaign_data: KpiGoalCreate,
 ):
     """Create a new campaign KPI entry"""
     try:
         with get_session() as session:
-            new_campaign = CampaignKPI(
-                subcustomer_id=campaign_data.subcustomer_id,
-                date=campaign_data.date,
-                campaign_num=campaign_data.campaign_num,
+            new_campaign = KpiGoal(
+                customer_id=campaign_data.customer_id,
                 campaign_id=campaign_data.campaign_id,
-                advertising_channel=campaign_data.advertising_channel,
                 campaign_name=campaign_data.campaign_name,
+                campaign_status=campaign_data.campaign_status,
+                ad_group_id=campaign_data.ad_group_id,
+                ad_group_name=campaign_data.ad_group_name,
+                ad_group_status=campaign_data.ad_group_status,
+                ad_id=campaign_data.ad_id,
+                ad_name=campaign_data.ad_name,
+                ad_headline=campaign_data.ad_headline,
+                ad_status=campaign_data.ad_status,
+                ad_score=campaign_data.ad_score,
+                advertising_channel=campaign_data.advertising_channel,
                 campaign_objective=campaign_data.campaign_objective,
                 daily_budget=campaign_data.daily_budget,
-                weekly_budget=campaign_data.weekly_budget,
                 target_audience=campaign_data.target_audience,
                 primary_kpi_1=campaign_data.primary_kpi_1,
                 secondary_kpi_1=campaign_data.secondary_kpi_1,
                 secondary_kpi_2=campaign_data.secondary_kpi_2,
                 secondary_kpi_3=campaign_data.secondary_kpi_3,
                 landing_page=campaign_data.landing_page,
-                summary_text=campaign_data.summary_text,
-                is_active=campaign_data.is_active,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
@@ -462,26 +541,30 @@ async def create_campaign_kpi(
             
             return {
                 "success": True,
-                "message": "Campaign KPI created successfully",
+                "message": "KPI goal created successfully",
                 "campaign": {
                     "id": new_campaign.id,
-                    "subcustomer_id": new_campaign.subcustomer_id,
-                    "date": new_campaign.date.isoformat(),
-                    "campaign_num": new_campaign.campaign_num,
+                    "customer_id": new_campaign.customer_id,
                     "campaign_id": new_campaign.campaign_id,
-                    "advertising_channel": new_campaign.advertising_channel,
                     "campaign_name": new_campaign.campaign_name,
+                    "campaign_status": new_campaign.campaign_status,
+                    "ad_group_id": new_campaign.ad_group_id,
+                    "ad_group_name": new_campaign.ad_group_name,
+                    "ad_group_status": new_campaign.ad_group_status,
+                    "ad_id": new_campaign.ad_id,
+                    "ad_name": new_campaign.ad_name,
+                    "ad_headline": new_campaign.ad_headline,
+                    "ad_status": new_campaign.ad_status,
+                    "ad_score": new_campaign.ad_score,
+                    "advertising_channel": new_campaign.advertising_channel,
                     "campaign_objective": new_campaign.campaign_objective,
                     "daily_budget": new_campaign.daily_budget,
-                    "weekly_budget": new_campaign.weekly_budget,
                     "target_audience": new_campaign.target_audience,
                     "primary_kpi_1": new_campaign.primary_kpi_1,
                     "secondary_kpi_1": new_campaign.secondary_kpi_1,
                     "secondary_kpi_2": new_campaign.secondary_kpi_2,
                     "secondary_kpi_3": new_campaign.secondary_kpi_3,
                     "landing_page": new_campaign.landing_page,
-                    "summary_text": new_campaign.summary_text,
-                    "is_active": new_campaign.is_active,
                     "created_at": new_campaign.created_at.isoformat(),
                     "updated_at": new_campaign.updated_at.isoformat()
                 }
@@ -494,20 +577,20 @@ async def create_campaign_kpi(
         )
 
 
-@router.put("/campaigns/{campaign_kpi_id}")
-async def update_campaign_kpi(
-    campaign_kpi_id: int,
-    campaign_data: CampaignKPIUpdate,
+@router.put("/kpi-goals/{kpi_goal_id}")
+async def update_kpi_goal(
+    kpi_goal_id: int,
+    campaign_data: KpiGoalUpdate,
 ):
     """Update a campaign KPI entry"""
     try:
         with get_session() as session:
-            campaign = session.get(CampaignKPI, campaign_kpi_id)
+            campaign = session.get(KpiGoal, kpi_goal_id)
             
             if not campaign:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Campaign KPI not found"
+                    detail="KPI goal not found"
                 )
             
             # Update fields
@@ -523,26 +606,30 @@ async def update_campaign_kpi(
             
             return {
                 "success": True,
-                "message": "Campaign KPI updated successfully",
+                "message": "KPI goal updated successfully",
                 "campaign": {
                     "id": campaign.id,
-                    "subcustomer_id": campaign.subcustomer_id,
-                    "date": campaign.date.isoformat(),
-                    "campaign_num": campaign.campaign_num,
+                    "customer_id": campaign.customer_id,
                     "campaign_id": campaign.campaign_id,
-                    "advertising_channel": campaign.advertising_channel,
                     "campaign_name": campaign.campaign_name,
+                    "campaign_status": campaign.campaign_status,
+                    "ad_group_id": campaign.ad_group_id,
+                    "ad_group_name": campaign.ad_group_name,
+                    "ad_group_status": campaign.ad_group_status,
+                    "ad_id": campaign.ad_id,
+                    "ad_name": campaign.ad_name,
+                    "ad_headline": campaign.ad_headline,
+                    "ad_status": campaign.ad_status,
+                    "ad_score": campaign.ad_score,
+                    "advertising_channel": campaign.advertising_channel,
                     "campaign_objective": campaign.campaign_objective,
                     "daily_budget": campaign.daily_budget,
-                    "weekly_budget": campaign.weekly_budget,
                     "target_audience": campaign.target_audience,
                     "primary_kpi_1": campaign.primary_kpi_1,
                     "secondary_kpi_1": campaign.secondary_kpi_1,
                     "secondary_kpi_2": campaign.secondary_kpi_2,
                     "secondary_kpi_3": campaign.secondary_kpi_3,
                     "landing_page": campaign.landing_page,
-                    "summary_text": campaign.summary_text,
-                    "is_active": campaign.is_active,
                     "created_at": campaign.created_at.isoformat(),
                     "updated_at": campaign.updated_at.isoformat()
                 }
@@ -557,19 +644,19 @@ async def update_campaign_kpi(
         )
 
 
-@router.delete("/campaigns/{campaign_kpi_id}")
-async def delete_campaign_kpi(
-    campaign_kpi_id: int,
+@router.delete("/kpi-goals/{kpi_goal_id}")
+async def delete_kpi_goal(
+    kpi_goal_id: int,
 ):
     """Delete a campaign KPI entry"""
     try:
         with get_session() as session:
-            campaign = session.get(CampaignKPI, campaign_kpi_id)
+            campaign = session.get(KpiGoal, kpi_goal_id)
             
             if not campaign:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Campaign KPI not found"
+                    detail="KPI goal not found"
                 )
             
             session.delete(campaign)
@@ -577,7 +664,7 @@ async def delete_campaign_kpi(
             
             return {
                 "success": True,
-                "message": "Campaign KPI deleted successfully"
+                "message": "KPI goal deleted successfully"
             }
     
     except HTTPException:
@@ -589,20 +676,98 @@ async def delete_campaign_kpi(
         )
 
 
-# ===== Categories Route =====
+# ===== KPI Values Routes =====
 
-@router.get("/catalog/categories/list")
-async def get_kpi_categories(
+@router.get("/kpi-values")
+async def get_kpi_values(
+    customer_id: Optional[int] = Query(None, description="Filter by customer"),
+    active_only: bool = Query(False, description="Return only active campaigns"),
+    limit: int = Query(1000, description="Maximum number of results"),
+    offset: int = Query(0, description="Offset for pagination"),
 ):
-    """Get all unique KPI categories"""
+    """Get all KPI values (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(KpiCatalog.category).distinct()
-            categories = session.exec(statement).all()
+            statement = select(KpiValue)
+            
+            # Apply filters
+            conditions = []
+            if active_only:
+                conditions.append(KpiValue.is_active == True)
+            if customer_id:
+                conditions.append(KpiValue.customer_id == customer_id)
+            
+            if conditions:
+                statement = statement.where(and_(*conditions))
+            
+            statement = statement.order_by(KpiValue.measurement_date.desc()).offset(offset).limit(limit)
+            campaigns = session.exec(statement).all()
             
             return {
                 "success": True,
-                "categories": categories
+                "count": len(campaigns),
+                "campaigns": [
+                    {
+                        "id": campaign.id,
+                        "customer_id": campaign.customer_id,
+                        "kpi_goal_id": campaign.kpi_goal_id,
+                        "date": campaign.date.isoformat(),
+                        "campaign_num": campaign.campaign_num,
+                        "campaign_id": campaign.campaign_id,
+                        "campaign_name": campaign.campaign_name,
+                        "campaign_status": campaign.campaign_status,
+                        "ad_group_id": campaign.ad_group_id,
+                        "ad_group_name": campaign.ad_group_name,
+                        "ad_group_status": campaign.ad_group_status,
+                        "ad_id": campaign.ad_id,
+                        "ad_status": campaign.ad_status,
+                        "ad_score": campaign.ad_score,
+                        "ad_headline": campaign.ad_headline,
+                        "advertising_channel": campaign.advertising_channel,
+                        "campaign_objective": campaign.campaign_objective,
+                        "daily_budget": campaign.daily_budget,
+                        "weekly_budget": campaign.weekly_budget,
+                        "target_audience": campaign.target_audience,
+                        "primary_kpi_1_value": campaign.primary_kpi_1_value,
+                        "primary_kpi_1_unit": campaign.primary_kpi_1_unit,
+                        "secondary_kpi_1_value": campaign.secondary_kpi_1_value,
+                        "secondary_kpi_1_unit": campaign.secondary_kpi_1_unit,
+                        "secondary_kpi_2_value": campaign.secondary_kpi_2_value,
+                        "secondary_kpi_2_unit": campaign.secondary_kpi_2_unit,
+                        "secondary_kpi_3_value": campaign.secondary_kpi_3_value,
+                        "secondary_kpi_3_unit": campaign.secondary_kpi_3_unit,
+                        "landing_page": campaign.landing_page,
+                        "measurement_date": campaign.measurement_date.isoformat(),
+                        "data_source": campaign.data_source,
+                        "is_active": campaign.is_active,
+                        "created_at": campaign.created_at.isoformat(),
+                        "updated_at": campaign.updated_at.isoformat()
+                    }
+                    for campaign in campaigns
+                ]
+            }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch KPI values: {str(e)}"
+        )
+
+
+# ===== Categories Route =====
+
+@router.get("/catalog/subtypes/list")
+async def get_kpi_subtypes(
+):
+    """Get all unique KPI subtypes"""
+    try:
+        with get_session() as session:
+            statement = select(KpiCatalog.subtype).distinct()
+            subtypes = session.exec(statement).all()
+            
+            return {
+                "success": True,
+                "subtypes": subtypes
             }
     
     except Exception as e:
@@ -704,162 +869,7 @@ async def get_routing_rules(
         )
 
 
-@router.get("/analysis-executions")
-async def get_analysis_executions(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all analysis executions (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(AnalysisExecution)
-            statement = statement.order_by(AnalysisExecution.created_at.desc()).offset(offset).limit(limit)
-            executions = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(executions),
-                "executions": [
-                    {
-                        "id": exec.id,
-                        "user_id": exec.user_id,
-                        "session_id": exec.session_id,
-                        "master_agent_id": exec.master_agent_id,
-                        "specialists_used": exec.specialists_used,
-                        "iterations": exec.iterations,
-                        "execution_time_ms": exec.execution_time_ms,
-                        "validation_results": exec.validation_results,
-                        "final_result": exec.final_result,
-                        "created_at": exec.created_at.isoformat(),
-                        "updated_at": exec.updated_at.isoformat()
-                    }
-                    for exec in executions
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch analysis executions: {str(e)}"
-        )
 
-
-@router.get("/performance-metrics")
-async def get_performance_metrics(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all performance metrics (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(PerformanceMetric)
-            statement = statement.order_by(PerformanceMetric.created_at.desc()).offset(offset).limit(limit)
-            metrics = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(metrics),
-                "metrics": [
-                    {
-                        "id": metric.id,
-                        "metric_name": metric.metric_name,
-                        "metric_value": metric.metric_value,
-                        "metric_unit": metric.metric_unit,
-                        "agent_type": metric.agent_type,
-                        "session_id": metric.session_id,
-                        "user_id": metric.user_id,
-                        "metric_metadata": metric.metric_metadata,
-                        "created_at": metric.created_at.isoformat(),
-                        "updated_at": metric.updated_at.isoformat()
-                    }
-                    for metric in metrics
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch performance metrics: {str(e)}"
-        )
-
-
-@router.get("/analytics-cache")
-async def get_analytics_cache(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all analytics cache entries (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(AnalyticsCache)
-            statement = statement.order_by(AnalyticsCache.expires_at.desc()).offset(offset).limit(limit)
-            cache_entries = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(cache_entries),
-                "cache_entries": [
-                    {
-                        "id": entry.id,
-                        "cache_key": entry.cache_key,
-                        "cache_data": entry.cache_data,
-                        "expires_at": entry.expires_at.isoformat(),
-                        "user_id": entry.user_id,
-                        "asset_id": entry.asset_id,
-                        "created_at": entry.created_at.isoformat(),
-                        "updated_at": entry.updated_at.isoformat()
-                    }
-                    for entry in cache_entries
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch analytics cache: {str(e)}"
-        )
-
-
-@router.get("/narrative-reports")
-async def get_narrative_reports(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all narrative reports (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(NarrativeReport)
-            statement = statement.order_by(NarrativeReport.created_at.desc()).offset(offset).limit(limit)
-            reports = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(reports),
-                "reports": [
-                    {
-                        "id": report.id,
-                        "user_id": report.user_id,
-                        "report_title": report.report_title,
-                        "report_content": report.report_content,
-                        "report_type": report.report_type,
-                        "data_sources": report.data_sources,
-                        "generated_by_agent": report.generated_by_agent,
-                        "metrics_included": report.metrics_included,
-                        "date_range_start": report.date_range_start.isoformat() if report.date_range_start else None,
-                        "date_range_end": report.date_range_end.isoformat() if report.date_range_end else None,
-                        "is_published": report.is_published,
-                        "created_at": report.created_at.isoformat(),
-                        "updated_at": report.updated_at.isoformat()
-                    }
-                    for report in reports
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch narrative reports: {str(e)}"
-        )
 
 
 # ===== User Management Routes =====
@@ -872,8 +882,8 @@ async def get_users(
     """Get all users (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(User)
-            statement = statement.order_by(User.created_at.desc()).offset(offset).limit(limit)
+            statement = select(Campaigner)
+            statement = statement.order_by(Campaigner.created_at.desc()).offset(offset).limit(limit)
             users = session.exec(statement).all()
             
             return {
@@ -887,14 +897,7 @@ async def get_users(
                         "phone": user.phone,
                         "role": user.role,
                         "status": user.status,
-                        "primary_customer_id": user.primary_customer_id,
-                        "additional_customer_ids": user.additional_customer_ids,
-                        "locale": user.locale,
-                        "timezone": user.timezone,
-                        "google_id": user.google_id,
-                        "avatar_url": user.avatar_url,
-                        "email_verified": user.email_verified,
-                        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                        "agency_id": user.agency_id,
                         "created_at": user.created_at.isoformat(),
                         "updated_at": user.updated_at.isoformat()
                     }
@@ -952,37 +955,41 @@ async def get_customers(
         )
 
 
-@router.get("/sub-customers")
-async def get_sub_customers(
+@router.get("/customers")
+async def get_customers(
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
 ):
-    """Get all sub-customers (admin view - shows all data)"""
+    """Get all customers (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(SubCustomer)
-            statement = statement.order_by(SubCustomer.created_at.desc()).offset(offset).limit(limit)
-            sub_customers = session.exec(statement).all()
+            statement = select(Customer)
+            statement = statement.order_by(Customer.created_at.desc()).offset(offset).limit(limit)
+            customers = session.exec(statement).all()
             
             return {
                 "success": True,
-                "count": len(sub_customers),
-                "sub_customers": [
+                "count": len(customers),
+                "customers": [
                     {
-                        "id": sub.id,
-                        "customer_id": sub.customer_id,
-                        "name": sub.name,
-                        "subtype": sub.subtype,
-                        "status": sub.status,
-                        "external_ids": sub.external_ids,
-                        "timezone": sub.timezone,
-                        "markets": sub.markets,
-                        "budget_monthly": sub.budget_monthly,
-                        "tags": sub.tags,
-                        "created_at": sub.created_at.isoformat(),
-                        "updated_at": sub.updated_at.isoformat()
+                        "id": customer.id,
+                        "agency_id": customer.agency_id,
+                        "full_name": customer.full_name,
+                        "login_email": customer.login_email,
+                        "phone": customer.phone,
+                        "address": customer.address,
+                        "opening_hours": customer.opening_hours,
+                        "narrative_report": customer.narrative_report,
+                        "website_url": customer.website_url,
+                        "facebook_page_url": customer.facebook_page_url,
+                        "instagram_page_url": customer.instagram_page_url,
+                        "llm_engine_preference": customer.llm_engine_preference,
+                        "status": customer.status,
+                        "is_active": customer.is_active,
+                        "created_at": customer.created_at.isoformat(),
+                        "updated_at": customer.updated_at.isoformat()
                     }
-                    for sub in sub_customers
+                    for customer in customers
                 ]
             }
     
@@ -995,13 +1002,29 @@ async def get_sub_customers(
 
 @router.get("/digital-assets")
 async def get_digital_assets(
+    customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
+    active_only: bool = Query(False, description="Return only active assets"),
+    asset_type: Optional[str] = Query(None, description="Filter by asset type"),
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
 ):
-    """Get all digital assets (admin view - shows all data)"""
+    """Get digital assets with optional filtering by customer"""
     try:
         with get_session() as session:
             statement = select(DigitalAsset)
+            
+            # Apply filters
+            conditions = []
+            if customer_id:
+                conditions.append(DigitalAsset.customer_id == customer_id)
+            if active_only:
+                conditions.append(DigitalAsset.is_active == True)
+            if asset_type:
+                conditions.append(DigitalAsset.asset_type == asset_type)
+            
+            if conditions:
+                statement = statement.where(and_(*conditions))
+            
             statement = statement.order_by(DigitalAsset.created_at.desc()).offset(offset).limit(limit)
             assets = session.exec(statement).all()
             
@@ -1011,12 +1034,14 @@ async def get_digital_assets(
                 "assets": [
                     {
                         "id": asset.id,
-                        "subclient_id": asset.subclient_id,
+                        "customer_id": asset.customer_id,
                         "asset_type": asset.asset_type,
                         "provider": asset.provider,
                         "name": asset.name,
+                        "handle": asset.handle,
+                        "url": asset.url,
                         "external_id": asset.external_id,
-                        "metadata": asset.metadata,
+                        "metadata": asset.meta,
                         "is_active": asset.is_active,
                         "created_at": asset.created_at.isoformat(),
                         "updated_at": asset.updated_at.isoformat()
@@ -1029,6 +1054,194 @@ async def get_digital_assets(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch digital assets: {str(e)}"
+        )
+
+
+@router.get("/digital-assets/{asset_id}")
+async def get_digital_asset(
+    asset_id: int,
+):
+    """Get a specific digital asset"""
+    try:
+        with get_session() as session:
+            asset = session.get(DigitalAsset, asset_id)
+            
+            if not asset:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Digital asset not found"
+                )
+            
+            return {
+                "success": True,
+                "asset": {
+                    "id": asset.id,
+                    "customer_id": asset.customer_id,
+                    "asset_type": asset.asset_type,
+                    "provider": asset.provider,
+                    "name": asset.name,
+                    "handle": asset.handle,
+                    "url": asset.url,
+                    "external_id": asset.external_id,
+                    "metadata": asset.meta,
+                    "is_active": asset.is_active,
+                    "created_at": asset.created_at.isoformat(),
+                    "updated_at": asset.updated_at.isoformat()
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch digital asset: {str(e)}"
+        )
+
+
+@router.post("/digital-assets")
+async def create_digital_asset(
+    asset_data: DigitalAssetCreate,
+):
+    """Create a new digital asset"""
+    try:
+        with get_session() as session:
+            # Verify customer exists
+            customer = session.get(Customer, asset_data.customer_id)
+            if not customer:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Customer with ID {asset_data.customer_id} not found"
+                )
+            
+            new_asset = DigitalAsset(
+                customer_id=asset_data.customer_id,
+                asset_type=asset_data.asset_type,
+                provider=asset_data.provider,
+                name=asset_data.name,
+                handle=asset_data.handle,
+                url=asset_data.url,
+                external_id=asset_data.external_id,
+                meta=asset_data.meta,
+                is_active=asset_data.is_active
+            )
+            
+            session.add(new_asset)
+            session.commit()
+            session.refresh(new_asset)
+            
+            return {
+                "success": True,
+                "message": "Digital asset created successfully",
+                "asset": {
+                    "id": new_asset.id,
+                    "customer_id": new_asset.customer_id,
+                    "asset_type": new_asset.asset_type,
+                    "provider": new_asset.provider,
+                    "name": new_asset.name,
+                    "handle": new_asset.handle,
+                    "url": new_asset.url,
+                    "external_id": new_asset.external_id,
+                    "metadata": new_asset.meta,
+                    "is_active": new_asset.is_active,
+                    "created_at": new_asset.created_at.isoformat(),
+                    "updated_at": new_asset.updated_at.isoformat()
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create digital asset: {str(e)}"
+        )
+
+
+@router.put("/digital-assets/{asset_id}")
+async def update_digital_asset(
+    asset_id: int,
+    asset_data: DigitalAssetUpdate,
+):
+    """Update a digital asset"""
+    try:
+        with get_session() as session:
+            asset = session.get(DigitalAsset, asset_id)
+            
+            if not asset:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Digital asset not found"
+                )
+            
+            # Update only provided fields
+            update_data = asset_data.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(asset, field, value)
+            
+            asset.updated_at = datetime.utcnow()
+            
+            session.add(asset)
+            session.commit()
+            session.refresh(asset)
+            
+            return {
+                "success": True,
+                "message": "Digital asset updated successfully",
+                "asset": {
+                    "id": asset.id,
+                    "customer_id": asset.customer_id,
+                    "asset_type": asset.asset_type,
+                    "provider": asset.provider,
+                    "name": asset.name,
+                    "handle": asset.handle,
+                    "url": asset.url,
+                    "external_id": asset.external_id,
+                    "metadata": asset.meta,
+                    "is_active": asset.is_active,
+                    "created_at": asset.created_at.isoformat(),
+                    "updated_at": asset.updated_at.isoformat()
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update digital asset: {str(e)}"
+        )
+
+
+@router.delete("/digital-assets/{asset_id}")
+async def delete_digital_asset(
+    asset_id: int,
+):
+    """Delete a digital asset"""
+    try:
+        with get_session() as session:
+            asset = session.get(DigitalAsset, asset_id)
+            
+            if not asset:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Digital asset not found"
+                )
+            
+            session.delete(asset)
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": "Digital asset deleted successfully"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete digital asset: {str(e)}"
         )
 
 
@@ -1051,7 +1264,8 @@ async def get_connections(
                     {
                         "id": conn.id,
                         "digital_asset_id": conn.digital_asset_id,
-                        "user_id": conn.user_id,
+                        "customer_id": conn.customer_id,
+                        "campaigner_id": conn.campaigner_id,
                         "auth_type": conn.auth_type,
                         "account_email": conn.account_email,
                         "scopes": conn.scopes,
@@ -1092,7 +1306,7 @@ async def get_user_property_selections(
                     {
                         "id": sel.id,
                         "user_id": sel.user_id,
-                        "subclient_id": sel.subclient_id,
+                        "customer_id": sel.customer_id,
                         "service": sel.service,
                         "selected_property_id": sel.selected_property_id,
                         "property_name": sel.property_name,
@@ -1111,80 +1325,6 @@ async def get_user_property_selections(
         )
 
 
-@router.get("/chat-messages")
-async def get_chat_messages(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all chat messages (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(ChatMessage)
-            statement = statement.order_by(ChatMessage.created_at.desc()).offset(offset).limit(limit)
-            messages = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(messages),
-                "messages": [
-                    {
-                        "id": msg.id,
-                        "user_name": msg.user_name,
-                        "message": msg.message,
-                        "session_id": msg.session_id,
-                        "intent": msg.intent,
-                        "confidence": msg.confidence,
-                        "response": msg.response,
-                        "agent_type": msg.agent_type,
-                        "execution_time": msg.execution_time,
-                        "raw_data": msg.raw_data,
-                        "created_at": msg.created_at.isoformat(),
-                        "updated_at": msg.updated_at.isoformat()
-                    }
-                    for msg in messages
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch chat messages: {str(e)}"
-        )
-
-
-@router.get("/webhook-entries")
-async def get_webhook_entries(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all webhook entries (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(WebhookEntry)
-            statement = statement.order_by(WebhookEntry.created_at.desc()).offset(offset).limit(limit)
-            entries = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(entries),
-                "entries": [
-                    {
-                        "id": entry.id,
-                        "user_name": entry.user_name,
-                        "user_choice": entry.user_choice,
-                        "raw_payload": entry.raw_payload,
-                        "created_at": entry.created_at.isoformat(),
-                        "updated_at": entry.updated_at.isoformat()
-                    }
-                    for entry in entries
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch webhook entries: {str(e)}"
-        )
 
 
 @router.get("/customer-logs")
@@ -1214,7 +1354,7 @@ async def get_customer_logs(
                         "crewai_log": log.crewai_log,
                         "total_execution_time_ms": log.total_execution_time_ms,
                         "timing_breakdown": log.timing_breakdown,
-                        "user_id": log.user_id,
+                        "campaigner_id": log.campaigner_id,
                         "analysis_id": log.analysis_id,
                         "success": log.success,
                         "error_message": log.error_message,
@@ -1234,48 +1374,7 @@ async def get_customer_logs(
         )
 
 
-@router.get("/execution-timings")
-async def get_execution_timings(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-):
-    """Get all execution timings (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(ExecutionTiming)
-            statement = statement.order_by(ExecutionTiming.start_time.desc()).offset(offset).limit(limit)
-            timings = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(timings),
-                "timings": [
-                    {
-                        "id": timing.id,
-                        "session_id": timing.session_id,
-                        "analysis_id": timing.analysis_id,
-                        "component_type": timing.component_type,
-                        "component_name": timing.component_name,
-                        "start_time": timing.start_time.isoformat(),
-                        "end_time": timing.end_time.isoformat() if timing.end_time else None,
-                        "duration_ms": timing.duration_ms,
-                        "status": timing.status,
-                        "input_data": timing.input_data,
-                        "output_data": timing.output_data,
-                        "error_message": timing.error_message,
-                        "parent_session_id": timing.parent_session_id,
-                        "created_at": timing.created_at.isoformat(),
-                        "updated_at": timing.updated_at.isoformat()
-                    }
-                    for timing in timings
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch execution timings: {str(e)}"
-        )
+# Execution timings endpoint removed - functionality consolidated into customer_logs
 
 
 @router.get("/detailed-execution-logs")
@@ -1342,9 +1441,8 @@ async def get_available_tables(
         "success": True,
         "tables": [
             # Core user and customer management
-            {"name": "users", "label": "Users", "description": "System users", "endpoint": "/api/v1/database/users"},
+            {"name": "campaigners", "label": "Campaigners", "description": "System campaigners", "endpoint": "/api/v1/database/campaigners"},
             {"name": "customers", "label": "Customers", "description": "Customer organizations", "endpoint": "/api/v1/database/customers"},
-            {"name": "sub_customers", "label": "Sub-Customers", "description": "Customer sub-organizations", "endpoint": "/api/v1/database/sub-customers"},
             
             # Digital assets and connections
             {"name": "digital_assets", "label": "Digital Assets", "description": "Connected digital assets", "endpoint": "/api/v1/database/digital-assets"},
@@ -1352,28 +1450,23 @@ async def get_available_tables(
             
             # KPI and analytics
             {"name": "kpi_catalog", "label": "KPI Catalog", "description": "Standardized KPI definitions", "endpoint": "/api/v1/database/catalog"},
-            {"name": "campaign_kpis", "label": "Campaign KPIs", "description": "Campaign performance metrics", "endpoint": "/api/v1/database/campaigns"},
-            {"name": "performance_metrics", "label": "Performance Metrics", "description": "System performance metrics", "endpoint": "/api/v1/database/performance-metrics"},
+            {"name": "kpi_goals", "label": "KPI Goals", "description": "KPI goal metrics", "endpoint": "/api/v1/database/kpi-goals"},
             
             # Agent configurations
             {"name": "agent_configs", "label": "Agent Configurations", "description": "AI agent configurations", "endpoint": "/api/v1/database/agent-configs"},
             {"name": "routing_rules", "label": "Routing Rules", "description": "Intent routing rules", "endpoint": "/api/v1/database/routing-rules"},
             
-            # Execution logs (4-table architecture for comprehensive logging)
-            {"name": "analysis_executions", "label": "Analysis Executions", "description": "Analysis execution logs", "endpoint": "/api/v1/database/analysis-executions"},
-            {"name": "customer_logs", "label": "Customer Logs", "description": "Customer execution logs (business-level)", "endpoint": "/api/v1/database/customer-logs"},
-            {"name": "execution_timings", "label": "Execution Timings", "description": "Execution timing data (performance)", "endpoint": "/api/v1/database/execution-timings"},
+            # Execution logs (2-table architecture for comprehensive logging)
+            {"name": "customer_logs", "label": "Customer Logs", "description": "Customer execution logs (business-level with timing)", "endpoint": "/api/v1/database/customer-logs"},
             {"name": "detailed_execution_logs", "label": "Detailed Execution Logs", "description": "Detailed execution logs (debugging)", "endpoint": "/api/v1/database/detailed-execution-logs"},
             
-            # Reports
-            {"name": "narrative_reports", "label": "Narrative Reports", "description": "Generated reports", "endpoint": "/api/v1/database/narrative-reports"},
-            
-            # REMOVED: The following tables have been deleted from the database (empty, unused)
+            # REMOVED TABLES: The following tables have been deleted from the database (empty, unused)
+            # - analysis_executions
+            # - performance_metrics  
             # - analytics_cache
-            # - user_property_selections
-            # - user_sessions
             # - chat_messages
             # - webhook_entries
+            # - narrative_reports
         ]
     }
 

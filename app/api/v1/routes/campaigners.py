@@ -1,5 +1,5 @@
 """
-Users API routes for managing workers and team members
+Campaigners API routes for managing agency workers and team members
 """
 
 from typing import List, Dict, Any, Optional
@@ -8,10 +8,10 @@ from pydantic import BaseModel, EmailStr
 from sqlmodel import select, and_
 
 from app.core.auth import get_current_user
-from app.models.users import User, UserRole, UserStatus
+from app.models.users import Campaigner, UserRole, UserStatus
 from app.config.database import get_session
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/campaigners", tags=["campaigners"])
 
 
 class CreateWorkerRequest(BaseModel):
@@ -30,20 +30,29 @@ class UpdateWorkerRequest(BaseModel):
 
 @router.get("/workers")
 async def get_workers(
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get all workers (team members) for the current user's agency/customer.
-    Returns all users that belong to the same primary_customer_id.
+    Returns all users that belong to the same agency_id.
     """
     try:
         with get_session() as session:
             # Get all users in the same agency/customer
-            statement = select(User).where(
-                User.primary_customer_id == current_user.primary_customer_id
+            statement = select(Campaigner).where(
+                Campaigner.agency_id == current_user.agency_id
             )
             
             workers = session.exec(statement).all()
+            
+            # Get customer counts for each worker
+            from app.models.users import Customer
+            customer_counts = {}
+            for worker in workers:
+                count = session.exec(
+                    select(Customer).where(Customer.assigned_campaigner_id == worker.id)
+                ).all()
+                customer_counts[worker.id] = len(count)
             
             return {
                 "success": True,
@@ -57,7 +66,12 @@ async def get_workers(
                         "avatar_url": worker.avatar_url,
                         "email_verified": worker.email_verified,
                         "last_login_at": worker.last_login_at.isoformat() if worker.last_login_at else None,
-                        "created_at": worker.created_at.isoformat() if worker.created_at else None
+                        "created_at": worker.created_at.isoformat() if worker.created_at else None,
+                        "phone": worker.phone,
+                        "locale": worker.locale,
+                        "timezone": worker.timezone,
+                        "google_id": worker.google_id,
+                        "customer_count": customer_counts.get(worker.id, 0)
                     }
                     for worker in workers
                 ],
@@ -74,7 +88,7 @@ async def get_workers(
 @router.get("/workers/{worker_id}")
 async def get_worker(
     worker_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get a specific worker by ID.
@@ -83,7 +97,7 @@ async def get_worker(
     try:
         with get_session() as session:
             # Get worker
-            worker = session.get(User, worker_id)
+            worker = session.get(Campaigner, worker_id)
             
             if not worker:
                 raise HTTPException(
@@ -92,7 +106,7 @@ async def get_worker(
                 )
             
             # Verify worker is in the same agency
-            if worker.primary_customer_id != current_user.primary_customer_id:
+            if worker.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this worker"
@@ -127,7 +141,7 @@ async def get_worker(
 @router.post("/workers")
 async def create_worker(
     request: CreateWorkerRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Create a new worker in the current user's agency/customer.
@@ -144,22 +158,22 @@ async def create_worker(
         with get_session() as session:
             # Check if user with this email already exists
             existing_user = session.exec(
-                select(User).where(User.email == request.email)
+                select(Campaigner).where(Campaigner.email == request.email)
             ).first()
             
             if existing_user:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="User with this email already exists"
+                    detail="Campaigner with this email already exists"
                 )
             
             # Create new worker
-            new_worker = User(
+            new_worker = Campaigner(
                 email=request.email,
                 full_name=request.full_name,
                 role=request.role,
                 status=UserStatus.PENDING,  # New workers start as pending
-                primary_customer_id=current_user.primary_customer_id,
+                agency_id=current_user.agency_id,
                 email_verified=False
             )
             
@@ -192,7 +206,7 @@ async def create_worker(
 async def update_worker(
     worker_id: int,
     request: UpdateWorkerRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Update a worker's information.
@@ -208,7 +222,7 @@ async def update_worker(
     try:
         with get_session() as session:
             # Get worker
-            worker = session.get(User, worker_id)
+            worker = session.get(Campaigner, worker_id)
             
             if not worker:
                 raise HTTPException(
@@ -217,7 +231,7 @@ async def update_worker(
                 )
             
             # Verify worker is in the same agency
-            if worker.primary_customer_id != current_user.primary_customer_id:
+            if worker.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this worker"
@@ -259,23 +273,23 @@ async def update_worker(
 @router.delete("/workers/{worker_id}")
 async def delete_worker(
     worker_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Delete a worker.
-    Only owners can delete workers.
+    Only owners and admins can delete workers.
     """
     # Check permissions
-    if current_user.role != UserRole.OWNER:
+    if current_user.role not in [UserRole.OWNER, UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only owners can delete workers"
+            detail="Only owners and admins can delete workers"
         )
     
     try:
         with get_session() as session:
             # Get worker
-            worker = session.get(User, worker_id)
+            worker = session.get(Campaigner, worker_id)
             
             if not worker:
                 raise HTTPException(
@@ -284,7 +298,7 @@ async def delete_worker(
                 )
             
             # Verify worker is in the same agency
-            if worker.primary_customer_id != current_user.primary_customer_id:
+            if worker.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this worker"
@@ -296,6 +310,15 @@ async def delete_worker(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Cannot delete yourself"
                 )
+            
+            # Reassign customers assigned to this worker to NULL
+            from app.models.users import Customer
+            customers_to_reassign = session.exec(
+                select(Customer).where(Customer.assigned_campaigner_id == worker_id)
+            ).all()
+            
+            for customer in customers_to_reassign:
+                customer.assigned_campaigner_id = None
             
             # Delete worker
             session.delete(worker)

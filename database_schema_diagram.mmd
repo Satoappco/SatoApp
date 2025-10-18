@@ -1,0 +1,154 @@
+erDiagram
+    %% User Management Tables - Cleaned and Streamlined
+    CAMPAIGNERS {
+        int id PK "Primary Key"
+        string email UK "Unique email address"
+        string full_name "Full name"
+        string phone "Phone number (optional)"
+        string role "User role: owner, admin, manager, analyst, viewer"
+        string status "Account status: active, invited, suspended, deleted"
+        int agency_id FK "References agencies.id"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    AGENCIES {
+        int id PK "Primary Key"
+        string name "Agency company name"
+        string email "Agency email address (optional)"
+        string phone "Agency phone number (optional)"
+        string status "Subscription status: active, trial, paused, churned"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    CUSTOMERS {
+        int id PK "Primary Key"
+        int agency_id FK "References agencies.id"
+        string full_name "Full name or business name"
+        string status "Customer status: active, inactive, suspended, pending"
+        string login_email "Login email address (optional)"
+        string phone "Phone number (optional)"
+        string address "Physical address (optional)"
+        string opening_hours "Business opening hours (optional)"
+        string narrative_report "Narrative report text (optional)"
+        string website_url "Website URL (optional)"
+        string facebook_page_url "Facebook page URL (optional)"
+        string instagram_page_url "Instagram page URL (optional)"
+        string llm_engine_preference "Preferred LLM: gemini, openai, claude (optional)"
+        boolean is_active "Whether this customer record is active"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    %% Customer Data Tables (from image)
+    RTM_TABLE {
+        int id PK "Primary Key"
+        string composite_id "Concatenation: <Agency ID>_<Campaigner ID>_<Customer ID>"
+        string link_1 "RTM Link 1 (optional)"
+        string link_2 "RTM Link 2 (optional)"
+        string link_3 "RTM Link 3 (optional)"
+        string link_4 "RTM Link 4 (optional)"
+        string link_5 "RTM Link 5 (optional)"
+        string link_6 "RTM Link 6 (optional)"
+        string link_7 "RTM Link 7 (optional)"
+        string link_8 "RTM Link 8 (optional)"
+        string link_9 "RTM Link 9 (optional)"
+        string link_10 "RTM Link 10 (optional)"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    QUESTIONS_TABLE {
+        int id PK "Primary Key"
+        string composite_id "Concatenation: <Agency ID>_<Campaigner ID>_<Customer ID>"
+        string q1 "Question 1 (optional)"
+        string q2 "Question 2 (optional)"
+        string q3 "Question 3 (optional)"
+        string q4 "Question 4 (optional)"
+        string q5 "Question 5 (optional)"
+        string q6 "Question 6 (optional)"
+        string q7 "Question 7 (optional)"
+        string q8 "Question 8 (optional)"
+        string q9 "Question 9 (optional)"
+        string q10 "Question 10 (optional)"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    %% Digital Assets & Connections
+    DIGITAL_ASSETS {
+        int id PK "Primary Key"
+        int customer_id FK "References customers.id"
+        string asset_type "Type: social_media, GA4, google_ads, facebook_ads, etc."
+        string provider "Platform: Google, Facebook, TikTok, LinkedIn"
+        string name "Human-readable name"
+        string handle "Username or page name (optional)"
+        string url "Asset URL (optional)"
+        string external_id "Platform's unique ID"
+        json meta "Provider-specific metadata (business_id, property_id, etc.)"
+        boolean is_active "Whether asset is active"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    CONNECTIONS {
+        int id PK "Primary Key"
+        int digital_asset_id FK "References digital_assets.id"
+        int customer_id FK "References customers.id (direct relationship for better queries)"
+        int campaigner_id FK "References campaigners.id (who created the connection)"
+        string auth_type "Authentication method: oauth2, api_key, basic_auth, token"
+        string account_email "OAuth account email (optional)"
+        json scopes "OAuth permissions"
+        bytes access_token_enc "Encrypted access token (optional)"
+        bytes refresh_token_enc "Encrypted refresh token (optional)"
+        string token_hash "Hash for validation (optional)"
+        datetime expires_at "When access token expires (optional)"
+        boolean revoked "Whether connection is revoked"
+        datetime rotated_at "When tokens were last rotated (optional)"
+        datetime last_used_at "When connection was last used (optional)"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    %% KPI and Analytics
+    KPI_GOALS {
+        int id PK "Primary Key"
+        int customer_id FK "References customers.id"
+        datetime date "Date of the KPI goal data"
+        int campaign_num "Campaign number"
+        string campaign_id "Campaign ID"
+        string campaign_name "Name of the campaign"
+        string campaign_status "Campaign status: ACTIVE/PAUSED"
+        int ad_group_id "Ad group ID (optional)"
+        string ad_group_name "Ad group name (optional)"
+        string ad_group_status "Ad group status: ACTIVE/PAUSED (optional)"
+        int ad_id "Ad ID (optional)"
+        string ad_status "Ad status: ACTIVE/PAUSED (optional)"
+        int ad_score "Ad score (optional)"
+        string ad_headline "Ad headline (optional)"
+        string advertising_channel "Platform: Google AdSense, Google Search Ads, etc."
+        string campaign_objective "Campaign objective: Sales, Traffic, Awareness, Lead generation"
+        float daily_budget "Daily budget (optional)"
+        float weekly_budget "Weekly budget (optional)"
+        string target_audience "Target audience"
+        string primary_kpi_1 "Primary KPI goal (optional)"
+        string secondary_kpi_1 "Secondary KPI goal 1 (optional)"
+        string secondary_kpi_2 "Secondary KPI goal 2 (optional)"
+        string secondary_kpi_3 "Secondary KPI goal 3 (optional)"
+        string landing_page "Landing page URL (optional)"
+        boolean is_active "Whether KPI goal is active"
+        datetime created_at "Record creation time"
+        datetime updated_at "Last modification time"
+    }
+
+    %% Relationships
+    AGENCIES ||--o{ CAMPAIGNERS : "employs (agency_id)"
+    AGENCIES ||--o{ CUSTOMERS : "manages (agency_id)"
+    CUSTOMERS ||--o{ DIGITAL_ASSETS : "owns (customer_id)"
+    CUSTOMERS ||--o{ CONNECTIONS : "has (customer_id)"
+    CUSTOMERS ||--o{ KPI_GOALS : "tracks (customer_id)"
+    CUSTOMERS ||--o{ RTM_TABLE : "has_links (customer_id)"
+    CUSTOMERS ||--o{ QUESTIONS_TABLE : "has_questions (customer_id)"
+    DIGITAL_ASSETS ||--o{ CONNECTIONS : "authenticates (digital_asset_id)"
+    CAMPAIGNERS ||--o{ CONNECTIONS : "creates (campaigner_id)"

@@ -28,7 +28,7 @@ from sqlmodel import select, and_
 
 from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
-from app.models.users import User
+from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
 
@@ -135,8 +135,8 @@ class GoogleAnalyticsService:
     
     async def save_ga_connection_with_property(
         self,
-        user_id: int,
-        subclient_id: int,
+        campaigner_id: int,
+        customer_id: int,
         property_id: str,
         property_name: str,
         account_id: str,
@@ -152,10 +152,10 @@ class GoogleAnalyticsService:
         
         with get_session() as session:
             # First, deactivate all other GA4 assets for this user/subclient
-            print(f"DEBUG: Deactivating other GA4 assets for user {user_id}, subclient {subclient_id}")
+            print(f"DEBUG: Deactivating other GA4 assets for user {campaigner_id}, subclient {customer_id}")
             deactivate_statement = select(DigitalAsset).where(
                 and_(
-                    DigitalAsset.subclient_id == subclient_id,
+                    DigitalAsset.customer_id == customer_id,
                     DigitalAsset.asset_type == AssetType.GA4,
                     DigitalAsset.provider == "Google",
                     DigitalAsset.is_active == True
@@ -170,7 +170,7 @@ class GoogleAnalyticsService:
             # Check if digital asset already exists
             statement = select(DigitalAsset).where(
                 and_(
-                    DigitalAsset.subclient_id == subclient_id,
+                    DigitalAsset.customer_id == customer_id,
                     DigitalAsset.asset_type == AssetType.GA4,
                     DigitalAsset.provider == "Google",
                     DigitalAsset.external_id == property_id
@@ -182,7 +182,7 @@ class GoogleAnalyticsService:
                 print(f"DEBUG: Creating new digital asset for property {property_id}")
                 # Create new digital asset with real property details
                 digital_asset = DigitalAsset(
-                    subclient_id=subclient_id,
+                    customer_id=customer_id,
                     asset_type=AssetType.GA4,
                     provider="Google",
                     name=property_name,
@@ -227,7 +227,7 @@ class GoogleAnalyticsService:
             connection_statement = select(Connection).where(
                 and_(
                     Connection.digital_asset_id == digital_asset.id,
-                    Connection.user_id == user_id,
+                    Connection.campaigner_id == campaigner_id,
                     Connection.revoked == False
                 )
             )
@@ -245,11 +245,11 @@ class GoogleAnalyticsService:
                 connection.rotated_at = datetime.utcnow()
                 connection.last_used_at = datetime.utcnow()
             else:
-                print(f"DEBUG: Creating new connection for user {user_id} and asset {digital_asset.id}")
+                print(f"DEBUG: Creating new connection for user {campaigner_id} and asset {digital_asset.id}")
                 # Create new connection
                 connection = Connection(
                     digital_asset_id=digital_asset.id,
-                    user_id=user_id,
+                    campaigner_id=campaigner_id,
                     auth_type=AuthType.OAUTH2,
                     account_email=account_email,
                     scopes=self.GA4_SCOPES,
@@ -271,8 +271,8 @@ class GoogleAnalyticsService:
             
             try:
                 await property_selection_service.save_property_selection(
-                    user_id=user_id,
-                    subclient_id=subclient_id,
+                    campaigner_id=campaigner_id,
+                    customer_id=customer_id,
                     service="google_analytics",
                     property_id=property_id,
                     property_name=property_name
@@ -870,12 +870,12 @@ class GoogleAnalyticsService:
                 "totals": []
             }
     
-    async def get_user_ga_connections(self, user_id: int, subclient_id: int = None) -> List[Dict[str, Any]]:
+    async def get_user_ga_connections(self, campaigner_id: int, customer_id: int = None) -> List[Dict[str, Any]]:
         """Get all GA connections for a user and subclient"""
         
         with get_session() as session:
             conditions = [
-                Connection.user_id == user_id,
+                Connection.campaigner_id == campaigner_id,
                 DigitalAsset.provider == "Google",
                 Connection.revoked == False
             ]
@@ -883,9 +883,9 @@ class GoogleAnalyticsService:
             # Check for GA4 asset type
             conditions.append(DigitalAsset.asset_type == AssetType.GA4)
             
-            # Add subclient_id filter if provided
-            if subclient_id is not None:
-                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            # Add customer_id filter if provided - now direct on connections table
+            if customer_id is not None:
+                conditions.append(Connection.customer_id == customer_id)
             
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
@@ -909,9 +909,9 @@ class GoogleAnalyticsService:
             return connections
     
 
-    async def get_user_connections(self, user_id: int) -> List[Dict[str, Any]]:
+    async def get_user_connections(self, campaigner_id: int) -> List[Dict[str, Any]]:
         """Get user connections for webhook processing"""
-        return await self.get_user_ga_connections(user_id)
+        return await self.get_user_ga_connections(campaigner_id)
     
     async def revoke_ga_connection(self, connection_id: int) -> bool:
         """Revoke a GA connection - marks as revoked in DB and revokes with Google"""

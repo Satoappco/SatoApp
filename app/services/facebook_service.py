@@ -16,7 +16,7 @@ from sqlmodel import select, and_
 
 from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
-from app.models.users import User
+from app.models.users import Campaigner
 from app.core.security import get_secret_key
 
 
@@ -159,7 +159,7 @@ class FacebookService:
             return {
                 'access_token': long_lived_token['access_token'],
                 'expires_in': long_lived_token.get('expires_in', 3600),
-                'user_id': user_info['id'],
+                'campaigner_id': user_info['id'],
                 'user_name': user_info.get('name', ''),
                 'user_email': user_info.get('email', '')
             }
@@ -249,8 +249,8 @@ class FacebookService:
     
     async def save_facebook_connection(
         self,
-        user_id: int,
-        subclient_id: int,
+        campaigner_id: int,
+        customer_id: int,
         access_token: str,
         expires_in: int,
         user_name: str,
@@ -260,8 +260,8 @@ class FacebookService:
         Save Facebook OAuth connection to database
         
         Args:
-            user_id: ID of user creating the connection
-            subclient_id: ID of subclient this asset belongs to
+            campaigner_id: ID of campaigner creating the connection
+            customer_id: ID of customer this asset belongs to
             access_token: OAuth access token
             expires_in: Token expiration time in seconds
             user_name: Facebook user name
@@ -280,7 +280,7 @@ class FacebookService:
                 # Check if digital asset already exists
                 statement = select(DigitalAsset).where(
                     and_(
-                        DigitalAsset.subclient_id == subclient_id,
+                        DigitalAsset.customer_id == customer_id,
                         DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
                         DigitalAsset.provider == "Facebook",
                         DigitalAsset.external_id == page['id']
@@ -291,7 +291,7 @@ class FacebookService:
                 if not digital_asset:
                     # Create new digital asset
                     digital_asset = DigitalAsset(
-                        subclient_id=subclient_id,
+                        customer_id=customer_id,
                         asset_type=AssetType.SOCIAL_MEDIA,
                         provider="Facebook",
                         name=page['name'],
@@ -331,7 +331,7 @@ class FacebookService:
             for ad_account in ad_accounts:
                 statement = select(DigitalAsset).where(
                     and_(
-                        DigitalAsset.subclient_id == subclient_id,
+                        DigitalAsset.customer_id == customer_id,
                         DigitalAsset.asset_type == AssetType.ADVERTISING,
                         DigitalAsset.provider == "Facebook",
                         DigitalAsset.external_id == ad_account['id']
@@ -341,7 +341,7 @@ class FacebookService:
                 
                 if not digital_asset:
                     digital_asset = DigitalAsset(
-                        subclient_id=subclient_id,
+                        customer_id=customer_id,
                         asset_type=AssetType.ADVERTISING,
                         provider="Facebook",
                         name=ad_account['name'],
@@ -376,7 +376,7 @@ class FacebookService:
                 connection_statement = select(Connection).where(
                     and_(
                         Connection.digital_asset_id == asset.id,
-                        Connection.user_id == user_id,
+                        Connection.campaigner_id == campaigner_id,
                         Connection.revoked == False
                     )
                 )
@@ -395,7 +395,7 @@ class FacebookService:
                     # Create new connection
                     connection = Connection(
                         digital_asset_id=asset.id,
-                        user_id=user_id,
+                        campaigner_id=campaigner_id,
                         auth_type=AuthType.OAUTH2,
                         account_email=user_email,
                         scopes=self.FACEBOOK_SCOPES,
@@ -421,8 +421,8 @@ class FacebookService:
                 first_page = facebook_pages[0]
                 try:
                     await property_selection_service.save_property_selection(
-                        user_id=user_id,
-                        subclient_id=subclient_id,
+                        campaigner_id=campaigner_id,
+                        customer_id=customer_id,
                         service="facebook_page",
                         property_id=first_page.external_id,
                         property_name=first_page.name
@@ -437,8 +437,8 @@ class FacebookService:
                 first_ad_account = facebook_ads[0]
                 try:
                     await property_selection_service.save_property_selection(
-                        user_id=user_id,
-                        subclient_id=subclient_id,
+                        campaigner_id=campaigner_id,
+                        customer_id=customer_id,
                         service="facebook_ads",
                         property_id=first_ad_account.external_id,
                         property_name=first_ad_account.name
@@ -935,15 +935,15 @@ class FacebookService:
                 "asset_type": digital_asset.asset_type
             }
     
-    async def get_facebook_connection_for_user(self, user_id: int, subclient_id: int, asset_type: str = "SOCIAL_MEDIA") -> Optional[Dict[str, Any]]:
+    async def get_facebook_connection_for_user(self, campaigner_id: int, customer_id: int, asset_type: str = "SOCIAL_MEDIA") -> Optional[Dict[str, Any]]:
         """Get active Facebook connection for user/subclient with token refresh - ALWAYS prioritizes real Page IDs"""
         
         with get_session() as session:
             # Build conditions list
             from sqlmodel import or_
             conditions = [
-                Connection.user_id == user_id,
-                DigitalAsset.subclient_id == subclient_id,
+                Connection.campaigner_id == campaigner_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.provider == "Facebook",
                 Connection.revoked == False
             ]

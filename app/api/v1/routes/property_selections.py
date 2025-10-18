@@ -7,7 +7,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from app.core.auth import get_current_user
-from app.models.users import User
+from app.models.users import Campaigner
 from app.services.property_selection_service import PropertySelectionService
 
 router = APIRouter(prefix="/property-selections", tags=["property-selections"])
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/property-selections", tags=["property-selections"])
 
 class SavePropertySelectionRequest(BaseModel):
     """Request model for saving property selection"""
-    subclient_id: int
+    customer_id: int
     service: str  # "google_analytics", "facebook", "google_ads"
     property_id: str
     property_name: str
@@ -39,7 +39,7 @@ class GetPropertySelectionsResponse(BaseModel):
 @router.post("/save", response_model=PropertySelectionResponse)
 async def save_property_selection(
     request: SavePropertySelectionRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """Save or update a user's property selection for a specific service"""
     
@@ -47,8 +47,8 @@ async def save_property_selection(
         service = PropertySelectionService()
         
         result = await service.save_property_selection(
-            user_id=current_user.id,
-            subclient_id=request.subclient_id,
+            campaigner_id=current_user.id,
+            customer_id=request.customer_id,
             service=request.service,
             property_id=request.property_id,
             property_name=request.property_name
@@ -63,10 +63,10 @@ async def save_property_selection(
         )
 
 
-@router.get("/{subclient_id}", response_model=GetPropertySelectionsResponse)
+@router.get("/{customer_id}", response_model=GetPropertySelectionsResponse)
 async def get_property_selections(
-    subclient_id: int,
-    current_user: User = Depends(get_current_user)
+    customer_id: int,
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """Get all property selections for a user and subclient"""
     
@@ -74,8 +74,8 @@ async def get_property_selections(
         service = PropertySelectionService()
         
         result = await service.get_property_selections(
-            user_id=current_user.id,
-            subclient_id=subclient_id
+            campaigner_id=current_user.id,
+            customer_id=customer_id
         )
         
         return GetPropertySelectionsResponse(**result)
@@ -87,11 +87,11 @@ async def get_property_selections(
         )
 
 
-@router.delete("/{subclient_id}/{service}")
+@router.delete("/{customer_id}/{service}")
 async def clear_property_selection(
-    subclient_id: int,
+    customer_id: int,
     service: str,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """Clear a specific property selection"""
     
@@ -100,7 +100,7 @@ async def clear_property_selection(
         
         result = await service.clear_property_selection(
             user_id=current_user.id,
-            subclient_id=subclient_id,
+            customer_id=customer_id,
             service=service
         )
         

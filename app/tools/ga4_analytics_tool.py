@@ -61,12 +61,12 @@ class GA4AnalyticsTool(BaseTool):
     class Config:
         extra = "allow"
     
-    def __init__(self, user_id: int = None, subclient_id: int = None):
+    def __init__(self, campaigner_id: int = None, customer_id: int = None):
         super().__init__()
         self.ga_service = GoogleAnalyticsService()
         # Use object.__setattr__ to bypass Pydantic validation
-        object.__setattr__(self, 'user_id', user_id)
-        object.__setattr__(self, 'subclient_id', subclient_id)
+        object.__setattr__(self, 'campaigner_id', campaigner_id)
+        object.__setattr__(self, 'customer_id', customer_id)
     
     @property
     def ga_service(self):
@@ -103,26 +103,26 @@ class GA4AnalyticsTool(BaseTool):
         """
         
         try:
-            # Use stored user_id and subclient_id from initialization
-            if not self.user_id or not self.subclient_id:
+            # Use stored campaigner_id and customer_id from initialization
+            if not self.campaigner_id or not self.customer_id:
                 return {
                     'error': 'No user/subclient context available for GA4 data fetching',
-                    'suggestion': 'Tool needs to be initialized with user_id and subclient_id'
+                    'suggestion': 'Tool needs to be initialized with campaigner_id and customer_id'
                 }
             
             # Get subclient's GA4 connections (subclient owns the connections)
-            user_connections = run_async_in_thread(self.ga_service.get_user_ga_connections(self.user_id, self.subclient_id))
+            user_connections = run_async_in_thread(self.ga_service.get_user_ga_connections(self.campaigner_id, self.customer_id))
             
             if not user_connections:
                 return {
-                    'error': f'No GA4 connections found for subclient {self.subclient_id}',
+                    'error': f'No GA4 connections found for subclient {self.customer_id}',
                     'suggestion': 'Subclient needs to connect their Google Analytics account first'
                 }
             
             # Use provided property_id or first available connection
             if property_id and property_id not in ["YOUR_GA4_PROPERTY_ID", "YOUR_PROPERTY_ID", "PROPERTY_ID"]:
                 # Find connection for specific property (only if it's a real property ID)
-                connection_id = self._get_user_ga_connection(self.user_id, property_id)
+                connection_id = self._get_user_ga_connection(self.campaigner_id, property_id)
                 if not connection_id:
                     return {
                         'error': f'No GA4 connection found for property {property_id}',
@@ -188,7 +188,7 @@ class GA4AnalyticsTool(BaseTool):
                     'suggestion': 'Check if the GA4 connection is valid and has proper permissions'
                 }
     
-    def _get_user_ga_connection(self, user_id: int, property_id: str) -> Optional[int]:
+    def _get_user_ga_connection(self, campaigner_id: int, property_id: str) -> Optional[int]:
         """Get user's GA4 connection ID for the specified property and subclient"""
         
         with get_session() as session:
@@ -196,8 +196,8 @@ class GA4AnalyticsTool(BaseTool):
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
                 and_(
-                    Connection.user_id == user_id,
-                    DigitalAsset.subclient_id == self.subclient_id,
+                    Connection.campaigner_id == campaigner_id,
+                    DigitalAsset.customer_id == self.customer_id,
                     DigitalAsset.asset_type == AssetType.ANALYTICS,
                     DigitalAsset.provider == "Google",
                     DigitalAsset.external_id == property_id,
@@ -432,7 +432,7 @@ class GA4ReportGenerator(BaseTool):
     
     def _run(
         self,
-        user_id: int,
+        campaigner_id: int,
         property_id: str,
         report_type: str = "executive_summary",
         start_date: str = "30daysAgo",
@@ -442,7 +442,7 @@ class GA4ReportGenerator(BaseTool):
         Generate comprehensive GA4 report
         
         Args:
-            user_id: ID of the user requesting the report
+            campaigner_id: ID of the user requesting the report
             property_id: GA4 property ID
             report_type: Type of report to generate
             start_date: Start date for the report
@@ -459,23 +459,23 @@ class GA4ReportGenerator(BaseTool):
             
             if report_type == "executive_summary":
                 report_data['sections'] = self._generate_executive_summary(
-                    user_id, property_id, start_date, end_date
+                    campaigner_id, property_id, start_date, end_date
                 )
             elif report_type == "marketing_performance":
                 report_data['sections'] = self._generate_marketing_performance(
-                    user_id, property_id, start_date, end_date
+                    campaigner_id, property_id, start_date, end_date
                 )
             elif report_type == "user_behavior":
                 report_data['sections'] = self._generate_user_behavior(
-                    user_id, property_id, start_date, end_date
+                    campaigner_id, property_id, start_date, end_date
                 )
             elif report_type == "conversion_funnel":
                 report_data['sections'] = self._generate_conversion_funnel(
-                    user_id, property_id, start_date, end_date
+                    campaigner_id, property_id, start_date, end_date
                 )
             else:
                 report_data['sections'] = self._generate_custom_report(
-                    user_id, property_id, start_date, end_date
+                    campaigner_id, property_id, start_date, end_date
                 )
             
             return report_data
@@ -487,13 +487,13 @@ class GA4ReportGenerator(BaseTool):
             }
     
     def _generate_executive_summary(
-        self, user_id: int, property_id: str, start_date: str, end_date: str
+        self, campaigner_id: int, property_id: str, start_date: str, end_date: str
     ) -> Dict[str, Any]:
         """Generate executive summary report"""
         
         # Basic metrics
         basic_data = self.ga_tool._run(
-            user_id, property_id, 
+            campaigner_id, property_id, 
             metrics=['sessions', 'users', 'pageviews', 'bounceRate', 'sessionDuration'],
             dimensions=['date'],
             start_date=start_date,
@@ -503,7 +503,7 @@ class GA4ReportGenerator(BaseTool):
         
         # Traffic sources
         traffic_data = self.ga_tool._run(
-            user_id, property_id,
+            campaigner_id, property_id,
             metrics=['sessions', 'users'],
             dimensions=['channelGroup'],
             start_date=start_date,
@@ -523,13 +523,13 @@ class GA4ReportGenerator(BaseTool):
         }
     
     def _generate_marketing_performance(
-        self, user_id: int, property_id: str, start_date: str, end_date: str
+        self, campaigner_id: int, property_id: str, start_date: str, end_date: str
     ) -> Dict[str, Any]:
         """Generate marketing performance report"""
         
         # Traffic sources analysis
         traffic_data = self.ga_tool._run(
-            user_id, property_id,
+            campaigner_id, property_id,
             metrics=['sessions', 'users', 'bounceRate'],
             dimensions=['channelGroup', 'source', 'medium'],
             start_date=start_date,
@@ -539,7 +539,7 @@ class GA4ReportGenerator(BaseTool):
         
         # Campaign performance
         campaign_data = self.ga_tool._run(
-            user_id, property_id,
+            campaigner_id, property_id,
             metrics=['sessions', 'users', 'conversions'],
             dimensions=['campaign', 'source', 'medium'],
             start_date=start_date,
@@ -558,13 +558,13 @@ class GA4ReportGenerator(BaseTool):
         }
     
     def _generate_user_behavior(
-        self, user_id: int, property_id: str, start_date: str, end_date: str
+        self, campaigner_id: int, property_id: str, start_date: str, end_date: str
     ) -> Dict[str, Any]:
         """Generate user behavior report"""
         
         # Demographics
         demo_data = self.ga_tool._run(
-            user_id, property_id,
+            campaigner_id, property_id,
             metrics=['sessions', 'users'],
             dimensions=['country', 'city', 'deviceCategory'],
             start_date=start_date,
@@ -574,7 +574,7 @@ class GA4ReportGenerator(BaseTool):
         
         # Content performance
         content_data = self.ga_tool._run(
-            user_id, property_id,
+            campaigner_id, property_id,
             metrics=['pageviews', 'sessions', 'bounceRate'],
             dimensions=['pagePath', 'pageTitle'],
             start_date=start_date,
@@ -594,13 +594,13 @@ class GA4ReportGenerator(BaseTool):
         }
     
     def _generate_conversion_funnel(
-        self, user_id: int, property_id: str, start_date: str, end_date: str
+        self, campaigner_id: int, property_id: str, start_date: str, end_date: str
     ) -> Dict[str, Any]:
         """Generate conversion funnel report"""
         
         # Conversion data
         conversion_data = self.ga_tool._run(
-            user_id, property_id,
+            campaigner_id, property_id,
             metrics=['sessions', 'conversions', 'totalRevenue', 'purchaseRevenue'],
             dimensions=['date'],
             start_date=start_date,
@@ -618,14 +618,14 @@ class GA4ReportGenerator(BaseTool):
         }
     
     def _generate_custom_report(
-        self, user_id: int, property_id: str, start_date: str, end_date: str
+        self, campaigner_id: int, property_id: str, start_date: str, end_date: str
     ) -> Dict[str, Any]:
         """Generate custom report with all available data"""
         
         # Get all available data types
-        basic_data = self.ga_tool._run(user_id, property_id, start_date=start_date, end_date=end_date, analysis_type='basic')
-        traffic_data = self.ga_tool._run(user_id, property_id, start_date=start_date, end_date=end_date, analysis_type='traffic_sources')
-        demo_data = self.ga_tool._run(user_id, property_id, start_date=start_date, end_date=end_date, analysis_type='demographics')
+        basic_data = self.ga_tool._run(campaigner_id, property_id, start_date=start_date, end_date=end_date, analysis_type='basic')
+        traffic_data = self.ga_tool._run(campaigner_id, property_id, start_date=start_date, end_date=end_date, analysis_type='traffic_sources')
+        demo_data = self.ga_tool._run(campaigner_id, property_id, start_date=start_date, end_date=end_date, analysis_type='demographics')
         
         return {
             'basic_metrics': basic_data,

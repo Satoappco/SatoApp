@@ -26,7 +26,7 @@ class AgentConfig(BaseModel, table=True):
     allow_delegation: bool = Field(default=False, description="Whether agent can delegate to other agents")
     verbose: bool = Field(default=True, description="Whether agent should log verbose output")
     is_active: bool = Field(default=True)
-    created_by_user_id: Optional[int] = Field(default=None)
+    created_by_campaigner_id: Optional[int] = Field(default=None)
 
 
 class RoutingRule(BaseModel, table=True):
@@ -38,20 +38,6 @@ class RoutingRule(BaseModel, table=True):
     conditions: Optional[str] = Field(default=None)  # JSON additional conditions
     priority: int = Field(default=0)
     is_active: bool = Field(default=True)
-
-
-class AnalysisExecution(BaseModel, table=True):
-    """Analysis execution logs"""
-    __tablename__ = "analysis_executions"
-    
-    user_id: Optional[int] = Field(default=None)
-    session_id: Optional[str] = Field(default=None, max_length=255)
-    master_agent_id: Optional[int] = Field(default=None)
-    specialists_used: Optional[str] = Field(default=None)  # JSON array
-    iterations: Optional[int] = Field(default=None)
-    execution_time_ms: Optional[int] = Field(default=None)
-    validation_results: Optional[str] = Field(default=None)  # JSON
-    final_result: Optional[str] = Field(default=None)  # JSON
 
 
 class CustomerLog(BaseModel, table=True):
@@ -71,7 +57,7 @@ class CustomerLog(BaseModel, table=True):
     timing_breakdown: str = Field(description="JSON array of timing objects for each agent/tool")
     
     # Additional metadata
-    user_id: Optional[int] = Field(default=None)
+    campaigner_id: Optional[int] = Field(default=None)
     analysis_id: Optional[str] = Field(default=None, max_length=255)
     success: bool = Field(default=True)
     error_message: Optional[str] = Field(default=None)
@@ -79,22 +65,7 @@ class CustomerLog(BaseModel, table=True):
     tools_used: str = Field(description="JSON array of tools used in this execution")
 
 
-class ExecutionTiming(BaseModel, table=True):
-    """Individual timing records for agents and tools"""
-    __tablename__ = "execution_timings"
-    
-    session_id: str = Field(max_length=255, index=True)
-    analysis_id: Optional[str] = Field(default=None, max_length=255, index=True)
-    component_type: str = Field(description="'agent' or 'tool'")
-    component_name: str = Field(description="Name of the agent or tool")
-    start_time: datetime = Field(description="When the component started")
-    end_time: Optional[datetime] = Field(default=None, description="When the component finished")
-    duration_ms: Optional[int] = Field(default=None, description="Duration in milliseconds")
-    status: str = Field(default="running", description="'running', 'completed', 'error'")
-    input_data: Optional[str] = Field(default=None, description="Input data (truncated)")
-    output_data: Optional[str] = Field(default=None, description="Output data (truncated)")
-    error_message: Optional[str] = Field(default=None)
-    parent_session_id: Optional[str] = Field(default=None, description="Parent session if this is a sub-execution")
+# ExecutionTiming model removed - functionality consolidated into customer_logs.timing_breakdown
 
 
 class DetailedExecutionLog(BaseModel, table=True):

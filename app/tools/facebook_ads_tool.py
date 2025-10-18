@@ -42,11 +42,11 @@ class FacebookAdsTool(BaseTool):
     class Config:
         extra = "allow"
 
-    def __init__(self, user_id: int = None, subclient_id: int = None):
+    def __init__(self, campaigner_id: int = None, customer_id: int = None):
         super().__init__()
         # Use object.__setattr__ to bypass Pydantic validation
-        object.__setattr__(self, 'user_id', user_id)
-        object.__setattr__(self, 'subclient_id', subclient_id)
+        object.__setattr__(self, 'campaigner_id', campaigner_id)
+        object.__setattr__(self, 'customer_id', customer_id)
 
     def _run(
         self, 
@@ -60,7 +60,7 @@ class FacebookAdsTool(BaseTool):
     ) -> str:
         """Execute Facebook ads data fetch with REAL DATA based on agent's specifications"""
         try:
-            if not self.user_id or not self.subclient_id:
+            if not self.campaigner_id or not self.customer_id:
                 return json.dumps({
                     "error": "User ID and Subclient ID are required for Facebook ads",
                     "status": "error"
@@ -84,16 +84,16 @@ class FacebookAdsTool(BaseTool):
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(asyncio.run, facebook_service.get_facebook_connection_for_user(
-                        user_id=self.user_id,
-                        subclient_id=self.subclient_id,
+                        campaigner_id=self.campaigner_id,
+                        customer_id=self.customer_id,
                         asset_type="ADVERTISING"
                     ))
                     connection_info = future.result()
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run()
                 connection_info = asyncio.run(facebook_service.get_facebook_connection_for_user(
-                    user_id=self.user_id,
-                    subclient_id=self.subclient_id,
+                    campaigner_id=self.campaigner_id,
+                    customer_id=self.customer_id,
                     asset_type="ADVERTISING"
                 ))
             
@@ -180,8 +180,8 @@ class FacebookAdsTool(BaseTool):
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
                 and_(
-                    Connection.user_id == self.user_id,
-                    DigitalAsset.subclient_id == self.subclient_id,
+                    Connection.campaigner_id == self.campaigner_id,
+                    DigitalAsset.customer_id == self.customer_id,
                     DigitalAsset.provider == "Facebook",
                     DigitalAsset.asset_type == AssetType.ADVERTISING,
                     Connection.revoked == False

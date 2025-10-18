@@ -51,7 +51,7 @@ class DialogCXService:
                     Connection, DigitalAsset.id == Connection.digital_asset_id
                 ).where(
                     and_(
-                        Connection.user_id == user_id,
+                        Connection.campaigner_id == user_id,
                         Connection.revoked == False,
                         DigitalAsset.is_active == True
                     )

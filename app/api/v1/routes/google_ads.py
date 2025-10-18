@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from sqlmodel import select
 
 from app.core.auth import get_current_user
-from app.models.users import User
+from app.models.users import Campaigner
 from app.models.analytics import DigitalAsset, Connection, AssetType
 from app.config.database import get_session
 
@@ -74,7 +74,7 @@ class CreateAdsConnectionRequest(BaseModel):
 @router.post("/data", response_model=GoogleAdsDataResponse)
 async def get_google_ads_data(
     request: GoogleAdsDataRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Fetch Google Ads data for analysis
@@ -119,11 +119,11 @@ async def get_google_ads_data(
 
 @router.get("/connections", response_model=GoogleAdsConnectionListResponse)
 async def get_google_ads_connections(
-    subclient_id: int = Query(None, description="Filter connections by subclient ID"),
-    current_user: User = Depends(get_current_user)
+    customer_id: int = Query(None, description="Filter connections by customer ID"),
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get Google Ads connections for the current authenticated user, optionally filtered by subclient
+    Get Google Ads connections for the current authenticated user, optionally filtered by customer
     """
     try:
         from app.config.database import get_session
@@ -131,17 +131,17 @@ async def get_google_ads_connections(
         from sqlmodel import select, and_
         
         with get_session() as session:
-            # Build query conditions
+            # Build query conditions - now with direct customer relationship
             conditions = [
                 DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
                 DigitalAsset.provider == "Google",
                 Connection.revoked == False,
-                Connection.user_id == current_user.id
+                Connection.campaigner_id == current_user.id
             ]
             
-            # Add subclient filter if provided
-            if subclient_id is not None:
-                conditions.append(DigitalAsset.subclient_id == subclient_id)
+            # Add customer filter if provided - now direct on connections table
+            if customer_id is not None:
+                conditions.append(Connection.customer_id == customer_id)
             
             # Get Google Ads connections
             statement = select(Connection, DigitalAsset).join(
@@ -178,7 +178,7 @@ async def get_google_ads_connections(
 @router.delete("/connections/{connection_id}")
 async def revoke_google_ads_connection(
     connection_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Revoke Google Ads connection
@@ -196,7 +196,7 @@ async def revoke_google_ads_connection(
             ).where(
                 and_(
                     Connection.id == connection_id,
-                    Connection.user_id == current_user.id,
+                    Connection.campaigner_id == current_user.id,
                     DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
                     DigitalAsset.provider == "Google"
                 )
@@ -260,7 +260,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
     try:
         from app.services.google_analytics_service import GoogleAnalyticsService
         from app.config.database import get_session
-        from app.models.users import User
+        from app.models.users import Campaigner
         from sqlmodel import select
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request as GoogleAuthRequest
@@ -293,11 +293,11 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
         
         # Find user in database
         with get_session() as session:
-            user_statement = select(User).where(User.email == user_email)
+            user_statement = select(Campaigner).where(Campaigner.email == user_email)
             user = session.exec(user_statement).first()
             
             if not user:
-                return {"success": False, "message": f"User {user_email} not found in database"}
+                return {"success": False, "message": f"Campaigner {user_email} not found in database"}
             
             print(f"DEBUG: Creating Google Ads connection for user {user.id} ({user.email})")
             
@@ -451,7 +451,7 @@ async def get_available_metrics():
 @router.get("/available-accounts/{subclient_id}")
 async def get_available_google_ads_accounts(
     subclient_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Get ALL available Google Ads accounts from Google using an existing connection's tokens.
@@ -464,7 +464,7 @@ async def get_available_google_ads_accounts(
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
-                Connection.user_id == current_user.id,
+                Connection.campaigner_id == current_user.id,
                 DigitalAsset.subclient_id == subclient_id,
                 DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
                 Connection.revoked == False

@@ -17,12 +17,14 @@ from .routes import (
     facebook_page_oauth, 
     facebook_marketing_oauth, 
     admin, 
-    customers, 
+    agencies, 
     property_selections,
     digital_assets,
-    users,
+    campaigners,
+    customers,
     crewai,
-    database_management
+    database_management,
+    customer_data
 )
 
 
@@ -43,10 +45,12 @@ api_router.include_router(facebook_page_oauth.router, tags=["facebook-page-oauth
 api_router.include_router(facebook_marketing_oauth.router, tags=["facebook-marketing-oauth"])
 api_router.include_router(crewai.router, tags=["crewai"])
 api_router.include_router(admin.router, tags=["admin"])
-api_router.include_router(customers.router, tags=["customers"])
+api_router.include_router(agencies.router, tags=["agencies"])
 api_router.include_router(property_selections.router, tags=["property-selections"])
 api_router.include_router(digital_assets.router, tags=["digital-assets"])
-api_router.include_router(users.router, tags=["users"])
+api_router.include_router(campaigners.router, tags=["campaigners"])
+api_router.include_router(customers.router, tags=["customers"])
 api_router.include_router(database_management.router, tags=["database-management"])
+api_router.include_router(customer_data.router, tags=["customer-data"])
 
 __all__ = ["api_router"]

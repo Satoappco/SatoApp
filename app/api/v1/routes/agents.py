@@ -12,7 +12,7 @@ from app.api.schemas.agents import AgentConfigRequest, AgentConfigResponse, Agen
 from app.services.agent_service import AgentService
 from app.core.auth import get_current_user
 from app.core.security import verify_api_key
-from app.models.users import User
+from app.models.users import Campaigner
 from app.config.logging import get_logger
 
 logger = get_logger("api.agents")
@@ -58,7 +58,7 @@ def get_all_agents(_: bool = Depends(authenticate_user_or_api_key)):
 
 
 @router.get("/status")
-async def get_agents_status(current_user: User = Depends(get_current_user)):
+async def get_agents_status(current_user: Campaigner = Depends(get_current_user)):
     """Get all agents with their status - Used by frontend AgentsManager"""
     try:
         agent_service = AgentService()

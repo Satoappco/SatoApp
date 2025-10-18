@@ -97,7 +97,7 @@ for line in lines:
         # Handle wss:// protocol first
         if value.startswith('wss://localhost:8000') or value == 'wss://localhost:8000':
             value = value.replace('wss://localhost:8000', 'wss://sato-backend-v2-397762748853.me-west1.run.app')
-        # Handle http:// and https:// protocols
+        # Handle https:// and https:// protocols
         elif 'https://localhost:8000' in value or 'https://localhost:8000' in value:
             value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
             value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')

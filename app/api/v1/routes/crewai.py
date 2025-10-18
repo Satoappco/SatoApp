@@ -14,10 +14,10 @@ import os
 from app.services.crewai_timing_wrapper import CrewAITimingWrapper
 from app.core.auth import get_current_user
 from app.core.api_auth import verify_crewai_token
-from app.models.users import User
+from app.models.users import Campaigner
 from app.core.database import get_session
 from app.config.logging import get_logger
-from app.models.agents import CustomerLog, ExecutionTiming
+from app.models.agents import CustomerLog
 from app.api.v1.routes.webhooks import refresh_user_ga4_tokens, refresh_user_facebook_tokens
 
 logger = get_logger("api.crewai")
@@ -26,9 +26,9 @@ router = APIRouter()
 
 class CrewAITestRequest(BaseModel):
     """Request model for CrewAI testing"""
-    user_id: int
-    customer_id: int
-    subcustomer_id: int  # This is the actual subclient_id for database queries
+    campaigner_id: int
+    agency_id: int
+    customer_id: int  # This is the actual customer_id for database queries
     session_id: str
     user_question: str
     user_intent: str
@@ -47,9 +47,9 @@ class CrewAITestResponse(BaseModel):
 
 
 async def run_crewai_analysis_for_test(
-    user_id: int,
+    campaigner_id: int,
+    agency_id: int,
     customer_id: int,
-    subcustomer_id: int,
     user_question: str,
     intent_name: str,
     data_sources: List[str],
@@ -91,12 +91,12 @@ async def run_crewai_analysis_for_test(
         if "ga4" in data_sources:
             try:
                 # STEP 1: Automatically refresh expired tokens before using them
-                logger.info(f"🔄 Checking and refreshing GA4 tokens for user {user_id}...")
-                await refresh_user_ga4_tokens(ga_service, user_id)
+                logger.info(f"🔄 Checking and refreshing GA4 tokens for user {campaigner_id}...")
+                await refresh_user_ga4_tokens(ga_service, campaigner_id)
                 
                 # STEP 2: Get user connections (should work now with fresh tokens)
                 if hasattr(ga_service, 'get_user_connections'):
-                    user_connections = await ga_service.get_user_connections(user_id)
+                    user_connections = await ga_service.get_user_connections(campaigner_id)
                     logger.info(f"✅ Found {len(user_connections)} GA4 connections for user")
                 else:
                     logger.info("get_user_connections method not implemented yet - continuing without user connections")
@@ -108,9 +108,9 @@ async def run_crewai_analysis_for_test(
             try:
                 from app.services.google_ads_service import GoogleAdsService
                 google_ads_service = GoogleAdsService()
-                logger.info(f"🔄 Checking Google Ads connections for user {user_id}...")
+                logger.info(f"🔄 Checking Google Ads connections for user {campaigner_id}...")
                 # Google Ads tokens are refreshed automatically when needed
-                logger.info(f"✅ Google Ads service ready for user {user_id}")
+                logger.info(f"✅ Google Ads service ready for user {campaigner_id}")
             except Exception as e:
                 logger.warning(f"Could not initialize Google Ads service: {e}")
         
@@ -119,9 +119,9 @@ async def run_crewai_analysis_for_test(
             try:
                 from app.services.facebook_service import FacebookService
                 facebook_service = FacebookService()
-                logger.info(f"🔄 Checking and refreshing Facebook tokens for user {user_id}...")
-                await refresh_user_facebook_tokens(facebook_service, user_id)
-                logger.info(f"✅ Facebook service ready for user {user_id}")
+                logger.info(f"🔄 Checking and refreshing Facebook tokens for user {campaigner_id}...")
+                await refresh_user_facebook_tokens(facebook_service, campaigner_id)
+                logger.info(f"✅ Facebook service ready for user {campaigner_id}")
             except Exception as e:
                 logger.warning(f"Could not initialize Facebook service: {e}")
         
@@ -173,9 +173,8 @@ async def run_crewai_analysis_for_test(
                 # Replace placeholders in task with actual values
                 master_task_description = master_task_description.format(
                     objective=user_question,
-                    user_id=user_id,
+                    campaigner_id=campaigner_id,
                     customer_id=customer_id,
-                    subcustomer_id=subcustomer_id,
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
                     data_source=", ".join(data_sources),  # Support both naming conventions
@@ -220,8 +219,8 @@ async def run_crewai_analysis_for_test(
             
             # Get tools for this agent dynamically
             logger.info(f"🔧 Getting tools for agent type: {agent_type}")
-            # Use subcustomer_id as subclient_id for database queries
-            agent_tools = get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=subcustomer_id)
+            # Use customer_id as subclient_id for database queries
+            agent_tools = get_tools_for_agent(agent_type, user_connections, campaigner_id=campaigner_id, customer_id=customer_id)
             logger.info(f"🔧 Agent {agent_type} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
             
             # Create specialist agent using ONLY database configuration with timing
@@ -245,9 +244,8 @@ async def run_crewai_analysis_for_test(
                 # Replace placeholders in task with actual values
                 specialist_task_description = specialist_task_description.format(
                     objective=user_question,
-                    user_id=user_id,
+                    campaigner_id=campaigner_id,
                     customer_id=customer_id,
-                    subcustomer_id=subcustomer_id,
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
                     date_range="as specified in the user question",
@@ -287,7 +285,7 @@ async def run_crewai_analysis_for_test(
         
         # Prepare customer log data but don't create it yet
         user_intent = intent_name or "CrewAI Test"
-        crewai_input_prompt = f"User Question: {user_question}\nIntent: {intent_name}\nData Sources: {data_sources}\nUser ID: {user_id}\nCustomer ID: {customer_id}\nSubcustomer ID: {subcustomer_id}"
+        crewai_input_prompt = f"User Question: {user_question}\nIntent: {intent_name}\nData Sources: {data_sources}\nUser ID: {campaigner_id}\nCustomer ID: {customer_id}\nSubcustomer ID: {customer_id}"
         
         logger.info(f"🤖 Executing crew with {len(agents)} agents and {len(tasks)} tasks")
         
@@ -367,7 +365,7 @@ async def run_crewai_analysis_for_test(
                     original_query=user_question,
                     crewai_input_prompt=crewai_input_prompt,
                     master_answer=partial_result or f"CrewAI execution failed: {error_msg}",
-                    user_id=user_id,
+                    campaigner_id=campaigner_id,
                     success=False,
                     error_message=error_msg
                 )
@@ -427,7 +425,7 @@ async def run_crewai_analysis_for_test(
                 original_query=user_question,
                 crewai_input_prompt=crewai_input_prompt,
                 master_answer=str(result),
-                user_id=user_id,
+                campaigner_id=campaigner_id,
                 success=is_success,
                 error_message=error_message
             )
@@ -580,11 +578,11 @@ async def test_crewai_analysis(
         )
     
     # VALIDATE USER_ID AND CUSTOMER_ID RANGES
-    if request.user_id < 1 or request.user_id > 999999:
-        logger.error(f"❌ user_id out of valid range: {request.user_id}")
+    if request.campaigner_id < 1 or request.campaigner_id > 999999:
+        logger.error(f"❌ campaigner_id out of valid range: {request.campaigner_id}")
         return CrewAITestResponse(
             success=False,
-            error="user_id must be between 1 and 999999",
+            error="campaigner_id must be between 1 and 999999",
             session_id=request.session_id
         )
     
@@ -708,7 +706,7 @@ async def test_crewai_analysis(
             "session_parameters": request.parameters
         }
         
-        logger.info(f"Processing for user_id: {request.user_id}, customer_id: {request.customer_id}")
+        logger.info(f"Processing for campaigner_id: {request.campaigner_id}, customer_id: {request.customer_id}")
         logger.info(f"Session ID: {request.session_id}")
         logger.info(f"Question: {request.user_question}")
         logger.info(f"Intent: {request.user_intent}")
@@ -717,9 +715,8 @@ async def test_crewai_analysis(
         
         # Run CrewAI analysis
         result = await run_crewai_analysis_for_test(
-            user_id=request.user_id,
+            campaigner_id=request.campaigner_id,
             customer_id=request.customer_id,
-            subcustomer_id=request.subcustomer_id,
             user_question=request.user_question,
             intent_name=request.user_intent,
             data_sources=data_sources,
