@@ -17,29 +17,17 @@ router = APIRouter(prefix="/agencies", tags=["agencies"])
 class CreateAgencyRequest(BaseModel):
     """Request model for creating a new agency"""
     name: str
-    type: CustomerType = CustomerType.BRAND
-    status: CustomerStatus = CustomerStatus.TRIAL
-    plan: str = "Basic"
-    billing_currency: str = "ILS"
-    vat_id: Optional[str] = None
-    address: Optional[str] = None
-    domains: List[str] = []
-    tags: List[str] = []
-    notes: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    status: CustomerStatus = CustomerStatus.ACTIVE
 
 
 class UpdateAgencyRequest(BaseModel):
     """Request model for updating an agency"""
     name: Optional[str] = None
-    type: Optional[CustomerType] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     status: Optional[CustomerStatus] = None
-    plan: Optional[str] = None
-    billing_currency: Optional[str] = None
-    vat_id: Optional[str] = None
-    address: Optional[str] = None
-    domains: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-    notes: Optional[str] = None
 
 
 @router.get("/")
@@ -117,7 +105,7 @@ async def get_agency_customers(
                         "full_name": c.full_name,
                         "agency_id": c.agency_id,
                         "status": c.status,
-                        "login_email": c.login_email,
+                        "contact_email": c.contact_email,
                         "phone": c.phone,
                         "address": c.address,
                         "opening_hours": c.opening_hours,
@@ -200,15 +188,9 @@ async def create_agency(
             # Create new agency
             new_agency = Agency(
                 name=request.name,
-                type=request.type,
-                status=request.status,
-                plan=request.plan,
-                billing_currency=request.billing_currency,
-                vat_id=request.vat_id,
-                address=request.address,
-                domains=request.domains,
-                tags=request.tags,
-                notes=request.notes
+                email=request.email,
+                phone=request.phone,
+                status=request.status
             )
             
             session.add(new_agency)
@@ -221,10 +203,9 @@ async def create_agency(
                 "agency": {
                     "id": new_agency.id,
                     "name": new_agency.name,
-                    "type": new_agency.type,
-                    "status": new_agency.status,
-                    "plan": new_agency.plan,
-                    "billing_currency": new_agency.billing_currency
+                    "email": new_agency.email,
+                    "phone": new_agency.phone,
+                    "status": new_agency.status
                 }
             }
     
@@ -266,24 +247,12 @@ async def update_agency(
             # Update agency fields
             if request.name is not None:
                 agency.name = request.name
-            if request.type is not None:
-                agency.type = request.type
+            if request.email is not None:
+                agency.email = request.email
+            if request.phone is not None:
+                agency.phone = request.phone
             if request.status is not None:
                 agency.status = request.status
-            if request.plan is not None:
-                agency.plan = request.plan
-            if request.billing_currency is not None:
-                agency.billing_currency = request.billing_currency
-            if request.vat_id is not None:
-                agency.vat_id = request.vat_id
-            if request.address is not None:
-                agency.address = request.address
-            if request.domains is not None:
-                agency.domains = request.domains
-            if request.tags is not None:
-                agency.tags = request.tags
-            if request.notes is not None:
-                agency.notes = request.notes
             
             session.add(agency)
             session.commit()

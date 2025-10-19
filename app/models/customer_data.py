@@ -3,10 +3,13 @@ Customer-specific data models (Info, RTM, Questions)
 
 These models use composite_id instead of separate foreign keys.
 The composite_id format is: <agency_id>_<campaigner_id>_<customer_id>
+Data is stored with the campaigner who created it, but retrieved by any campaigner in the same agency.
 """
 
 from sqlmodel import Field, Column, String
 from typing import Optional
+from datetime import datetime
+from pydantic import BaseModel as PydanticBaseModel
 from .base import BaseModel
 
 
@@ -64,4 +67,76 @@ class QuestionsTable(BaseModel, table=True):
     q8: Optional[str] = Field(default=None, max_length=500, description="Question 8")
     q9: Optional[str] = Field(default=None, max_length=500, description="Question 9")
     q10: Optional[str] = Field(default=None, max_length=500, description="Question 10")
+
+
+# ===== Pydantic Models for API Responses =====
+
+class RTMTableResponse(PydanticBaseModel):
+    """Response model for RTM table data"""
+    model_config = {"from_attributes": True}
+    
+    id: int
+    composite_id: str
+    link_1: Optional[str] = None
+    link_2: Optional[str] = None
+    link_3: Optional[str] = None
+    link_4: Optional[str] = None
+    link_5: Optional[str] = None
+    link_6: Optional[str] = None
+    link_7: Optional[str] = None
+    link_8: Optional[str] = None
+    link_9: Optional[str] = None
+    link_10: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionsTableResponse(PydanticBaseModel):
+    """Response model for Questions table data"""
+    model_config = {"from_attributes": True}
+    
+    id: int
+    composite_id: str
+    q1: Optional[str] = None
+    q2: Optional[str] = None
+    q3: Optional[str] = None
+    q4: Optional[str] = None
+    q5: Optional[str] = None
+    q6: Optional[str] = None
+    q7: Optional[str] = None
+    q8: Optional[str] = None
+    q9: Optional[str] = None
+    q10: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RTMTableUpdate(PydanticBaseModel):
+    """Update model for RTM table data"""
+    customer_id: int
+    link_1: Optional[str] = None
+    link_2: Optional[str] = None
+    link_3: Optional[str] = None
+    link_4: Optional[str] = None
+    link_5: Optional[str] = None
+    link_6: Optional[str] = None
+    link_7: Optional[str] = None
+    link_8: Optional[str] = None
+    link_9: Optional[str] = None
+    link_10: Optional[str] = None
+
+
+class QuestionsTableUpdate(PydanticBaseModel):
+    """Update model for Questions table data"""
+    customer_id: int
+    q1: Optional[str] = None
+    q2: Optional[str] = None
+    q3: Optional[str] = None
+    q4: Optional[str] = None
+    q5: Optional[str] = None
+    q6: Optional[str] = None
+    q7: Optional[str] = None
+    q8: Optional[str] = None
+    q9: Optional[str] = None
+    q10: Optional[str] = None
 

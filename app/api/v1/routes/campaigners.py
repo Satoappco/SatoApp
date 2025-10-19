@@ -3,13 +3,16 @@ Campaigners API routes for managing agency workers and team members
 """
 
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, EmailStr
 from sqlmodel import select, and_
 
 from app.core.auth import get_current_user
-from app.models.users import Campaigner, UserRole, UserStatus
+from app.models.users import Campaigner, UserRole, UserStatus, InviteToken
 from app.config.database import get_session
+from app.services.invite_service import InviteService
+import os
 
 router = APIRouter(prefix="/campaigners", tags=["campaigners"])
 
@@ -18,7 +21,7 @@ class CreateWorkerRequest(BaseModel):
     """Request model for creating a new worker"""
     email: EmailStr
     full_name: str
-    role: UserRole = UserRole.ANALYST
+    role: UserRole = UserRole.CAMPAIGNER
 
 
 class UpdateWorkerRequest(BaseModel):
@@ -312,13 +315,59 @@ async def delete_worker(
                 )
             
             # Reassign customers assigned to this worker to NULL
-            from app.models.users import Customer
+            from app.models.users import Customer, CampaignerSession, InviteToken
+            from app.models.analytics import Connection, UserPropertySelection
+            
+            # Reassign customers
             customers_to_reassign = session.exec(
                 select(Customer).where(Customer.assigned_campaigner_id == worker_id)
             ).all()
             
             for customer in customers_to_reassign:
                 customer.assigned_campaigner_id = None
+            
+            # Delete all sessions for this worker
+            sessions_to_delete = session.exec(
+                select(CampaignerSession).where(CampaignerSession.campaigner_id == worker_id)
+            ).all()
+            
+            for session_obj in sessions_to_delete:
+                session.delete(session_obj)
+            
+            # Delete all connections created by this worker
+            connections_to_delete = session.exec(
+                select(Connection).where(Connection.campaigner_id == worker_id)
+            ).all()
+            
+            for connection in connections_to_delete:
+                session.delete(connection)
+            
+            # Delete all user property selections for this worker
+            property_selections_to_delete = session.exec(
+                select(UserPropertySelection).where(UserPropertySelection.campaigner_id == worker_id)
+            ).all()
+            
+            for selection in property_selections_to_delete:
+                session.delete(selection)
+            
+            # Delete all invite tokens created by this worker
+            invites_created_by_worker = session.exec(
+                select(InviteToken).where(InviteToken.invited_by_campaigner_id == worker_id)
+            ).all()
+            
+            for invite in invites_created_by_worker:
+                session.delete(invite)
+            
+            # Update invite tokens used by this worker to remove the reference
+            invites_used_by_worker = session.exec(
+                select(InviteToken).where(InviteToken.used_by_campaigner_id == worker_id)
+            ).all()
+            
+            for invite in invites_used_by_worker:
+                invite.used_by_campaigner_id = None
+                invite.used_at = None
+                invite.is_used = False
+                invite.use_count = 0
             
             # Delete worker
             session.delete(worker)
@@ -335,5 +384,308 @@ async def delete_worker(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete worker: {str(e)}"
+        )
+
+
+# Invite Management Endpoints
+
+class GenerateInviteRequest(BaseModel):
+    """Request model for generating invite link"""
+    role: UserRole = UserRole.CAMPAIGNER
+    email: Optional[str] = None
+
+
+class AcceptInviteRequest(BaseModel):
+    """Request model for accepting invite"""
+    token: str
+    google_token: Optional[str] = None
+    user_info: dict
+
+
+@router.post("/invite/generate")
+async def generate_invite_link(
+    request: GenerateInviteRequest,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """Generate secure invite link for team member"""
+    if current_user.role not in [UserRole.OWNER, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only owners and admins can generate invites"
+        )
+    
+    try:
+        with get_session() as session:
+            # Debug logging for invite generation
+            print(f"🔍 Generate Invite Debug:")
+            print(f"  - Current User ID: {current_user.id}")
+            print(f"  - Current User Agency ID: {current_user.agency_id}")
+            print(f"  - Request Role: {request.role}")
+            print(f"  - Request Email: {request.email}")
+            
+            invite = InviteService.generate_invite_token(
+                agency_id=current_user.agency_id,
+                invited_by_id=current_user.id,
+                role=request.role,
+                email=request.email
+            )
+            
+            session.add(invite)
+            session.commit()
+            session.refresh(invite)
+            
+            # Debug logging after invite creation
+            print(f"🔍 Created Invite Debug:")
+            print(f"  - Invite ID: {invite.id}")
+            print(f"  - Agency ID: {invite.agency_id}")
+            print(f"  - Role: {invite.role}")
+            print(f"  - Token: {invite.token}")
+            
+            # Generate invite URL
+            frontend_url = os.getenv("FRONTEND_URL", "https://localhost:3000")
+            invite_url = f"{frontend_url}/join?token={invite.token}"
+            
+            return {
+                "success": True,
+                "invite_token": invite.token,
+                "invite_url": invite_url,
+                "expires_at": invite.expires_at.isoformat()
+            }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate invite: {str(e)}"
+        )
+
+
+@router.post("/invite/accept")
+async def accept_invite(request: AcceptInviteRequest):
+    """Accept invitation and create campaigner account"""
+    try:
+        with get_session() as session:
+            # Validate token
+            is_valid, error_msg, invite = InviteService.validate_token(
+                request.token, session
+            )
+            
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg
+                )
+            
+            # Debug logging
+            print(f"🔍 Invite Debug:")
+            print(f"  - Token: {request.token}")
+            print(f"  - Invite ID: {invite.id}")
+            print(f"  - Agency ID: {invite.agency_id}")
+            print(f"  - Role: {invite.role}")
+            print(f"  - Is Used: {invite.is_used}")
+            
+            # Extract user info
+            email = request.user_info.get('email')
+            full_name = request.user_info.get('name') or 'Unknown User'  # Fallback for null name
+            google_id = request.user_info.get('sub')
+            avatar_url = request.user_info.get('picture')
+            
+            # Validate required fields
+            if not email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email is required"
+                )
+            
+            # Check if user already exists
+            existing = session.exec(
+                select(Campaigner).where(Campaigner.email == email)
+            ).first()
+            
+            if existing:
+                # Update existing user to join the agency from the invite
+                existing.agency_id = invite.agency_id
+                existing.role = invite.role
+                existing.status = UserStatus.ACTIVE
+                existing.last_login_at = datetime.utcnow()
+                
+                # Update Google info if provided
+                if google_id:
+                    existing.google_id = google_id
+                if avatar_url:
+                    existing.avatar_url = avatar_url
+                if full_name != 'Unknown User':
+                    existing.full_name = full_name
+                
+                session.add(existing)
+                session.commit()
+                session.refresh(existing)
+                
+                # Mark invite as used
+                invite.is_used = True
+                invite.use_count += 1
+                invite.used_at = datetime.utcnow()
+                invite.used_by_campaigner_id = existing.id
+                session.add(invite)
+                session.commit()
+                
+                # Debug logging for existing user update
+                print(f"🔍 Updated Existing User Debug:")
+                print(f"  - Campaigner ID: {existing.id}")
+                print(f"  - Email: {existing.email}")
+                print(f"  - Agency ID: {existing.agency_id}")
+                print(f"  - Role: {existing.role}")
+                
+                # Generate JWT tokens
+                from app.core.auth import create_access_token
+                access_token = create_access_token({"sub": str(existing.id)})
+                
+                return {
+                    "success": True,
+                    "message": "Successfully joined the team",
+                    "campaigner": {
+                        "id": existing.id,
+                        "email": existing.email,
+                        "full_name": existing.full_name,
+                        "role": existing.role
+                    },
+                    "access_token": access_token
+                }
+            
+            # Create new campaigner
+            new_campaigner = Campaigner(
+                email=email,
+                full_name=full_name,
+                google_id=google_id,
+                avatar_url=avatar_url,
+                email_verified=True,
+                role=invite.role,
+                status=UserStatus.ACTIVE,
+                agency_id=invite.agency_id,
+                last_login_at=datetime.utcnow()
+            )
+            
+            session.add(new_campaigner)
+            
+            # Mark invite as used
+            invite.is_used = True
+            invite.use_count += 1
+            invite.used_at = datetime.utcnow()
+            invite.used_by_campaigner_id = new_campaigner.id
+            
+            session.commit()
+            session.refresh(new_campaigner)
+            
+            # Debug logging after creation
+            print(f"🔍 Created Campaigner Debug:")
+            print(f"  - Campaigner ID: {new_campaigner.id}")
+            print(f"  - Email: {new_campaigner.email}")
+            print(f"  - Agency ID: {new_campaigner.agency_id}")
+            print(f"  - Role: {new_campaigner.role}")
+            
+            # Generate JWT tokens (reuse existing auth logic)
+            from app.core.auth import create_access_token
+            access_token = create_access_token({"sub": str(new_campaigner.id)})
+            
+            return {
+                "success": True,
+                "message": "Successfully joined the team",
+                "campaigner": {
+                    "id": new_campaigner.id,
+                    "email": new_campaigner.email,
+                    "full_name": new_campaigner.full_name,
+                    "role": new_campaigner.role
+                },
+                "access_token": access_token
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to accept invite: {str(e)}"
+        )
+
+
+@router.get("/invite/info/{token}")
+async def get_invite_info(token: str):
+    """Get invite information including agency name (public endpoint)"""
+    try:
+        with get_session() as session:
+            # Get invite token with agency info
+            from app.models.users import Agency
+            invite = session.exec(
+                select(InviteToken, Agency)
+                .join(Agency, InviteToken.agency_id == Agency.id)
+                .where(InviteToken.token == token)
+            ).first()
+            
+            if not invite:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Invalid invitation token"
+                )
+            
+            invite_token, agency = invite
+            
+            # Check if token is expired
+            if invite_token.expires_at < datetime.utcnow():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This invitation has expired"
+                )
+            
+            # Note: We don't check if token is already used here
+            # This endpoint is for display purposes only
+            # The actual acceptance will handle the "already used" case
+            
+            return {
+                "success": True,
+                "agency_name": agency.name,
+                "role": invite_token.role,
+                "expires_at": invite_token.expires_at.isoformat(),
+                "is_used": invite_token.is_used
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get invite info: {str(e)}"
+        )
+
+
+@router.get("/invite/list")
+async def list_invites(
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """List active invites for current agency"""
+    if current_user.role not in [UserRole.OWNER, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only owners and admins can view invites"
+        )
+    
+    try:
+        with get_session() as session:
+            invites = InviteService.get_active_invites_for_agency(
+                current_user.agency_id, session
+            )
+            
+            return {
+                "success": True,
+                "invites": [
+                    {
+                        "token": inv.token,
+                        "role": inv.role,
+                        "invited_email": inv.invited_email,
+                        "expires_at": inv.expires_at.isoformat(),
+                        "created_at": inv.created_at.isoformat()
+                    }
+                    for inv in invites
+                ]
+            }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list invites: {str(e)}"
         )
 

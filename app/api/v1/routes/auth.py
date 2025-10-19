@@ -9,6 +9,9 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel
 from sqlmodel import select
 from jose import jwt
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.auth import create_access_token, create_refresh_token, get_current_user, verify_google_token, ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM
 from app.config.database import get_session
@@ -114,27 +117,23 @@ async def authenticate_with_google(
                 user = existing_user
                 
             else:
-                # Check if we have any agencies, if not create a default one
+                # Create a new agency for the new user
+                # Extract domain from email for agency name
+                email_domain = email.split('@')[1] if '@' in email else 'unknown'
+                agency_name = f"{full_name}'s Agency" if full_name else f"{email_domain} Agency"
                 
-                agencies = session.exec(select(Agency)).all()
-                if not agencies:
-                    # Create default agency first (without primary_contact_campaigner_id for now)
-                    default_agency = Agency(
-                        name="Default Agency",
-                        type=CustomerType.AGENCY,
-                        status=CustomerStatus.ACTIVE,
-                        plan="basic",
-                        billing_currency="USD",
-                        address="Default Address"
-                    )
-                    session.add(default_agency)
-                    session.commit()
-                    session.refresh(default_agency)
-                    agency_id = default_agency.id
-                else:
-                    agency_id = agencies[0].id
+                new_agency = Agency(
+                    name=agency_name,
+                    email=email,
+                    phone=None,
+                    status=CustomerStatus.ACTIVE
+                )
+                session.add(new_agency)
+                session.commit()
+                session.refresh(new_agency)
+                agency_id = new_agency.id
                 
-                # Create new user
+                # Create new user as OWNER of the new agency
                 user = Campaigner(
                     email=email,
                     full_name=full_name,
@@ -144,7 +143,7 @@ async def authenticate_with_google(
                     locale="he-IL",
                     timezone="Asia/Jerusalem",
                     last_login_at=datetime.utcnow(),
-                    role=UserRole.VIEWER,  # Default role
+                    role=UserRole.OWNER,  # New users become OWNER of their agency
                     status=UserStatus.ACTIVE,
                     agency_id=agency_id
                 )
@@ -152,6 +151,15 @@ async def authenticate_with_google(
                 session.add(user)
                 session.commit()
                 session.refresh(user)
+                
+                # Create default data for new user's agency
+                try:
+                    from app.services.default_data_service import default_data_service
+                    default_data_service.create_default_data_for_agency(agency_id)
+                    logger.info(f"✅ Created default data for new user's agency {agency_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to create default data for agency {agency_id}: {str(e)}")
+                    # Don't fail user creation if default data fails
             
             # Create JWT tokens
             token_data = {

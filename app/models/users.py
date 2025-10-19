@@ -12,11 +12,10 @@ from .base import BaseModel
 
 class UserRole(str, Enum):
     """User roles in the agency system"""
-    OWNER = "owner"
-    ADMIN = "admin"
-    MANAGER = "manager"
-    ANALYST = "analyst"
-    VIEWER = "viewer"
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    CAMPAIGNER = "CAMPAIGNER"  # Regular team member (default)
+    VIEWER = "VIEWER"
 
 
 class UserStatus(str, Enum):
@@ -102,7 +101,7 @@ class Customer(BaseModel, table=True):
     status: CustomerStatus = Field(default=CustomerStatus.ACTIVE)
     
     # Client information - all fields from Info Table image
-    login_email: Optional[str] = Field(default=None, max_length=255, description="Login email address")
+    contact_email: Optional[str] = Field(default=None, max_length=255, description="Primary business contact email address")
     phone: Optional[str] = Field(default=None, max_length=50, description="Phone number")
     address: Optional[str] = Field(default=None, max_length=500, description="Physical address")
     opening_hours: Optional[str] = Field(default=None, max_length=255, description="Business opening hours")
@@ -138,3 +137,26 @@ class CampaignerSession(BaseModel, table=True):
     # Session status
     is_active: bool = Field(default=True)
     revoked_at: Optional[datetime] = Field(default=None)
+
+
+class InviteToken(BaseModel, table=True):
+    """Secure invitation tokens for team member invites"""
+    __tablename__ = "invite_tokens"
+    
+    token: str = Field(unique=True, max_length=255, index=True)  # UUID
+    agency_id: int = Field(foreign_key="agencies.id")
+    invited_by_campaigner_id: int = Field(foreign_key="campaigners.id")
+    
+    # Invite details
+    invited_email: Optional[str] = Field(default=None, max_length=255)
+    role: UserRole = Field(default=UserRole.CAMPAIGNER)
+    
+    # Status tracking
+    is_used: bool = Field(default=False)
+    used_at: Optional[datetime] = Field(default=None)
+    used_by_campaigner_id: Optional[int] = Field(default=None, foreign_key="campaigners.id")
+    
+    # Security
+    expires_at: datetime = Field()  # 7 days expiry
+    max_uses: int = Field(default=1)  # Single-use tokens
+    use_count: int = Field(default=0)

@@ -174,25 +174,23 @@ class KpiValue(BaseModel, table=True):
     
     # Relationships
     customer_id: int = Field(foreign_key="customers.id")
-    kpi_goal_id: Optional[int] = Field(default=None, foreign_key="kpi_goals.id")  # Link to goal
     
-    # Campaign identification (matches KpiGoal)
-    date: datetime = Field()
-    campaign_num: int = Field()
+    # Campaign identification
     campaign_id: str = Field(max_length=50)
     campaign_name: str = Field(max_length=255)
-    campaign_status: str = Field(max_length=50, default="ACTIVE/PAUSED")
+    campaign_status: str = Field(max_length=50, default="ACTIVE")  # ACTIVE/PAUSED/INACTIVE
     
     # Ad Group information
     ad_group_id: Optional[int] = Field(default=None)
     ad_group_name: Optional[str] = Field(default=None, max_length=255)
-    ad_group_status: Optional[str] = Field(default=None, max_length=50)
+    ad_group_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
     
     # Ad information
     ad_id: Optional[int] = Field(default=None)
-    ad_status: Optional[str] = Field(default=None, max_length=50)
-    ad_score: Optional[int] = Field(default=99)
+    ad_name: Optional[str] = Field(default=None, max_length=255)
     ad_headline: Optional[str] = Field(default=None, max_length=500)
+    ad_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
+    ad_score: Optional[int] = Field(default=None)  # Numerical score like 99
     
     # Advertising channel and objective
     advertising_channel: str = Field(max_length=100)  # Google AdSense, Google Search Ads, etc.
@@ -200,29 +198,19 @@ class KpiValue(BaseModel, table=True):
     
     # Budget information
     daily_budget: Optional[float] = Field(default=None)
-    weekly_budget: Optional[float] = Field(default=None)
     
     # Target audience
     target_audience: str = Field(max_length=255)
     
     # KPI Values (Actual measured values)
-    primary_kpi_1_value: Optional[float] = Field(default=None)  # e.g., 12.50 (actual CPA)
-    primary_kpi_1_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "USD"
-    secondary_kpi_1_value: Optional[float] = Field(default=None)  # e.g., 15 (actual clicks)
-    secondary_kpi_1_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "count"
-    secondary_kpi_2_value: Optional[float] = Field(default=None)  # e.g., 7.2 (actual CTR %)
-    secondary_kpi_2_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "%"
-    secondary_kpi_3_value: Optional[float] = Field(default=None)  # e.g., 180 (actual impressions)
-    secondary_kpi_3_unit: Optional[str] = Field(default=None, max_length=50)  # e.g., "count"
+    primary_kpi_1: Optional[str] = Field(default=None, max_length=255)  # e.g., "CPA $12.50"
+    secondary_kpi_1: Optional[str] = Field(default=None, max_length=255)  # e.g., "Clicks 15"
+    secondary_kpi_2: Optional[str] = Field(default=None, max_length=255)  # e.g., "CTR 7.2%"
+    secondary_kpi_3: Optional[str] = Field(default=None, max_length=255)  # e.g., "Impressions 180"
     
     # Campaign details
     landing_page: Optional[str] = Field(default=None, max_length=500)
     
-    # Measurement metadata
-    measurement_date: datetime = Field(default_factory=datetime.utcnow)  # When values were measured
-    data_source: Optional[str] = Field(default=None, max_length=100)  # e.g., "Google Ads API", "Facebook API"
-    
-    # Additional metadata
-    is_active: bool = Field(default=True)
+    # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

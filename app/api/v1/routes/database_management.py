@@ -700,7 +700,7 @@ async def get_kpi_values(
             if conditions:
                 statement = statement.where(and_(*conditions))
             
-            statement = statement.order_by(KpiValue.measurement_date.desc()).offset(offset).limit(limit)
+            statement = statement.order_by(KpiValue.created_at.desc()).offset(offset).limit(limit)
             campaigns = session.exec(statement).all()
             
             return {
@@ -710,9 +710,6 @@ async def get_kpi_values(
                     {
                         "id": campaign.id,
                         "customer_id": campaign.customer_id,
-                        "kpi_goal_id": campaign.kpi_goal_id,
-                        "date": campaign.date.isoformat(),
-                        "campaign_num": campaign.campaign_num,
                         "campaign_id": campaign.campaign_id,
                         "campaign_name": campaign.campaign_name,
                         "campaign_status": campaign.campaign_status,
@@ -720,26 +717,19 @@ async def get_kpi_values(
                         "ad_group_name": campaign.ad_group_name,
                         "ad_group_status": campaign.ad_group_status,
                         "ad_id": campaign.ad_id,
+                        "ad_name": campaign.ad_name,
+                        "ad_headline": campaign.ad_headline,
                         "ad_status": campaign.ad_status,
                         "ad_score": campaign.ad_score,
-                        "ad_headline": campaign.ad_headline,
                         "advertising_channel": campaign.advertising_channel,
                         "campaign_objective": campaign.campaign_objective,
                         "daily_budget": campaign.daily_budget,
-                        "weekly_budget": campaign.weekly_budget,
                         "target_audience": campaign.target_audience,
-                        "primary_kpi_1_value": campaign.primary_kpi_1_value,
-                        "primary_kpi_1_unit": campaign.primary_kpi_1_unit,
-                        "secondary_kpi_1_value": campaign.secondary_kpi_1_value,
-                        "secondary_kpi_1_unit": campaign.secondary_kpi_1_unit,
-                        "secondary_kpi_2_value": campaign.secondary_kpi_2_value,
-                        "secondary_kpi_2_unit": campaign.secondary_kpi_2_unit,
-                        "secondary_kpi_3_value": campaign.secondary_kpi_3_value,
-                        "secondary_kpi_3_unit": campaign.secondary_kpi_3_unit,
+                        "primary_kpi_1": campaign.primary_kpi_1,
+                        "secondary_kpi_1": campaign.secondary_kpi_1,
+                        "secondary_kpi_2": campaign.secondary_kpi_2,
+                        "secondary_kpi_3": campaign.secondary_kpi_3,
                         "landing_page": campaign.landing_page,
-                        "measurement_date": campaign.measurement_date.isoformat(),
-                        "data_source": campaign.data_source,
-                        "is_active": campaign.is_active,
                         "created_at": campaign.created_at.isoformat(),
                         "updated_at": campaign.updated_at.isoformat()
                     }
@@ -751,6 +741,177 @@ async def get_kpi_values(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch KPI values: {str(e)}"
+        )
+
+
+@router.post("/kpi-values")
+async def create_kpi_value(
+    campaign_data: dict,
+):
+    """Create a new KPI value entry"""
+    try:
+        with get_session() as session:
+            new_campaign = KpiValue(
+                customer_id=campaign_data.get('customer_id'),
+                campaign_id=campaign_data.get('campaign_id'),
+                campaign_name=campaign_data.get('campaign_name'),
+                campaign_status=campaign_data.get('campaign_status', 'ACTIVE'),
+                ad_group_id=campaign_data.get('ad_group_id'),
+                ad_group_name=campaign_data.get('ad_group_name'),
+                ad_group_status=campaign_data.get('ad_group_status'),
+                ad_id=campaign_data.get('ad_id'),
+                ad_name=campaign_data.get('ad_name'),
+                ad_headline=campaign_data.get('ad_headline'),
+                ad_status=campaign_data.get('ad_status'),
+                ad_score=campaign_data.get('ad_score'),
+                advertising_channel=campaign_data.get('advertising_channel'),
+                campaign_objective=campaign_data.get('campaign_objective'),
+                daily_budget=campaign_data.get('daily_budget'),
+                target_audience=campaign_data.get('target_audience'),
+                primary_kpi_1=campaign_data.get('primary_kpi_1'),
+                secondary_kpi_1=campaign_data.get('secondary_kpi_1'),
+                secondary_kpi_2=campaign_data.get('secondary_kpi_2'),
+                secondary_kpi_3=campaign_data.get('secondary_kpi_3'),
+                landing_page=campaign_data.get('landing_page'),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            
+            session.add(new_campaign)
+            session.commit()
+            session.refresh(new_campaign)
+            
+            return {
+                "success": True,
+                "message": "KPI value created successfully",
+                "campaign": {
+                    "id": new_campaign.id,
+                    "customer_id": new_campaign.customer_id,
+                    "campaign_id": new_campaign.campaign_id,
+                    "campaign_name": new_campaign.campaign_name,
+                    "campaign_status": new_campaign.campaign_status,
+                    "ad_group_id": new_campaign.ad_group_id,
+                    "ad_group_name": new_campaign.ad_group_name,
+                    "ad_group_status": new_campaign.ad_group_status,
+                    "ad_id": new_campaign.ad_id,
+                    "ad_name": new_campaign.ad_name,
+                    "ad_headline": new_campaign.ad_headline,
+                    "ad_status": new_campaign.ad_status,
+                    "ad_score": new_campaign.ad_score,
+                    "advertising_channel": new_campaign.advertising_channel,
+                    "campaign_objective": new_campaign.campaign_objective,
+                    "daily_budget": new_campaign.daily_budget,
+                    "target_audience": new_campaign.target_audience,
+                    "primary_kpi_1": new_campaign.primary_kpi_1,
+                    "secondary_kpi_1": new_campaign.secondary_kpi_1,
+                    "secondary_kpi_2": new_campaign.secondary_kpi_2,
+                    "secondary_kpi_3": new_campaign.secondary_kpi_3,
+                    "landing_page": new_campaign.landing_page,
+                    "created_at": new_campaign.created_at.isoformat(),
+                    "updated_at": new_campaign.updated_at.isoformat()
+                }
+            }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create KPI value: {str(e)}"
+        )
+
+
+@router.put("/kpi-values/{kpi_value_id}")
+async def update_kpi_value(
+    kpi_value_id: int,
+    campaign_data: dict,
+):
+    """Update a KPI value entry"""
+    try:
+        with get_session() as session:
+            campaign = session.get(KpiValue, kpi_value_id)
+            if not campaign:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="KPI value not found"
+                )
+            
+            # Update fields
+            for field, value in campaign_data.items():
+                if hasattr(campaign, field) and value is not None:
+                    setattr(campaign, field, value)
+            
+            campaign.updated_at = datetime.utcnow()
+            session.add(campaign)
+            session.commit()
+            session.refresh(campaign)
+            
+            return {
+                "success": True,
+                "message": "KPI value updated successfully",
+                "campaign": {
+                    "id": campaign.id,
+                    "customer_id": campaign.customer_id,
+                    "campaign_id": campaign.campaign_id,
+                    "campaign_name": campaign.campaign_name,
+                    "campaign_status": campaign.campaign_status,
+                    "ad_group_id": campaign.ad_group_id,
+                    "ad_group_name": campaign.ad_group_name,
+                    "ad_group_status": campaign.ad_group_status,
+                    "ad_id": campaign.ad_id,
+                    "ad_name": campaign.ad_name,
+                    "ad_headline": campaign.ad_headline,
+                    "ad_status": campaign.ad_status,
+                    "ad_score": campaign.ad_score,
+                    "advertising_channel": campaign.advertising_channel,
+                    "campaign_objective": campaign.campaign_objective,
+                    "daily_budget": campaign.daily_budget,
+                    "target_audience": campaign.target_audience,
+                    "primary_kpi_1": campaign.primary_kpi_1,
+                    "secondary_kpi_1": campaign.secondary_kpi_1,
+                    "secondary_kpi_2": campaign.secondary_kpi_2,
+                    "secondary_kpi_3": campaign.secondary_kpi_3,
+                    "landing_page": campaign.landing_page,
+                    "created_at": campaign.created_at.isoformat(),
+                    "updated_at": campaign.updated_at.isoformat()
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update KPI value: {str(e)}"
+        )
+
+
+@router.delete("/kpi-values/{kpi_value_id}")
+async def delete_kpi_value(
+    kpi_value_id: int,
+):
+    """Delete a KPI value entry"""
+    try:
+        with get_session() as session:
+            campaign = session.get(KpiValue, kpi_value_id)
+            if not campaign:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="KPI value not found"
+                )
+            
+            session.delete(campaign)
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": "KPI value deleted successfully"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete KPI value: {str(e)}"
         )
 
 
@@ -975,7 +1136,7 @@ async def get_customers(
                         "id": customer.id,
                         "agency_id": customer.agency_id,
                         "full_name": customer.full_name,
-                        "login_email": customer.login_email,
+                        "contact_email": customer.contact_email,
                         "phone": customer.phone,
                         "address": customer.address,
                         "opening_hours": customer.opening_hours,

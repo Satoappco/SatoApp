@@ -17,9 +17,10 @@ def start_https_server():
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
     
-    # Certificate paths
-    cert_file = project_root / "certs" / "sato-backend.pem"
-    key_file = project_root / "certs" / "sato-backend-key.pem"
+    # Certificate paths - use frontend certificates for consistency
+    frontend_dir = project_root / "satoapp-front"
+    cert_file = frontend_dir / "certs" / "localhost.pem"
+    key_file = frontend_dir / "certs" / "localhost-key.pem"
     
     # Check if certificates exist
     if not cert_file.exists() or not key_file.exists():

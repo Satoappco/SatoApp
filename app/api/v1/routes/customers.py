@@ -13,6 +13,9 @@ from app.core.auth import get_current_user
 from app.models.users import Campaigner, Customer, CustomerStatus
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.config.database import get_session
+from app.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -22,7 +25,7 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 class CustomerCreate(BaseModel):
     """Schema for creating a new customer"""
     full_name: str = Field(max_length=255, description="Full name or business name")
-    login_email: Optional[EmailStr] = Field(None, description="Login email address")
+    contact_email: Optional[EmailStr] = Field(None, description="Primary business contact email address")
     phone: Optional[str] = Field(None, max_length=50, description="Phone number")
     address: Optional[str] = Field(None, max_length=500, description="Physical address")
     opening_hours: Optional[str] = Field(None, max_length=255, description="Business opening hours")
@@ -37,7 +40,7 @@ class CustomerCreate(BaseModel):
 class CustomerUpdate(BaseModel):
     """Schema for updating a customer"""
     full_name: Optional[str] = Field(None, max_length=255)
-    login_email: Optional[EmailStr] = None
+    contact_email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=50)
     address: Optional[str] = Field(None, max_length=500)
     opening_hours: Optional[str] = Field(None, max_length=255)
@@ -76,7 +79,7 @@ async def get_customers(
                     {
                         "id": customer.id,
                         "full_name": customer.full_name,
-                        "login_email": customer.login_email,
+                        "contact_email": customer.contact_email,
                         "phone": customer.phone,
                         "address": customer.address,
                         "opening_hours": customer.opening_hours,
@@ -144,7 +147,7 @@ async def get_customer(
                 "customer": {
                     "id": customer.id,
                     "full_name": customer.full_name,
-                    "login_email": customer.login_email,
+                    "contact_email": customer.contact_email,
                     "phone": customer.phone,
                     "address": customer.address,
                     "opening_hours": customer.opening_hours,
@@ -198,7 +201,7 @@ async def create_customer(
             new_customer = Customer(
                 agency_id=current_user.agency_id,
                 full_name=request.full_name,
-                login_email=request.login_email,
+                contact_email=request.contact_email,
                 phone=request.phone,
                 address=request.address,
                 opening_hours=request.opening_hours,
@@ -216,23 +219,29 @@ async def create_customer(
             session.commit()
             session.refresh(new_customer)
             
-            # Initialize RTM Table entry
-            rtm_entry = RTMTable(
-                agency_id=current_user.agency_id,
-                campaigner_id=current_user.id,
-                customer_id=new_customer.id
-            )
+            # Initialize RTM Table entry with composite_id
+            composite_id = f"{current_user.agency_id}_{current_user.id}_{new_customer.id}"
+            rtm_entry = RTMTable(composite_id=composite_id)
             session.add(rtm_entry)
             
-            # Initialize Questions Table entry
-            questions_entry = QuestionsTable(
-                agency_id=current_user.agency_id,
-                campaigner_id=current_user.id,
-                customer_id=new_customer.id
-            )
+            # Initialize Questions Table entry with composite_id
+            questions_entry = QuestionsTable(composite_id=composite_id)
             session.add(questions_entry)
             
             session.commit()
+            
+            # Create default data for the new customer
+            try:
+                from app.services.default_data_service import default_data_service
+                default_data_service.create_default_data_for_customer(
+                    new_customer.id, 
+                    current_user.agency_id, 
+                    current_user.id
+                )
+                logger.info(f"✅ Created default data for new customer {new_customer.id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to create default data for customer {new_customer.id}: {str(e)}")
+                # Don't fail customer creation if default data fails
             
             return {
                 "success": True,
@@ -240,7 +249,7 @@ async def create_customer(
                 "customer": {
                     "id": new_customer.id,
                     "full_name": new_customer.full_name,
-                    "login_email": new_customer.login_email,
+                    "contact_email": new_customer.contact_email,
                     "phone": new_customer.phone,
                     "assigned_campaigner_id": new_customer.assigned_campaigner_id,
                     "status": new_customer.status,
@@ -310,7 +319,7 @@ async def update_customer(
                 "customer": {
                     "id": customer.id,
                     "full_name": customer.full_name,
-                    "login_email": customer.login_email,
+                    "contact_email": customer.contact_email,
                     "phone": customer.phone,
                     "address": customer.address,
                     "opening_hours": customer.opening_hours,
