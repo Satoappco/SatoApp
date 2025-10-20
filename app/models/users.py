@@ -104,7 +104,7 @@ class Customer(BaseModel, table=True):
     contact_email: Optional[str] = Field(default=None, max_length=255, description="Primary business contact email address")
     phone: Optional[str] = Field(default=None, max_length=50, description="Phone number")
     address: Optional[str] = Field(default=None, max_length=500, description="Physical address")
-    opening_hours: Optional[str] = Field(default=None, max_length=255, description="Business opening hours")
+    opening_hours: Optional[str] = Field(default=None, sa_column=Column(String), description="Business opening hours")
     narrative_report: Optional[str] = Field(default=None, sa_column=Column(String), description="Narrative report text")
     website_url: Optional[str] = Field(default=None, max_length=500, description="Website URL")
     facebook_page_url: Optional[str] = Field(default=None, max_length=500, description="Facebook page URL")

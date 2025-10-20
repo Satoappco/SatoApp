@@ -28,7 +28,7 @@ class CustomerCreate(BaseModel):
     contact_email: Optional[EmailStr] = Field(None, description="Primary business contact email address")
     phone: Optional[str] = Field(None, max_length=50, description="Phone number")
     address: Optional[str] = Field(None, max_length=500, description="Physical address")
-    opening_hours: Optional[str] = Field(None, max_length=255, description="Business opening hours")
+    opening_hours: Optional[str] = Field(None, description="Business opening hours")
     narrative_report: Optional[str] = Field(None, description="Narrative report text")
     website_url: Optional[str] = Field(None, max_length=500, description="Website URL")
     facebook_page_url: Optional[str] = Field(None, max_length=500, description="Facebook page URL")
@@ -43,7 +43,7 @@ class CustomerUpdate(BaseModel):
     contact_email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=50)
     address: Optional[str] = Field(None, max_length=500)
-    opening_hours: Optional[str] = Field(None, max_length=255)
+    opening_hours: Optional[str] = Field(None)
     narrative_report: Optional[str] = None
     website_url: Optional[str] = Field(None, max_length=500)
     facebook_page_url: Optional[str] = Field(None, max_length=500)

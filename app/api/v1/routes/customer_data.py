@@ -659,11 +659,24 @@ async def update_customer_info(
                     detail="Access denied to this customer"
                 )
             
+            # Verify assigned campaigner if being changed
+            if 'assigned_campaigner_id' in request and request['assigned_campaigner_id'] is not None:
+                if request['assigned_campaigner_id']:  # Not None and not 0
+                    assigned_campaigner = session.exec(
+                        select(Campaigner).where(Campaigner.id == request['assigned_campaigner_id'])
+                    ).first()
+                    if not assigned_campaigner or assigned_campaigner.agency_id != current_user.agency_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid assigned campaigner"
+                        )
+            
             # Update customer fields
             update_fields = [
                 'full_name', 'contact_email', 'phone', 'address', 'opening_hours',
                 'narrative_report', 'website_url', 'facebook_page_url', 
-                'instagram_page_url', 'llm_engine_preference', 'status', 'is_active'
+                'instagram_page_url', 'llm_engine_preference', 'status', 'is_active',
+                'assigned_campaigner_id'
             ]
             
             for field in update_fields:
