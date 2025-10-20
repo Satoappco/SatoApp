@@ -23,6 +23,11 @@ from app.core.websocket_manager import connection_manager
 logger = get_logger("api.webhooks")
 router = APIRouter()
 
+# Feature flag to enable/disable CrewAI processing
+# Set to False to bypass CrewAI and send responses directly via WebSocket
+# Set to True to enable full CrewAI analysis
+ENABLE_CREWAI = False
+
 
 async def send_dialogcx_custom_event(session_id: str, event_name: str, result: str):
     """
@@ -1052,6 +1057,30 @@ async def handle_dialogcx_webhook(
         logger.info(f"Matching Parameters: {matching_parameters}")
         logger.info(f"Data sources: {data_sources}")
         
+        # Check if CrewAI processing is enabled
+        if not ENABLE_CREWAI:
+            # SIMPLE MODE: Echo response directly via WebSocket (bypass CrewAI)
+            logger.info(f"🔄 CrewAI disabled - sending response via WebSocket only")
+            
+            response_text = f"Received your question: {user_question}\n\nProcessing your request..."
+            
+            # Send via WebSocket
+            try:
+                await connection_manager.send_crew_result(
+                    session_id=dialogcx_session_id,
+                    result=response_text,
+                    analysis_id=analysis_id,
+                    execution_time=0.0,
+                    agents_used=[]
+                )
+                logger.info(f"✅ Sent response via WebSocket: session={dialogcx_session_id}")
+            except Exception as ws_error:
+                logger.error(f"❌ WebSocket send failed: {str(ws_error)}")
+            
+            # Return simple acknowledgment to DialogCX
+            return {"fulfillment_response": "Processing your request..."}
+
+        # ELSE: Original CrewAI code continues below (unchanged)
         # RUN CREWAI ANALYSIS SYNCHRONOUSLY AND RETURN RESULT DIRECTLY
         logger.info(f"🚀 Starting CrewAI analysis for DialogCX session: {dialogcx_session_id}")
         

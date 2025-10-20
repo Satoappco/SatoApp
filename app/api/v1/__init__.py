@@ -7,6 +7,7 @@ from .routes import (
     agents, 
     health, 
     webhooks, 
+    websocket,
     auth, 
     google_analytics, 
     google_analytics_oauth, 
@@ -35,6 +36,7 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, tags=["authentication"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+api_router.include_router(websocket.router, tags=["websocket"])
 api_router.include_router(google_analytics.router, tags=["google-analytics"])
 api_router.include_router(google_analytics_oauth.router, tags=["google-analytics-oauth"])
 api_router.include_router(google_ads.router, tags=["google-ads"])
