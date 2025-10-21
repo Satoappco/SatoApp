@@ -54,7 +54,8 @@ async def get_agencies(
                     "email": primary_agency.email,
                     "phone": primary_agency.phone,
                     "status": primary_agency.status,
-                    "is_main": True
+                    "created_at": primary_agency.created_at.isoformat() if primary_agency.created_at else None,
+                    "updated_at": primary_agency.updated_at.isoformat() if primary_agency.updated_at else None
                 })
             
             # Note: Additional agencies removed - campaigners now belong to single agency
@@ -70,6 +71,37 @@ async def get_agencies(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get agencies: {str(e)}"
+        )
+
+
+@router.get("/list")
+async def get_agencies_list(
+    current_campaigner: Campaigner = Depends(get_current_user)
+):
+    """
+    Get lightweight list of agencies for dropdown population.
+    Returns only id and name for efficient dropdown loading.
+    """
+    try:
+        with get_session() as session:
+            statement = select(Agency).order_by(Agency.name)
+            agencies = session.exec(statement).all()
+            
+            return {
+                "success": True,
+                "agencies": [
+                    {
+                        "id": agency.id,
+                        "name": agency.name
+                    }
+                    for agency in agencies
+                ]
+            }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get agencies list: {str(e)}"
         )
 
 
@@ -155,6 +187,8 @@ async def get_agency(
                     "email": agency.email,
                     "phone": agency.phone,
                     "status": agency.status,
+                    "created_at": agency.created_at.isoformat() if agency.created_at else None,
+                    "updated_at": agency.updated_at.isoformat() if agency.updated_at else None
                 }
             }
     
@@ -205,7 +239,9 @@ async def create_agency(
                     "name": new_agency.name,
                     "email": new_agency.email,
                     "phone": new_agency.phone,
-                    "status": new_agency.status
+                    "status": new_agency.status,
+                    "created_at": new_agency.created_at.isoformat() if new_agency.created_at else None,
+                    "updated_at": new_agency.updated_at.isoformat() if new_agency.updated_at else None
                 }
             }
     
@@ -266,7 +302,9 @@ async def update_agency(
                     "name": agency.name,
                     "email": agency.email,
                     "phone": agency.phone,
-                    "status": agency.status
+                    "status": agency.status,
+                    "created_at": agency.created_at.isoformat() if agency.created_at else None,
+                    "updated_at": agency.updated_at.isoformat() if agency.updated_at else None
                 }
             }
     

@@ -104,12 +104,19 @@ async def authenticate_with_google(
             existing_user = session.exec(statement).first()
             
             if existing_user:
-                # Update existing user with Google info
+                # Update Google OAuth fields
                 existing_user.google_id = google_id
-                existing_user.full_name = full_name
-                existing_user.avatar_url = avatar_url
                 existing_user.email_verified = email_verified
+                existing_user.avatar_url = avatar_url
                 existing_user.last_login_at = datetime.utcnow()
+                
+                # Merge full_name: prefer Google if admin left it empty or generic
+                if full_name and (not existing_user.full_name or len(existing_user.full_name.strip()) < 3):
+                    existing_user.full_name = full_name
+                
+                # Auto-activate INVITED users on first Google login
+                if existing_user.status == UserStatus.INVITED:
+                    existing_user.status = UserStatus.ACTIVE
                 
                 session.add(existing_user)
                 session.commit()

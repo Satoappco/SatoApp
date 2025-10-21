@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, EmailStr
 from app.core.auth import get_current_user
 from app.models.users import Campaigner, Customer, CustomerStatus
 from app.models.customer_data import RTMTable, QuestionsTable
+from app.models.analytics import KpiGoal, DigitalAsset, Connection, UserPropertySelection, KpiValue
 from app.config.database import get_session
 from app.config.logging import get_logger
 
@@ -381,16 +382,51 @@ async def delete_customer(
                 )
             
             # Delete related entries (cascade should handle this, but being explicit)
-            # RTM Table
+            # Connections (must be deleted first as they reference digital_assets)
+            connections = session.exec(
+                select(Connection).where(Connection.customer_id == customer_id)
+            ).all()
+            for connection in connections:
+                session.delete(connection)
+            
+            # Digital Assets
+            digital_assets = session.exec(
+                select(DigitalAsset).where(DigitalAsset.customer_id == customer_id)
+            ).all()
+            for asset in digital_assets:
+                session.delete(asset)
+            
+            # User Property Selections
+            user_property_selections = session.exec(
+                select(UserPropertySelection).where(UserPropertySelection.customer_id == customer_id)
+            ).all()
+            for selection in user_property_selections:
+                session.delete(selection)
+            
+            # KPI Values (actual measured values)
+            kpi_values = session.exec(
+                select(KpiValue).where(KpiValue.customer_id == customer_id)
+            ).all()
+            for value in kpi_values:
+                session.delete(value)
+            
+            # KPI Goals (target values)
+            kpi_goals = session.exec(
+                select(KpiGoal).where(KpiGoal.customer_id == customer_id)
+            ).all()
+            for goal in kpi_goals:
+                session.delete(goal)
+            
+            # RTM Table (uses composite_id format: agency_id_campaigner_id_customer_id)
             rtm_entries = session.exec(
-                select(RTMTable).where(RTMTable.customer_id == customer_id)
+                select(RTMTable).where(RTMTable.composite_id.like(f"{customer.agency_id}_%_{customer_id}"))
             ).all()
             for entry in rtm_entries:
                 session.delete(entry)
             
-            # Questions Table
+            # Questions Table (uses composite_id format: agency_id_campaigner_id_customer_id)
             questions_entries = session.exec(
-                select(QuestionsTable).where(QuestionsTable.customer_id == customer_id)
+                select(QuestionsTable).where(QuestionsTable.composite_id.like(f"{customer.agency_id}_%_{customer_id}"))
             ).all()
             for entry in questions_entries:
                 session.delete(entry)
