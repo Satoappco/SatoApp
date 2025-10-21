@@ -101,6 +101,23 @@ class KpiCatalog(BaseModel, table=True):
     lite_secondary_submetrics: str = Field(description="JSON array of lite secondary sub-metrics")
 
 
+class KpiSettings(BaseModel, table=True):
+    """KPI Settings - One row per KPI definition (Admin-only)"""
+    __tablename__ = "kpi_settings"
+    
+    id: int = Field(primary_key=True)
+    campaign_objective: str = Field(max_length=100)  # Sales & Profitability, Increasing Traffic, etc.
+    kpi_name: str = Field(max_length=255)  # e.g., "CPA (Cost Per Acquisition)"
+    kpi_type: str = Field(max_length=20)  # "Primary" or "Secondary"
+    direction: str = Field(max_length=10)  # "<" or ">"
+    default_value: float = Field()  # Default target value
+    unit: str = Field(max_length=50)  # "₪", "%", "Count"
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class UserPropertySelection(BaseModel, table=True):
     """User's selected properties/pages for each service"""
     __tablename__ = "user_property_selections"
@@ -140,7 +157,7 @@ class KpiGoal(BaseModel, table=True):
     # Ad information
     ad_id: Optional[int] = Field(default=None)
     ad_name: Optional[str] = Field(default=None, max_length=255)
-    ad_headline: Optional[str] = Field(default=None, max_length=500)
+    ad_name_headline: Optional[str] = Field(default=None, max_length=500)
     ad_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
     ad_score: Optional[int] = Field(default=None)  # Numerical score like 99
     
@@ -188,7 +205,7 @@ class KpiValue(BaseModel, table=True):
     # Ad information
     ad_id: Optional[int] = Field(default=None)
     ad_name: Optional[str] = Field(default=None, max_length=255)
-    ad_headline: Optional[str] = Field(default=None, max_length=500)
+    ad_name_headline: Optional[str] = Field(default=None, max_length=500)
     ad_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
     ad_score: Optional[int] = Field(default=None)  # Numerical score like 99
     

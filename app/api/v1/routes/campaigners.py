@@ -21,6 +21,8 @@ class CreateWorkerRequest(BaseModel):
     """Request model for creating a new worker"""
     email: EmailStr
     full_name: str
+    phone: Optional[str] = None
+    agency_id: int
     role: UserRole = UserRole.CAMPAIGNER
 
 
@@ -174,9 +176,10 @@ async def create_worker(
             new_worker = Campaigner(
                 email=request.email,
                 full_name=request.full_name,
+                phone=request.phone,
                 role=request.role,
-                status=UserStatus.PENDING,  # New workers start as pending
-                agency_id=current_user.agency_id,
+                status=UserStatus.INVITED,  # New workers start as invited
+                agency_id=request.agency_id,
                 email_verified=False
             )
             
@@ -191,8 +194,10 @@ async def create_worker(
                     "id": new_worker.id,
                     "email": new_worker.email,
                     "full_name": new_worker.full_name,
+                    "phone": new_worker.phone,
                     "role": new_worker.role,
-                    "status": new_worker.status
+                    "status": new_worker.status,
+                    "agency_id": new_worker.agency_id
                 }
             }
     

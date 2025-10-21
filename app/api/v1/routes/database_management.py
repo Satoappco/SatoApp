@@ -15,8 +15,9 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user
+from app.core.api_auth import verify_admin_token
 from app.models.users import Campaigner, Agency, Customer
-from app.models.analytics import KpiCatalog, KpiGoal, KpiValue, DigitalAsset, Connection, UserPropertySelection
+from app.models.analytics import KpiCatalog, KpiGoal, KpiValue, KpiSettings, DigitalAsset, Connection, UserPropertySelection
 from app.models.agents import AgentConfig, RoutingRule, CustomerLog, DetailedExecutionLog
 from app.config.database import get_session
 
@@ -55,6 +56,26 @@ class KpiCatalogUpdate(BaseModel):
     lite_secondary_submetrics: Optional[str] = None
 
 
+class KpiSettingsCreate(BaseModel):
+    """Schema for creating a KPI Settings entry (Admin-only)"""
+    campaign_objective: str = Field(max_length=100)
+    kpi_name: str = Field(max_length=255)
+    kpi_type: str = Field(max_length=20)  # "Primary" or "Secondary"
+    direction: str = Field(max_length=10)  # "<" or ">"
+    default_value: float
+    unit: str = Field(max_length=50)
+
+
+class KpiSettingsUpdate(BaseModel):
+    """Schema for updating a KPI Settings entry (Admin-only)"""
+    campaign_objective: Optional[str] = Field(None, max_length=100)
+    kpi_name: Optional[str] = Field(None, max_length=255)
+    kpi_type: Optional[str] = Field(None, max_length=20)
+    direction: Optional[str] = Field(None, max_length=10)
+    default_value: Optional[float] = None
+    unit: Optional[str] = Field(None, max_length=50)
+
+
 class KpiGoalCreate(BaseModel):
     """Schema for creating a KPI Goal entry"""
     customer_id: int
@@ -70,7 +91,7 @@ class KpiGoalCreate(BaseModel):
     # Ad fields
     ad_id: Optional[int] = None
     ad_name: Optional[str] = Field(None, max_length=255)
-    ad_headline: Optional[str] = Field(None, max_length=500)
+    ad_name_headline: Optional[str] = Field(None, max_length=500) #clear description for llm 
     ad_status: Optional[str] = Field(None, max_length=50)
     ad_score: Optional[int] = None
     
@@ -105,7 +126,7 @@ class KpiGoalUpdate(BaseModel):
     # Ad fields
     ad_id: Optional[int] = None
     ad_name: Optional[str] = Field(None, max_length=255)
-    ad_headline: Optional[str] = Field(None, max_length=500)
+    ad_name_headline: Optional[str] = Field(None, max_length=500)
     ad_status: Optional[str] = Field(None, max_length=50)
     ad_score: Optional[int] = None
     
@@ -422,7 +443,7 @@ async def get_kpi_goals(
                         "ad_group_status": campaign.ad_group_status,
                         "ad_id": campaign.ad_id,
                         "ad_name": campaign.ad_name,
-                        "ad_headline": campaign.ad_headline,
+                        "ad_name_headline": campaign.ad_name_headline,
                         "ad_status": campaign.ad_status,
                         "ad_score": campaign.ad_score,
                         "advertising_channel": campaign.advertising_channel,
@@ -476,7 +497,7 @@ async def get_kpi_goal(
                     "ad_group_status": campaign.ad_group_status,
                     "ad_id": campaign.ad_id,
                     "ad_name": campaign.ad_name,
-                    "ad_headline": campaign.ad_headline,
+                    "ad_name_headline": campaign.ad_name_headline,
                     "ad_status": campaign.ad_status,
                     "ad_score": campaign.ad_score,
                     "advertising_channel": campaign.advertising_channel,
@@ -519,7 +540,7 @@ async def create_kpi_goal(
                 ad_group_status=campaign_data.ad_group_status,
                 ad_id=campaign_data.ad_id,
                 ad_name=campaign_data.ad_name,
-                ad_headline=campaign_data.ad_headline,
+                ad_name_headline=campaign_data.ad_name_headline,
                 ad_status=campaign_data.ad_status,
                 ad_score=campaign_data.ad_score,
                 advertising_channel=campaign_data.advertising_channel,
@@ -553,7 +574,7 @@ async def create_kpi_goal(
                     "ad_group_status": new_campaign.ad_group_status,
                     "ad_id": new_campaign.ad_id,
                     "ad_name": new_campaign.ad_name,
-                    "ad_headline": new_campaign.ad_headline,
+                    "ad_name_headline": new_campaign.ad_name_headline,
                     "ad_status": new_campaign.ad_status,
                     "ad_score": new_campaign.ad_score,
                     "advertising_channel": new_campaign.advertising_channel,
@@ -618,7 +639,7 @@ async def update_kpi_goal(
                     "ad_group_status": campaign.ad_group_status,
                     "ad_id": campaign.ad_id,
                     "ad_name": campaign.ad_name,
-                    "ad_headline": campaign.ad_headline,
+                    "ad_name_headline": campaign.ad_name_headline,
                     "ad_status": campaign.ad_status,
                     "ad_score": campaign.ad_score,
                     "advertising_channel": campaign.advertising_channel,
@@ -718,7 +739,7 @@ async def get_kpi_values(
                         "ad_group_status": campaign.ad_group_status,
                         "ad_id": campaign.ad_id,
                         "ad_name": campaign.ad_name,
-                        "ad_headline": campaign.ad_headline,
+                        "ad_name_headline": campaign.ad_name_headline,
                         "ad_status": campaign.ad_status,
                         "ad_score": campaign.ad_score,
                         "advertising_channel": campaign.advertising_channel,
@@ -761,7 +782,7 @@ async def create_kpi_value(
                 ad_group_status=campaign_data.get('ad_group_status'),
                 ad_id=campaign_data.get('ad_id'),
                 ad_name=campaign_data.get('ad_name'),
-                ad_headline=campaign_data.get('ad_headline'),
+                ad_name_headline=campaign_data.get('ad_name_headline'),
                 ad_status=campaign_data.get('ad_status'),
                 ad_score=campaign_data.get('ad_score'),
                 advertising_channel=campaign_data.get('advertising_channel'),
@@ -795,7 +816,7 @@ async def create_kpi_value(
                     "ad_group_status": new_campaign.ad_group_status,
                     "ad_id": new_campaign.ad_id,
                     "ad_name": new_campaign.ad_name,
-                    "ad_headline": new_campaign.ad_headline,
+                    "ad_name_headline": new_campaign.ad_name_headline,
                     "ad_status": new_campaign.ad_status,
                     "ad_score": new_campaign.ad_score,
                     "advertising_channel": new_campaign.advertising_channel,
@@ -858,7 +879,7 @@ async def update_kpi_value(
                     "ad_group_status": campaign.ad_group_status,
                     "ad_id": campaign.ad_id,
                     "ad_name": campaign.ad_name,
-                    "ad_headline": campaign.ad_headline,
+                    "ad_name_headline": campaign.ad_name_headline,
                     "ad_status": campaign.ad_status,
                     "ad_score": campaign.ad_score,
                     "advertising_channel": campaign.advertising_channel,
@@ -1589,6 +1610,192 @@ async def get_detailed_execution_logs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch detailed execution logs: {str(e)}"
+        )
+
+
+# ===== KPI Settings Routes (Admin-only) =====
+
+@router.get("/kpi-settings")
+async def get_kpi_settings(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0)
+):
+    """Get all KPI settings (public read access)"""
+    try:
+        with get_session() as session:
+            statement = select(KpiSettings).offset(offset).limit(limit)
+            settings = session.exec(statement).all()
+            
+            return {
+                "success": True,
+                "count": len(settings),
+                "settings": [
+                    {
+                        "id": setting.id,
+                        "campaign_objective": setting.campaign_objective,
+                        "kpi_name": setting.kpi_name,
+                        "kpi_type": setting.kpi_type,
+                        "direction": setting.direction,
+                        "default_value": setting.default_value,
+                        "unit": setting.unit,
+                        "created_at": setting.created_at.isoformat(),
+                        "updated_at": setting.updated_at.isoformat()
+                    }
+                    for setting in settings
+                ]
+            }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch KPI settings: {str(e)}"
+        )
+
+
+@router.get("/kpi-settings/{setting_id}")
+async def get_kpi_setting(setting_id: int):
+    """Get a single KPI setting by ID (public read access)"""
+    try:
+        with get_session() as session:
+            setting = session.get(KpiSettings, setting_id)
+            if not setting:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="KPI setting not found"
+                )
+            
+            return {
+                "success": True,
+                "setting": {
+                    "id": setting.id,
+                    "campaign_objective": setting.campaign_objective,
+                    "kpi_name": setting.kpi_name,
+                    "kpi_type": setting.kpi_type,
+                    "direction": setting.direction,
+                    "default_value": setting.default_value,
+                    "unit": setting.unit,
+                    "created_at": setting.created_at.isoformat(),
+                    "updated_at": setting.updated_at.isoformat()
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch KPI setting: {str(e)}"
+        )
+
+
+@router.post("/kpi-settings")
+async def create_kpi_setting(
+    setting_data: KpiSettingsCreate,
+    _: bool = Depends(verify_admin_token)
+):
+    """Create a new KPI setting (admin-only)"""
+    try:
+        with get_session() as session:
+            new_setting = KpiSettings(
+                campaign_objective=setting_data.campaign_objective,
+                kpi_name=setting_data.kpi_name,
+                kpi_type=setting_data.kpi_type,
+                direction=setting_data.direction,
+                default_value=setting_data.default_value,
+                unit=setting_data.unit,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            
+            session.add(new_setting)
+            session.commit()
+            session.refresh(new_setting)
+            
+            return {
+                "success": True,
+                "message": "KPI setting created successfully",
+                "setting_id": new_setting.id
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create KPI setting: {str(e)}"
+        )
+
+
+@router.put("/kpi-settings/{setting_id}")
+async def update_kpi_setting(
+    setting_id: int,
+    setting_data: KpiSettingsUpdate,
+    _: bool = Depends(verify_admin_token)
+):
+    """Update a KPI setting (admin-only)"""
+    try:
+        with get_session() as session:
+            setting = session.get(KpiSettings, setting_id)
+            if not setting:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="KPI setting not found"
+                )
+            
+            # Update fields
+            update_data = setting_data.dict(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(setting, field, value)
+            
+            setting.updated_at = datetime.utcnow()
+            
+            session.add(setting)
+            session.commit()
+            session.refresh(setting)
+            
+            return {
+                "success": True,
+                "message": "KPI setting updated successfully"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update KPI setting: {str(e)}"
+        )
+
+
+@router.delete("/kpi-settings/{setting_id}")
+async def delete_kpi_setting(
+    setting_id: int,
+    _: bool = Depends(verify_admin_token)
+):
+    """Delete a KPI setting (admin-only)"""
+    try:
+        with get_session() as session:
+            setting = session.get(KpiSettings, setting_id)
+            if not setting:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="KPI setting not found"
+                )
+            
+            session.delete(setting)
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": "KPI setting deleted successfully"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete KPI setting: {str(e)}"
         )
 
 
