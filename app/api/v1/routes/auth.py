@@ -117,50 +117,56 @@ async def authenticate_with_google(
                 user = existing_user
                 
             else:
-                # Create a new agency for the new user
-                # Extract domain from email for agency name
-                email_domain = email.split('@')[1] if '@' in email else 'unknown'
-                agency_name = f"{full_name}'s Agency" if full_name else f"{email_domain} Agency"
-                
-                new_agency = Agency(
-                    name=agency_name,
-                    email=email,
-                    phone=None,
-                    status=CustomerStatus.ACTIVE
-                )
-                session.add(new_agency)
-                session.commit()
-                session.refresh(new_agency)
-                agency_id = new_agency.id
-                
-                # Create new user as OWNER of the new agency
-                user = Campaigner(
-                    email=email,
-                    full_name=full_name,
-                    google_id=google_id,
-                    avatar_url=avatar_url,
-                    email_verified=email_verified,
-                    locale="he-IL",
-                    timezone="Asia/Jerusalem",
-                    last_login_at=datetime.utcnow(),
-                    role=UserRole.OWNER,  # New users become OWNER of their agency
-                    status=UserStatus.ACTIVE,
-                    agency_id=agency_id
+                # Block new user signup - registration is invite-only
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Registration is invite-only. Please contact your administrator for access."
                 )
                 
-                session.add(user)
-                session.commit()
-                session.refresh(user)
-                
-                # Create default data for new user's agency
-                try:
-                    from app.services.default_data_service import default_data_service
-                    default_data_service.create_default_data_for_agency(agency_id)
-                    logger.info(f"✅ Created default data for new user's agency {agency_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to create default data for agency {agency_id}: {str(e)}")
-                    # Don't fail user creation if default data fails
-            
+                # OLD LOGIC - Uncomment to restore automatic agency creation for new users
+                # # Create a new agency for the new user
+                # # Extract domain from email for agency name
+                # email_domain = email.split('@')[1] if '@' in email else 'unknown'
+                # agency_name = f"{full_name}'s Agency" if full_name else f"{email_domain} Agency"
+                # 
+                # new_agency = Agency(
+                #     name=agency_name,
+                #     email=email,
+                #     phone=None,
+                #     status=CustomerStatus.ACTIVE
+                # )
+                # session.add(new_agency)
+                # session.commit()
+                # session.refresh(new_agency)
+                # agency_id = new_agency.id
+                # 
+                # # Create new user as OWNER of the new agency
+                # user = Campaigner(
+                #     email=email,
+                #     full_name=full_name,
+                #     google_id=google_id,
+                #     avatar_url=avatar_url,
+                #     email_verified=email_verified,
+                #     locale="he-IL",
+                #     timezone="Asia/Jerusalem",
+                #     last_login_at=datetime.utcnow(),
+                #     role=UserRole.OWNER,  # New users become OWNER of their agency
+                #     status=UserStatus.ACTIVE,
+                #     agency_id=agency_id
+                # )
+                # 
+                # session.add(user)
+                # session.commit()
+                # session.refresh(user)
+                # 
+                # # Create default data for new user's agency
+                # try:
+                #     from app.services.default_data_service import default_data_service
+                #     default_data_service.create_default_data_for_agency(agency_id)
+                #     logger.info(f"✅ Created default data for new user's agency {agency_id}")
+                # except Exception as e:
+                #     logger.warning(f"⚠️ Failed to create default data for agency {agency_id}: {str(e)}")
+                #     # Don't fail user creation if default data fails
             # Create JWT tokens
             token_data = {
                 "user_id": user.id,
