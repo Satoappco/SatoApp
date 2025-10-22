@@ -2,10 +2,11 @@
 FastAPI application factory for SatoApp
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -60,7 +61,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure FastAPI application"""
     settings = get_settings()
-    
+
     app = FastAPI(
         title=settings.app_name,
         description="Multi-agent AI system powered by CrewAI for SEO analysis and optimization",
@@ -69,6 +70,17 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
     
+    # Add request logging middleware
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        # Log incoming API requests and responses
+        start_time = time.time()
+        logger.debug(f"📥 {request.method} {request.url.path} - Query: {dict(request.query_params)} - Client: {request.client.host if request.client else 'unknown'}")
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.debug(f"📤 {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
+        return response
+
     # Add CORS middleware (including WebSocket support)
     app.add_middleware(
         CORSMiddleware,
@@ -84,7 +96,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
-    
+
     # Include routers
     app.include_router(health_router, tags=["health"])
     app.include_router(websocket_router, prefix="/api/v1", tags=["websocket"])
