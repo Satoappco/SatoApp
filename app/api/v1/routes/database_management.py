@@ -2297,8 +2297,6 @@ async def create_kpi_setting(
             detail=f"Failed to create KPI setting: {str(e)}"
         )
 
-
-
 @router.put("/kpi-settings/{setting_id}")
 async def update_kpi_setting(
     setting_id: int,
