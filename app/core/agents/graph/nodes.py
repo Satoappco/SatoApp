@@ -135,7 +135,7 @@ Remember: You have access to the user's identity through the system - never ask 
 
         except (json.JSONDecodeError, KeyError) as e:
             # If not JSON, treat as clarification message
-            logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}")
+            logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}. content: {content}")
             return {
                 "messages": state["messages"] + [AIMessage(content=response.content)],
                 "needs_clarification": True,

@@ -42,7 +42,7 @@ async def chat(
         logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
 
         # Get conversation workflow for this thread (with campaigner_id)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Request: {request}")
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campainer: {current_user.full_name} (ID: {current_user.id})")
         workflow = app_state.get_conversation_workflow(current_user.id, thread_id)
 
         # Process message
