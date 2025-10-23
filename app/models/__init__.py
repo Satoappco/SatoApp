@@ -10,7 +10,7 @@ from .users import (
 from .agents import AgentConfig, RoutingRule
 from .analytics import (
     DigitalAsset, Connection, KpiGoal, KpiValue, UserPropertySelection, KpiCatalog, KpiSettings,
-    AssetType, AuthType
+    AssetType, AuthType, Audience
 )
 from .customer_data import RTMTable, QuestionsTable
 
@@ -27,7 +27,7 @@ __all__ = [
     
     # Analytics and assets
     "DigitalAsset", "Connection", "KpiGoal", "KpiValue", "UserPropertySelection", "KpiCatalog", "KpiSettings",
-    "AssetType", "AuthType",
+    "AssetType", "AuthType", "Audience",
     
     # Customer data tables
     "RTMTable", "QuestionsTable"

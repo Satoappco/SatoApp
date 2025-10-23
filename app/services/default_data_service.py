@@ -7,9 +7,9 @@ a working system from the start.
 
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from sqlmodel import Session, select
+from sqlmodel import Session, select, and_
 from app.config.database import get_session
-from app.models.analytics import KpiGoal, KpiValue, KpiCatalog
+from app.models.analytics import KpiGoal, KpiValue, KpiCatalog, KpiSettings, DefaultKpiSettings
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.models.agents import AgentConfig
 from app.models.users import Agency, Customer
@@ -59,8 +59,8 @@ class DefaultDataService:
         """Create default data for a new customer"""
         try:
             with get_session() as session:
-                # Note: KPI goals and values are created by users when they set up campaigns
-                # No default data needed for these tables as they require real campaign data
+                # Create default KPI settings from defaults
+                self._create_default_kpi_settings(session, customer_id, agency_id, campaigner_id)
                 
                 # Create default questions (uses composite_id)
                 self._create_default_questions(session, customer_id, agency_id, campaigner_id)
@@ -183,6 +183,49 @@ class DefaultDataService:
                 agent_config = AgentConfig(**agent_data)
                 session.add(agent_config)
                 logger.info(f"Created agent config: {agent_data['name']}")
+    
+    def _create_default_kpi_settings(self, session: Session, customer_id: int, agency_id: int, campaigner_id: int):
+        """Create customer-specific KPI settings from default templates"""
+        composite_id = f"{agency_id}_{campaigner_id}_{customer_id}"
+        
+        # Get all default KPI settings (no is_active filter)
+        default_settings = session.exec(
+            select(DefaultKpiSettings)
+        ).all()
+        
+        if not default_settings:
+            logger.warning(f"No default KPI settings found for customer {customer_id}")
+            return
+        
+        # Create customer-specific KPI settings from defaults
+        for default_setting in default_settings:
+            # Check if this KPI setting already exists for this customer
+            existing = session.exec(
+                select(KpiSettings).where(
+                    and_(
+                        KpiSettings.customer_id == customer_id,
+                        KpiSettings.campaign_objective == default_setting.campaign_objective,
+                        KpiSettings.kpi_name == default_setting.kpi_name,
+                        KpiSettings.kpi_type == default_setting.kpi_type
+                    )
+                )
+            ).first()
+            
+            if not existing:
+                customer_kpi = KpiSettings(
+                    composite_id=composite_id,
+                    customer_id=customer_id,
+                    campaign_objective=default_setting.campaign_objective,
+                    kpi_name=default_setting.kpi_name,
+                    kpi_type=default_setting.kpi_type,
+                    direction=default_setting.direction,
+                    default_value=default_setting.default_value,
+                    unit=default_setting.unit
+                )
+                session.add(customer_kpi)
+                logger.info(f"Created KPI setting for customer {customer_id}: {default_setting.kpi_name}")
+        
+        logger.info(f"Created default KPI settings for customer {customer_id}")
     
     
     def _create_default_questions(self, session: Session, customer_id: int, agency_id: int, campaigner_id: int):

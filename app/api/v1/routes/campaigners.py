@@ -190,14 +190,16 @@ async def create_worker(
             return {
                 "success": True,
                 "message": "Worker created successfully",
-                "worker": {
+                "data": {
                     "id": new_worker.id,
                     "email": new_worker.email,
                     "full_name": new_worker.full_name,
                     "phone": new_worker.phone,
                     "role": new_worker.role,
                     "status": new_worker.status,
-                    "agency_id": new_worker.agency_id
+                    "agency_id": new_worker.agency_id,
+                    "created_at": new_worker.created_at.isoformat(),
+                    "updated_at": new_worker.updated_at.isoformat()
                 }
             }
     
@@ -260,12 +262,16 @@ async def update_worker(
             return {
                 "success": True,
                 "message": "Worker updated successfully",
-                "worker": {
+                "data": {
                     "id": worker.id,
                     "email": worker.email,
                     "full_name": worker.full_name,
+                    "phone": worker.phone,
                     "role": worker.role,
-                    "status": worker.status
+                    "status": worker.status,
+                    "agency_id": worker.agency_id,
+                    "created_at": worker.created_at.isoformat(),
+                    "updated_at": worker.updated_at.isoformat()
                 }
             }
     
