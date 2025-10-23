@@ -28,7 +28,7 @@ from .routes import (
     customer_data,
     countries_currencies
 )
-
+from app.api.v1.routes.chat import router as chat_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -56,5 +56,7 @@ api_router.include_router(customers.router, tags=["customers"])
 api_router.include_router(database_management.router, tags=["database-management"])
 api_router.include_router(customer_data.router, tags=["customer-data"])
 api_router.include_router(countries_currencies.router, prefix="/constants", tags=["constants"])
+api_router.include_router(chat_router, tags=["chat"])
+
 
 __all__ = ["api_router"]
