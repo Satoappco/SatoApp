@@ -35,7 +35,6 @@ class CustomerCreate(BaseModel):
     facebook_page_url: Optional[str] = Field(None, max_length=500, description="Facebook page URL")
     instagram_page_url: Optional[str] = Field(None, max_length=500, description="Instagram page URL")
     llm_engine_preference: Optional[str] = Field(None, max_length=50, description="Preferred LLM engine")
-    assigned_campaigner_id: Optional[int] = Field(None, description="Campaigner to assign to this customer")
 
 
 class CustomerUpdate(BaseModel):
@@ -50,7 +49,6 @@ class CustomerUpdate(BaseModel):
     facebook_page_url: Optional[str] = Field(None, max_length=500)
     instagram_page_url: Optional[str] = Field(None, max_length=500)
     llm_engine_preference: Optional[str] = Field(None, max_length=50)
-    assigned_campaigner_id: Optional[int] = None
     status: Optional[CustomerStatus] = None
     is_active: Optional[bool] = None
 
@@ -62,14 +60,17 @@ async def get_customers(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get all customers for the current user's agency.
-    Returns all customers with highlighting info for assigned customers.
+    Get all customers assigned to the current campaigner.
+    Campaigners can only see customers they have created/are assigned to.
     """
     try:
         with get_session() as session:
-            # Get all customers in the same agency
+            # Get only customers assigned to the current campaigner
             statement = select(Customer).where(
-                Customer.agency_id == current_user.agency_id
+                and_(
+                    Customer.agency_id == current_user.agency_id,
+                    Customer.assigned_campaigner_id == current_user.id
+                )
             ).order_by(Customer.created_at.desc())
             
             customers = session.exec(statement).all()
@@ -93,7 +94,6 @@ async def get_customers(
                         "is_active": customer.is_active,
                         "agency_id": customer.agency_id,
                         "assigned_campaigner_id": customer.assigned_campaigner_id,
-                        "is_my_customer": customer.assigned_campaigner_id == current_user.id,
                         "created_at": customer.created_at.isoformat(),
                         "updated_at": customer.updated_at.isoformat()
                     }
@@ -132,6 +132,13 @@ async def get_customer(
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
+                )
+            
+            # Verify customer is assigned to current campaigner
+            if customer.assigned_campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied - customer not assigned to you"
                 )
             
             # Get related RTM and Questions data
@@ -189,16 +196,7 @@ async def create_customer(
     """
     try:
         with get_session() as session:
-            # Verify assigned campaigner if provided
-            if request.assigned_campaigner_id:
-                assigned_campaigner = session.get(Campaigner, request.assigned_campaigner_id)
-                if not assigned_campaigner or assigned_campaigner.agency_id != current_user.agency_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid assigned campaigner"
-                    )
-            
-            # Create customer
+            # Create customer - automatically assign to current campaigner
             new_customer = Customer(
                 agency_id=current_user.agency_id,
                 full_name=request.full_name,
@@ -211,7 +209,7 @@ async def create_customer(
                 facebook_page_url=request.facebook_page_url,
                 instagram_page_url=request.instagram_page_url,
                 llm_engine_preference=request.llm_engine_preference,
-                assigned_campaigner_id=request.assigned_campaigner_id or current_user.id,
+                assigned_campaigner_id=current_user.id,  # Auto-assign to current campaigner
                 status=CustomerStatus.ACTIVE,
                 is_active=True
             )
@@ -276,7 +274,7 @@ async def update_customer(
 ):
     """
     Update a customer's information.
-    All campaigners in the agency can update customers.
+    Only the assigned campaigner can update their customers.
     """
     try:
         with get_session() as session:
@@ -295,18 +293,19 @@ async def update_customer(
                     detail="Access denied to this customer"
                 )
             
-            # Verify assigned campaigner if being changed
-            if request.assigned_campaigner_id is not None:
-                if request.assigned_campaigner_id:  # Not None and not 0
-                    assigned_campaigner = session.get(Campaigner, request.assigned_campaigner_id)
-                    if not assigned_campaigner or assigned_campaigner.agency_id != current_user.agency_id:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Invalid assigned campaigner"
-                        )
+            # Verify customer is assigned to current campaigner
+            if customer.assigned_campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied - customer not assigned to you"
+                )
+            
+            # Remove assigned_campaigner_id from update data if present (not allowed to change)
+            update_data = request.dict(exclude_unset=True)
+            if 'assigned_campaigner_id' in update_data:
+                del update_data['assigned_campaigner_id']
             
             # Update fields
-            update_data = request.dict(exclude_unset=True)
             for field, value in update_data.items():
                 setattr(customer, field, value)
             

@@ -102,16 +102,48 @@ class KpiCatalog(BaseModel, table=True):
 
 
 class KpiSettings(BaseModel, table=True):
-    """KPI Settings - One row per KPI definition (Admin-only)"""
+    """KPI Settings - Customer-specific KPI settings"""
     __tablename__ = "kpi_settings"
     
     id: int = Field(primary_key=True)
+    
+    # Customer relationship fields
+    composite_id: str = Field(
+        max_length=100,
+        index=True,
+        description="Concatenation: <Agency ID>_<Campaigner ID>_<Customer ID>"
+    )
+    customer_id: int = Field(foreign_key="customers.id")
+    
     campaign_objective: str = Field(max_length=100)  # Sales & Profitability, Increasing Traffic, etc.
     kpi_name: str = Field(max_length=255)  # e.g., "CPA (Cost Per Acquisition)"
     kpi_type: str = Field(max_length=20)  # "Primary" or "Secondary"
     direction: str = Field(max_length=10)  # "<" or ">"
     default_value: float = Field()  # Default target value
     unit: str = Field(max_length=50)  # "₪", "%", "Count"
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DefaultKpiSettings(BaseModel, table=True):
+    """Default KPI Settings - Admin-controlled templates for all customers"""
+    __tablename__ = "default_kpi_settings"
+    
+    id: int = Field(primary_key=True)
+    
+    # KPI configuration
+    campaign_objective: str = Field(max_length=100)  # Sales & Profitability, Increasing Traffic, etc.
+    kpi_name: str = Field(max_length=255)  # e.g., "CPA (Cost Per Acquisition)"
+    kpi_type: str = Field(max_length=20)  # "Primary" or "Secondary"
+    direction: str = Field(max_length=10)  # "<" or ">"
+    default_value: float = Field()  # Default target value
+    unit: str = Field(max_length=50)  # "₪", "%", "Count"
+    
+    # Admin controls
+    is_active: bool = Field(default=True)  # Allow admin to enable/disable templates
+    display_order: int = Field(default=0)  # For sorting in UI
     
     # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -167,6 +199,7 @@ class KpiGoal(BaseModel, table=True):
     
     # Budget information
     daily_budget: Optional[float] = Field(default=None)
+    spent: Optional[float] = Field(default=None, description="Amount spent on this campaign/ad")
     
     # Target audience
     target_audience: str = Field(max_length=255)
@@ -185,12 +218,21 @@ class KpiGoal(BaseModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Audience(BaseModel, table=True):
+    """Audience definitions for targeting"""
+    __tablename__ = "audience"
+    __table_args__ = {'extend_existing': True}
+    
+    audience_name: str = Field(max_length=255, unique=True)
+
+
 class KpiValue(BaseModel, table=True):
     """KPI Values - Actual measured KPI values for each campaign/ad"""
     __tablename__ = "kpi_values"
     
     # Relationships
     customer_id: int = Field(foreign_key="customers.id")
+    kpi_goal_id: int = Field(foreign_key="kpi_goals.id", unique=True)  # One-to-one relationship
     
     # Campaign identification
     campaign_id: str = Field(max_length=50)
@@ -215,6 +257,7 @@ class KpiValue(BaseModel, table=True):
     
     # Budget information
     daily_budget: Optional[float] = Field(default=None)
+    spent: Optional[float] = Field(default=None, description="Amount spent on this campaign/ad")
     
     # Target audience
     target_audience: str = Field(max_length=255)
@@ -231,3 +274,11 @@ class KpiValue(BaseModel, table=True):
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Audience(BaseModel, table=True):
+    """Audience definitions for targeting"""
+    __tablename__ = "audience"
+    __table_args__ = {'extend_existing': True}
+    
+    audience_name: str = Field(max_length=255, unique=True)

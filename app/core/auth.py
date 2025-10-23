@@ -127,26 +127,38 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     """Get current authenticated user from JWT token"""
     
     try:
+        print(f"DEBUG: Validating token: {credentials.credentials[:20]}...")
         # Verify the access token
         payload = verify_token(credentials.credentials, "access")
         user_id = payload.get("user_id")
         
+        print(f"DEBUG: Token payload user_id: {user_id}")
+        
         if user_id is None:
+            print("DEBUG: No user_id in token payload")
             raise AuthenticationError("Invalid token payload")
         
         # Get user from database
         with get_session() as session:
             user = session.get(Campaigner, user_id)
             if user is None:
+                print(f"DEBUG: User {user_id} not found in database")
                 raise AuthenticationError("Campaigner not found")
             
+            print(f"DEBUG: User found: {user.id}, status: {user.status}")
+            
             if user.status != "active":
+                print(f"DEBUG: User {user_id} status is not active: {user.status}")
                 raise AuthenticationError("Campaigner account is not active")
             
             return user
     
-    except JWTError:
+    except JWTError as e:
+        print(f"DEBUG: JWT error: {str(e)}")
         raise AuthenticationError("Invalid token")
+    except Exception as e:
+        print(f"DEBUG: Other error in get_current_user: {str(e)}")
+        raise AuthenticationError(f"Authentication error: {str(e)}")
 
 
 def get_current_active_user(current_user: Campaigner = Depends(get_current_user)) -> Campaigner:
