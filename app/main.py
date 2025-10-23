@@ -2,8 +2,10 @@
 FastAPI application factory for SatoApp
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -11,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from datetime import datetime
 
 from app.config import get_settings
@@ -84,6 +86,23 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
+    
+    # Add custom exception handler for validation errors
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        """Custom handler for Pydantic validation errors"""
+        logger.error(f"Validation error on {request.url}: {exc.errors()}")
+        logger.error(f"Request body: {await request.body()}")
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "message": "Request validation failed",
+                    "errors": exc.errors(),
+                    "body": exc.body
+                }
+            }
+        )
     
     # Include routers
     app.include_router(health_router, tags=["health"])

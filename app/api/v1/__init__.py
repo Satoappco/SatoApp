@@ -25,7 +25,8 @@ from .routes import (
     customers,
     crewai,
     database_management,
-    customer_data
+    customer_data,
+    countries_currencies
 )
 
 
@@ -54,5 +55,6 @@ api_router.include_router(campaigners.router, tags=["campaigners"])
 api_router.include_router(customers.router, tags=["customers"])
 api_router.include_router(database_management.router, tags=["database-management"])
 api_router.include_router(customer_data.router, tags=["customer-data"])
+api_router.include_router(countries_currencies.router, prefix="/constants", tags=["constants"])
 
 __all__ = ["api_router"]

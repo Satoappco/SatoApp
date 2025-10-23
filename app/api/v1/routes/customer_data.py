@@ -602,6 +602,8 @@ async def get_customer_info(
                     "contact_email": customer.contact_email,
                     "phone": customer.phone,
                     "address": customer.address,
+                    "country": customer.country,
+                    "currency": customer.currency,
                     "opening_hours": customer.opening_hours,
                     "narrative_report": customer.narrative_report,
                     "website_url": customer.website_url,
@@ -612,7 +614,6 @@ async def get_customer_info(
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
                     "assigned_campaigner_id": customer.assigned_campaigner_id,
-                    "is_my_customer": customer.assigned_campaigner_id == current_user.id,
                     "created_at": customer.created_at.isoformat(),
                     "updated_at": customer.updated_at.isoformat(),
                     "rtm_data": rtm_data,
@@ -676,7 +677,7 @@ async def update_customer_info(
                 'full_name', 'contact_email', 'phone', 'address', 'opening_hours',
                 'narrative_report', 'website_url', 'facebook_page_url', 
                 'instagram_page_url', 'llm_engine_preference', 'status', 'is_active',
-                'assigned_campaigner_id'
+                'assigned_campaigner_id', 'country', 'currency'
             ]
             
             for field in update_fields:
@@ -696,6 +697,8 @@ async def update_customer_info(
                     "contact_email": customer.contact_email,
                     "phone": customer.phone,
                     "address": customer.address,
+                    "country": customer.country,
+                    "currency": customer.currency,
                     "opening_hours": customer.opening_hours,
                     "narrative_report": customer.narrative_report,
                     "website_url": customer.website_url,

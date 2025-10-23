@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, and_
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.auth import get_current_user
 from app.core.api_auth import verify_admin_token
@@ -20,12 +20,34 @@ from app.models.users import Campaigner, Agency, Customer
 from app.models.analytics import KpiCatalog, KpiGoal, KpiValue, KpiSettings, DigitalAsset, Connection, UserPropertySelection
 from app.models.agents import AgentConfig, RoutingRule, CustomerLog, DetailedExecutionLog
 from app.config.database import get_session
+from app.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 # REMOVED IMPORTS (tables deleted from database):
 # - PerformanceMetric, AnalyticsCache, NarrativeReport (deleted tables)
 # - ChatMessage, WebhookEntry, AnalysisExecution (deleted tables)
 
 router = APIRouter(prefix="/database", tags=["database-management"])
+
+
+def _format_kpi_value(kpi_settings: List[KpiSettings], kpi_type: str, index: int) -> Optional[str]:
+    """
+    Format KPI value from KPI Settings into the expected string format.
+    Returns formatted string like "CPA < 133.0 ₪" or None if not found.
+    """
+    try:
+        # Find the KPI setting for the specified type and index
+        matching_settings = [s for s in kpi_settings if s.kpi_type == kpi_type]
+        
+        if index <= len(matching_settings):
+            setting = matching_settings[index - 1]  # index is 1-based
+            return f"{setting.kpi_name} {setting.direction} {setting.default_value} {setting.unit}"
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error formatting KPI value: {str(e)}")
+        return None
 
 
 # ===== Pydantic Schemas =====
@@ -74,6 +96,22 @@ class KpiSettingsUpdate(BaseModel):
     direction: Optional[str] = Field(None, max_length=10)
     default_value: Optional[float] = None
     unit: Optional[str] = Field(None, max_length=50)
+
+
+class KpiSettingsBulkUpdateItem(BaseModel):
+    """Schema for individual KPI setting in bulk update"""
+    id: int
+    campaign_objective: Optional[str] = Field(None, max_length=100)
+    kpi_name: Optional[str] = Field(None, max_length=255)
+    kpi_type: Optional[str] = Field(None, max_length=20)
+    direction: Optional[str] = Field(None, max_length=10)
+    default_value: Optional[float] = None
+    unit: Optional[str] = Field(None, max_length=50)
+
+
+class KpiSettingsBulkUpdate(BaseModel):
+    """Schema for bulk updating multiple KPI Settings"""
+    settings: List[KpiSettingsBulkUpdateItem] = Field(description="List of KPI settings to update")
 
 
 class KpiGoalCreate(BaseModel):
@@ -560,6 +598,52 @@ async def create_kpi_goal(
             session.commit()
             session.refresh(new_campaign)
             
+            # Auto-create corresponding KPI Values based on campaign objective
+            try:
+                # Get KPI Settings for this campaign objective
+                kpi_settings = session.exec(
+                    select(KpiSettings).where(KpiSettings.campaign_objective == new_campaign.campaign_objective)
+                ).all()
+                
+                if kpi_settings:
+                    # Create KPI Value entry with structured data from KPI Settings
+                    new_kpi_value = KpiValue(
+                        customer_id=new_campaign.customer_id,
+                        campaign_id=new_campaign.campaign_id,
+                        campaign_name=new_campaign.campaign_name,
+                        campaign_status=new_campaign.campaign_status,
+                        ad_group_id=new_campaign.ad_group_id,
+                        ad_group_name=new_campaign.ad_group_name,
+                        ad_group_status=new_campaign.ad_group_status,
+                        ad_id=new_campaign.ad_id,
+                        ad_name=new_campaign.ad_name,
+                        ad_name_headline=new_campaign.ad_name_headline,
+                        ad_status=new_campaign.ad_status,
+                        ad_score=new_campaign.ad_score,
+                        advertising_channel=new_campaign.advertising_channel,
+                        campaign_objective=new_campaign.campaign_objective,
+                        daily_budget=new_campaign.daily_budget,
+                        target_audience=new_campaign.target_audience,
+                        # Auto-populate KPI Values with structured data from KPI Settings
+                        primary_kpi_1=_format_kpi_value(kpi_settings, "Primary", 1),
+                        secondary_kpi_1=_format_kpi_value(kpi_settings, "Secondary", 1),
+                        secondary_kpi_2=_format_kpi_value(kpi_settings, "Secondary", 2),
+                        secondary_kpi_3=_format_kpi_value(kpi_settings, "Secondary", 3),
+                        landing_page=new_campaign.landing_page,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    
+                    session.add(new_kpi_value)
+                    session.commit()
+                    logger.info(f"✅ Auto-created KPI Values for campaign {new_campaign.campaign_id}")
+                else:
+                    logger.warning(f"⚠️ No KPI Settings found for objective: {new_campaign.campaign_objective}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to auto-create KPI Values for campaign {new_campaign.campaign_id}: {str(e)}")
+                # Don't fail the main operation if KPI Values creation fails
+            
             return {
                 "success": True,
                 "message": "KPI goal created successfully",
@@ -679,6 +763,22 @@ async def delete_kpi_goal(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="KPI goal not found"
                 )
+            
+            # Auto-delete corresponding KPI Values
+            try:
+                # Find and delete KPI Values with matching campaign_id
+                kpi_values = session.exec(
+                    select(KpiValue).where(KpiValue.campaign_id == campaign.campaign_id)
+                ).all()
+                
+                for kpi_value in kpi_values:
+                    session.delete(kpi_value)
+                
+                logger.info(f"✅ Auto-deleted {len(kpi_values)} KPI Values for campaign {campaign.campaign_id}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to auto-delete KPI Values for campaign {campaign.campaign_id}: {str(e)}")
+                # Don't fail the main operation if KPI Values deletion fails
             
             session.delete(campaign)
             session.commit()
@@ -1691,9 +1791,9 @@ async def get_kpi_setting(setting_id: int):
 @router.post("/kpi-settings")
 async def create_kpi_setting(
     setting_data: KpiSettingsCreate,
-    _: bool = Depends(verify_admin_token)
+    current_user: Campaigner = Depends(get_current_user)
 ):
-    """Create a new KPI setting (admin-only)"""
+    """Create a new KPI setting"""
     try:
         with get_session() as session:
             new_setting = KpiSettings(
@@ -1726,13 +1826,90 @@ async def create_kpi_setting(
         )
 
 
+@router.put("/kpi-settings/bulk")
+async def bulk_update_kpi_settings(
+    bulk_data: KpiSettingsBulkUpdate,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """Bulk update multiple KPI settings"""
+    try:
+        print(f"DEBUG: Received bulk update request with {len(bulk_data.settings)} settings")
+        print(f"DEBUG: First setting data: {bulk_data.settings[0] if bulk_data.settings else 'No settings'}")
+        print(f"DEBUG: Full request data: {bulk_data.dict()}")
+        print(f"DEBUG: Current user: {current_user.id if current_user else 'None'}")
+        
+        with get_session() as session:
+            updated_count = 0
+            errors = []
+            
+            for setting_data in bulk_data.settings:
+                try:
+                    # Get the existing setting
+                    setting = session.get(KpiSettings, setting_data.id)
+                    if not setting:
+                        errors.append(f"Setting with ID {setting_data.id} not found")
+                        continue
+                    
+                    # Update fields only if they are provided (not None)
+                    if setting_data.campaign_objective is not None:
+                        setting.campaign_objective = setting_data.campaign_objective
+                    if setting_data.kpi_name is not None:
+                        setting.kpi_name = setting_data.kpi_name
+                    if setting_data.kpi_type is not None:
+                        setting.kpi_type = setting_data.kpi_type
+                    if setting_data.direction is not None:
+                        setting.direction = setting_data.direction
+                    if setting_data.default_value is not None:
+                        setting.default_value = setting_data.default_value
+                    if setting_data.unit is not None:
+                        setting.unit = setting_data.unit
+                    
+                    setting.updated_at = datetime.utcnow()
+                    session.add(setting)
+                    updated_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Error updating setting {setting_data.id}: {str(e)}")
+            
+            # Commit all changes
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": f"Successfully updated {updated_count} KPI settings",
+                "updated_count": updated_count,
+                "errors": errors if errors else None
+            }
+    
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        print(f"DEBUG: Pydantic validation error: {e}")
+        print(f"DEBUG: Error details: {e.errors()}")
+        error_details = {
+            "message": "Validation error in KPI settings data",
+            "errors": e.errors()
+        }
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_details
+        )
+    except Exception as e:
+        print(f"DEBUG: Exception in bulk update: {str(e)}")
+        print(f"DEBUG: Exception type: {type(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to bulk update KPI settings: {str(e)}"
+        )
+
+
 @router.put("/kpi-settings/{setting_id}")
 async def update_kpi_setting(
     setting_id: int,
     setting_data: KpiSettingsUpdate,
-    _: bool = Depends(verify_admin_token)
+    current_user: Campaigner = Depends(get_current_user)
 ):
-    """Update a KPI setting (admin-only)"""
+    """Update a KPI setting"""
     try:
         with get_session() as session:
             setting = session.get(KpiSettings, setting_id)
@@ -1770,9 +1947,9 @@ async def update_kpi_setting(
 @router.delete("/kpi-settings/{setting_id}")
 async def delete_kpi_setting(
     setting_id: int,
-    _: bool = Depends(verify_admin_token)
+    current_user: Campaigner = Depends(get_current_user)
 ):
-    """Delete a KPI setting (admin-only)"""
+    """Delete a KPI setting"""
     try:
         with get_session() as session:
             setting = session.get(KpiSettings, setting_id)
