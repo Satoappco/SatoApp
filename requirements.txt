@@ -1,15 +1,57 @@
-crewai
-crewai-tools
-fastapi
-uvicorn[standard]
-gunicorn
-python-dotenv
-sqlmodel
-psycopg2-binary
-alembic
-email-validator
+# Core frameworks
+langgraph
+langgraph-cli==0.1.55
+langgraph-cli[inmem]
+langgraph-checkpoint-sqlite==2.0.6
 langchain-google-genai
-pydantic-settings
+
+crewai==0.130.0
+crewai-tools
+
+# LangChain
+langchain==0.3.26
+langchain-community==0.3.26
+langchain-openai==0.2.14
+langchain-anthropic==0.3.9
+
+# MCP Integration
+mcp==1.1.2
+
+# Data validation and models
+pydantic==2.10.6
+pydantic-settings==2.7.1
+sqlmodel==0.0.22
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# Environment and configuration
+python-dotenv==1.0.0
+
+# API framework (future)
+fastapi==0.115.6
+uvicorn==0.34.0
+gunicorn
+
+# Utilities
+httpx==0.28.1
+tenacity==9.0.0
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.2
+pytest-cov==6.0.0
+pytest-mock==3.14.0
+
+# Development
+black==24.10.0
+ruff==0.8.4
+mypy==1.14.0
+
+email-validator
+
 # Authentication dependencies
 python-jose[cryptography]
 python-multipart
@@ -24,8 +66,6 @@ google-analytics-admin
 google-auth-oauthlib
 cryptography
 
-# Google Ads dependencies
-google-ads
 
 # DialogCX dependencies - using REST API instead of heavy client library
 PyJWT[crypto]
@@ -33,6 +73,8 @@ PyJWT[crypto]
 # Admin interface dependencies
 httpx
 
+# Google Ads dependencies
+google-ads
 # Facebook dependencies
 facebook-sdk
 requests-oauthlib
