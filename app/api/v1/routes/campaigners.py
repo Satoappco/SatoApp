@@ -28,9 +28,12 @@ class CreateWorkerRequest(BaseModel):
 
 class UpdateWorkerRequest(BaseModel):
     """Request model for updating a worker"""
+    # Note: email is managed by Google OAuth and should not be updated via API
     full_name: Optional[str] = None
+    phone: Optional[str] = None
     role: Optional[UserRole] = None
     status: Optional[UserStatus] = None
+    agency_id: Optional[int] = None
 
 
 @router.get("/workers")
@@ -248,12 +251,17 @@ async def update_worker(
                 )
             
             # Update worker fields
+            # Note: email is managed by Google OAuth and should not be updated via API
             if request.full_name is not None:
                 worker.full_name = request.full_name
+            if request.phone is not None:
+                worker.phone = request.phone
             if request.role is not None:
                 worker.role = request.role
             if request.status is not None:
                 worker.status = request.status
+            if request.agency_id is not None:
+                worker.agency_id = request.agency_id
             
             session.add(worker)
             session.commit()
