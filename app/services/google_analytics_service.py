@@ -249,6 +249,7 @@ class GoogleAnalyticsService:
                 # Create new connection
                 connection = Connection(
                     digital_asset_id=digital_asset.id,
+                    customer_id=customer_id,
                     campaigner_id=campaigner_id,
                     auth_type=AuthType.OAUTH2,
                     account_email=account_email,

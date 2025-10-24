@@ -90,7 +90,7 @@ class AgentService:
             
         # Define all valid placeholders that can be used in task templates
         valid_placeholders = {
-            'objective', 'user_id', 'customer_id', 'intent_name', 
+            'objective', 'campaigner_id', 'customer_id', 'intent_name', 
             'data_sources', 'data_source', 'available_specialists',
             'date_range', 'timezone', 'currency', 'attribution_window'
         }

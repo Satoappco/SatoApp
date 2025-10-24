@@ -5,7 +5,7 @@ Database models for SatoApp
 from .base import BaseModel
 from .users import (
     Campaigner, Agency, Customer, CampaignerSession, InviteToken,
-    UserRole, UserStatus, CustomerType, CustomerStatus, SubCustomerType
+    UserRole, UserStatus, CustomerType, CustomerStatus, ClientType
 )
 from .agents import AgentConfig, RoutingRule
 from .analytics import (
@@ -20,7 +20,7 @@ __all__ = [
     
     # Users and related models
     "Campaigner", "Agency", "Customer", "CampaignerSession", "InviteToken",
-    "UserRole", "UserStatus", "CustomerType", "CustomerStatus", "SubCustomerType",
+    "UserRole", "UserStatus", "CustomerType", "CustomerStatus", "ClientType",
     
     # Agents
     "AgentConfig", "RoutingRule", 

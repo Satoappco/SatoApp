@@ -108,10 +108,10 @@ async def test_endpoint():
 
 
 @router.get("/oauth-url")
-async def get_oauth_url(redirect_uri: str):
+async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
     """
     Get Google Analytics OAuth URL for frontend to redirect to
-    Note: Only requests Analytics scopes. For Google Ads, use the separate Google Ads OAuth flow.
+    Accepts optional state parameter to preserve user context through OAuth flow
     """
     try:
         # Get settings
@@ -134,20 +134,19 @@ async def get_oauth_url(redirect_uri: str):
                 'https://www.googleapis.com/auth/userinfo.profile',
                 'https://www.googleapis.com/auth/userinfo.email',
                 'https://www.googleapis.com/auth/analytics.readonly',
-                'https://www.googleapis.com/auth/analytics',  # Full analytics access
+                'https://www.googleapis.com/auth/analytics',
                 'https://www.googleapis.com/auth/analytics.manage.users.readonly'
-                # Note: Google Ads scopes removed - use separate Google Ads OAuth flow
             ]
         )
         
         # Set redirect URI
         flow.redirect_uri = redirect_uri
         
-        # Get authorization URL
-        # Note: include_granted_scopes removed to prevent Google from adding previously granted scopes
+        # Get authorization URL with state parameter
         auth_url, _ = flow.authorization_url(
             access_type='offline',
-            prompt='consent'
+            prompt='consent',
+            state=state  # Pass through the state parameter
         )
         
         return {"auth_url": auth_url}
@@ -163,6 +162,7 @@ class OAuthCallbackRequest(BaseModel):
     """Request model for OAuth callback"""
     code: str
     redirect_uri: str
+    state: Optional[str] = None  # JWT-signed state parameter
 
 
 class OAuthCallbackResponse(BaseModel):
@@ -187,7 +187,8 @@ class CreateConnectionRequest(BaseModel):
     access_token: str
     refresh_token: str
     expires_in: int = 3600
-    subclient_id: int  # Required: which subclient owns this connection
+    customer_id: int  # Required: which customer owns this connection
+    campaigner_id: int  # Required: which campaigner is creating this connection
 
 
 @router.options("/oauth-callback")
@@ -201,10 +202,107 @@ async def handle_oauth_callback(
 ):
     """
     Public OAuth callback endpoint - no authentication required
-    Handle Google Analytics OAuth callback (public endpoint)
-    Exchanges authorization code for tokens
-    Note: Only handles Analytics scopes. For Google Ads, use the separate Google Ads OAuth flow.
+    Verifies JWT-signed state parameter to associate connections properly
     """
+    
+    print(f"DEBUG: OAuth callback started with code: {request.code[:10]}...")
+    
+    # Verify and extract user context from signed state
+    campaigner_id = None
+    customer_id = None
+    
+    if request.state:
+        try:
+            from app.config.settings import get_settings
+            settings = get_settings()
+            
+            # Decode and verify the JWT
+            import jwt
+            payload = jwt.decode(
+                request.state,
+                settings.oauth_state_secret,
+                algorithms=["HS256"]
+            )
+            
+            campaigner_id = payload.get('campaigner_id')
+            customer_id = payload.get('customer_id')
+            timestamp = payload.get('timestamp')
+            
+            # Check expiration using JWT exp field
+            from datetime import datetime
+            if datetime.utcnow().timestamp() > payload.get('exp', 0):
+                raise HTTPException(
+                    status_code=400,
+                    detail="OAuth state has expired"
+                )
+            
+            print(f"DEBUG: User context extracted - Campaigner ID: {campaigner_id}, Customer ID: {customer_id}")
+            
+        except jwt.InvalidTokenError as e:
+            print(f"❌ Invalid OAuth state: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid OAuth state: {str(e)}"
+            )
+        except Exception as e:
+            print(f"❌ OAuth state verification failed: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to verify OAuth state: {str(e)}"
+            )
+    
+    if not campaigner_id or not customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No user found. Please sign in first."
+        )
+    
+    # Validate that campaigner and customer exist
+    from app.config.database import get_session
+    from app.models.users import Campaigner, Customer
+    from sqlmodel import select
+    
+    try:
+        with get_session() as session:
+            # Verify campaigner exists
+            campaigner = session.exec(
+                select(Campaigner).where(Campaigner.id == campaigner_id)
+            ).first()
+            
+            if not campaigner:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Campaigner with ID {campaigner_id} not found"
+                )
+            
+            # Verify customer exists and belongs to campaigner's agency
+            customer = session.exec(
+                select(Customer).where(Customer.id == customer_id)
+            ).first()
+            
+            if not customer:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Customer with ID {customer_id} not found"
+                )
+            
+            # Verify customer belongs to campaigner's agency (security check)
+            if customer.agency_id != campaigner.agency_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Customer does not belong to campaigner's agency"
+                )
+    
+        print(f"✅ User context validated - Campaigner: {campaigner.full_name}, Customer: {customer.full_name}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ User context validation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to validate user context: {str(e)}"
+        )
     
     print(f"DEBUG: OAuth callback started with code: {request.code[:10]}... and redirect_uri: {request.redirect_uri}")
     
@@ -331,21 +429,19 @@ async def handle_oauth_callback(
         for i, prop in enumerate(properties):
             print(f"DEBUG: Property {i+1}: {prop['property_name']} (ID: {prop['property_id']})")
         
-        # Find user by email
+        # Use campaigner_id from JWT state (already validated above)
         from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
         
         with get_session() as session:
-            user = None
-            if user_info and user_info.get('email'):
-                user_email = user_info.get('email')
-                user_statement = select(User).where(User.email == user_email)
-                user = session.exec(user_statement).first()
-                print(f"DEBUG: Looking for user with email {user_email}, found: {user.id if user else 'None'}")
+            # Get the campaigner who initiated this OAuth flow
+            campaigner = session.exec(
+                select(Campaigner).where(Campaigner.id == campaigner_id)
+            ).first()
             
-            if not user:
-                print("DEBUG: No user found in database")
+            if not campaigner:
+                print(f"DEBUG: Campaigner {campaigner_id} not found in database")
                 return OAuthCallbackResponse(
                     success=False,
                     message="No user found. Please sign in first."
@@ -353,7 +449,7 @@ async def handle_oauth_callback(
             
             # Store tokens temporarily (in production, store in Redis with expiration)
             # For now, we'll pass them back to frontend to handle property selection
-            print(f"DEBUG: OAuth successful for user {user.id} ({user.email})")
+            print(f"DEBUG: OAuth successful for campaigner {campaigner.id} ({campaigner.email}), connecting for customer {customer_id}")
         
         return OAuthCallbackResponse(
             success=True,
@@ -385,35 +481,21 @@ async def create_ga_connection(request: CreateConnectionRequest):
     print(f"DEBUG: Creating connection for property {request.property_id} ({request.property_name})")
     
     try:
-        # Find user by access token (in production, use proper session management)
+        # Use campaigner_id from request (no need to look up by email)
         from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
-        import requests
         
-        # Get user info from Google using the access token
-        user_info_response = requests.get(
-            f"https://www.googleapis.com/oauth2/v2/userinfo?access_token={request.access_token}"
-        )
-        
-        if user_info_response.status_code != 200:
-            return {"success": False, "message": "Invalid access token"}
-        
-        user_info = user_info_response.json()
-        user_email = user_info.get('email')
-        
-        if not user_email:
-            return {"success": False, "message": "Could not get user email from token"}
-        
-        # Find user in database
+        # Validate that campaigner exists
         with get_session() as session:
-            user_statement = select(User).where(User.email == user_email)
-            user = session.exec(user_statement).first()
+            campaigner = session.exec(
+                select(Campaigner).where(Campaigner.id == request.campaigner_id)
+            ).first()
             
-            if not user:
-                return {"success": False, "message": f"User {user_email} not found in database"}
+            if not campaigner:
+                return {"success": False, "message": f"Campaigner {request.campaigner_id} not found in database"}
             
-            print(f"DEBUG: Creating connection for user {user.id} ({user.email})")
+            print(f"DEBUG: Creating connection for campaigner {campaigner.id} ({campaigner.email}), customer {request.customer_id}")
             
             # Create GA connection using the service
             from app.services.google_analytics_service import GoogleAnalyticsService
@@ -421,8 +503,8 @@ async def create_ga_connection(request: CreateConnectionRequest):
             
             # Update the service to accept property details
             connection_result = await ga_service.save_ga_connection_with_property(
-                user_id=user.id,
-                subclient_id=request.subclient_id,  # Use the provided subclient_id
+                campaigner_id=request.campaigner_id,  # Use campaigner_id from request
+                customer_id=request.customer_id,  # Use the provided customer_id
                 property_id=request.property_id,
                 property_name=request.property_name,
                 account_id=request.account_id,
@@ -430,7 +512,7 @@ async def create_ga_connection(request: CreateConnectionRequest):
                 access_token=request.access_token,
                 refresh_token=request.refresh_token,
                 expires_in=request.expires_in,
-                account_email=user_email
+                account_email=campaigner.email  # Use campaigner's email
             )
             
             print(f"DEBUG: Connection created successfully: {connection_result}")

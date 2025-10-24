@@ -43,8 +43,8 @@ class CustomerStatus(str, Enum):
     CHURNED = "churned"
 
 
-class SubCustomerType(str, Enum):
-    """Type of sub-customer property"""
+class ClientType(str, Enum):
+    """Type of client property"""
     ECOMMERCE = "ecommerce"
     LEADS = "leads"
     BLOG = "blog"

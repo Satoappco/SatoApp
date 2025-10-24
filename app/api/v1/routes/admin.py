@@ -18,7 +18,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 class AgentTestRequest(BaseModel):
     """Request model for testing agents"""
-    user_id: int
+    campaigner_id: int
     customer_id: int
     user_question: str
     data_sources: List[str] = []
@@ -146,7 +146,7 @@ async def test_agent(
             "sessionInfo": {
                 "session": f"admin-test-session-{int(time.time())}",
                 "parameters": {
-                    "user_id": str(request.user_id),
+                    "campaigner_id": str(request.campaigner_id),
                     "customer_id": str(request.customer_id),
                     "user_question": request.user_question
                 }
