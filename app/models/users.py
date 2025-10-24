@@ -114,6 +114,8 @@ class Customer(BaseModel, table=True):
     # Geographic and currency information
     country: Optional[str] = Field(default=None, max_length=2, description="Country code (ISO 3166-1 alpha-2)")
     currency: Optional[str] = Field(default=None, max_length=3, description="Currency code (ISO 4217)")
+    enable_meta: Optional[bool] = Field(default=None, description="Enable Meta/Facebook marketing features")
+    enable_google: Optional[bool] = Field(default=None, description="Enable Google marketing features")
     
     # Active status
     is_active: bool = Field(default=True, description="Whether this customer record is active")
