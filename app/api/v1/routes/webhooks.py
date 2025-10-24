@@ -252,7 +252,7 @@ from app.utils.agent_utils import get_tools_for_agent
 
 
 async def run_crewai_analysis_async(
-    user_id: int,
+    campaigner_id: int,
     customer_id: int,
     user_question: str,
     intent_name: str,
@@ -305,17 +305,17 @@ async def run_crewai_analysis_async(
         if "ga4" in data_sources:
             try:
                 # STEP 1: Automatically refresh expired tokens before using them
-                logger.info(f"🔄 Checking and refreshing GA4 tokens for user {user_id}...")
-                await refresh_user_ga4_tokens(ga_service, user_id)
+                logger.info(f"🔄 Checking and refreshing GA4 tokens for campaigner {campaigner_id}...")
+                await refresh_user_ga4_tokens(ga_service, campaigner_id)
                 
                 # STEP 2: Get user connections (should work now with fresh tokens)
                 if hasattr(ga_service, 'get_user_connections'):
-                    user_connections = await ga_service.get_user_connections(user_id)
-                    logger.info(f"✅ Found {len(user_connections)} GA4 connections for user")
+                    user_connections = await ga_service.get_user_connections(campaigner_id)
+                    logger.info(f"✅ Found {len(user_connections)} GA4 connections for campaigner")
                     
                     # WARN IF NO CONNECTIONS FOUND
                     if not user_connections:
-                        logger.warning(f"⚠️ No GA4 connections found for user {user_id}. Analysis may be limited.")
+                        logger.warning(f"⚠️ No GA4 connections found for campaigner {campaigner_id}. Analysis may be limited.")
                 else:
                     logger.info("get_user_connections method not implemented yet - continuing without user connections")
             except Exception as e:
@@ -328,9 +328,9 @@ async def run_crewai_analysis_async(
             try:
                 from app.services.google_ads_service import GoogleAdsService
                 google_ads_service = GoogleAdsService()
-                logger.info(f"🔄 Checking Google Ads connections for user {user_id}...")
+                logger.info(f"🔄 Checking Google Ads connections for campaigner {campaigner_id}...")
                 # Google Ads tokens are refreshed automatically when needed
-                logger.info(f"✅ Google Ads service ready for user {user_id}")
+                logger.info(f"✅ Google Ads service ready for campaigner {campaigner_id}")
             except Exception as e:
                 logger.warning(f"Could not initialize Google Ads service: {e}")
         
@@ -339,9 +339,9 @@ async def run_crewai_analysis_async(
             try:
                 from app.services.facebook_service import FacebookService
                 facebook_service = FacebookService()
-                logger.info(f"🔄 Checking and refreshing Facebook tokens for user {user_id}...")
-                await refresh_user_facebook_tokens(facebook_service, user_id)
-                logger.info(f"✅ Facebook service ready for user {user_id}")
+                logger.info(f"🔄 Checking and refreshing Facebook tokens for campaigner {campaigner_id}...")
+                await refresh_user_facebook_tokens(facebook_service, campaigner_id)
+                logger.info(f"✅ Facebook service ready for campaigner {campaigner_id}")
             except Exception as e:
                 logger.warning(f"Could not initialize Facebook service: {e}")
         
@@ -394,7 +394,7 @@ async def run_crewai_analysis_async(
             # Replace placeholders in task with actual values
             master_task_description = master_task_description.format(
                 objective=user_question,
-                user_id=user_id,
+                campaigner_id=campaigner_id,
                 customer_id=customer_id,
                 intent_name=intent_name,
                 data_sources=", ".join(data_sources),
@@ -425,7 +425,7 @@ async def run_crewai_analysis_async(
             
             # Get tools for this agent dynamically
             # Note: customer_id in this context is actually subclient_id
-            agent_tools = get_tools_for_agent(agent_type, user_connections, user_id=user_id, customer_id=customer_id, subclient_id=customer_id)
+            agent_tools = get_tools_for_agent(agent_type, user_connections, campaigner_id=campaigner_id, customer_id=customer_id, subclient_id=customer_id)
             
             # Create specialist agent using ONLY database configuration with timing
             specialist_agent = timing_wrapper.create_timed_agent(
@@ -448,7 +448,7 @@ async def run_crewai_analysis_async(
                 # Replace placeholders in task with actual values
                 specialist_task_description = specialist_task_description.format(
                     objective=user_question,
-                    user_id=user_id,
+                    campaigner_id=campaigner_id,
                     customer_id=customer_id,
                     intent_name=intent_name,
                     data_sources=", ".join(data_sources),
@@ -569,14 +569,14 @@ async def run_crewai_analysis_async(
         
         # 7. CREATE COMPREHENSIVE CUSTOMER LOG WITH ACTUAL RESULT
         user_intent = intent_name or "DialogCX Integration"
-        crewai_input_prompt = f"User Question: {user_question}\nIntent: {intent_name}\nData Sources: {data_sources}\nUser ID: {user_id}"
+        crewai_input_prompt = f"User Question: {user_question}\nIntent: {intent_name}\nData Sources: {data_sources}\nCampaigner ID: {campaigner_id}"
         
         customer_log_id = timing_wrapper.create_customer_log(
             user_intent=user_intent,
             original_query=user_question,
             crewai_input_prompt=crewai_input_prompt,
             master_answer=str(result),
-            user_id=user_id,
+            campaigner_id=campaigner_id,
             success=is_success,
             error_message=error_message
         )
@@ -617,7 +617,7 @@ async def run_crewai_analysis_async(
                                     "session_id": session_id,
                                     "analysis_id": analysis_id,
                                     "customer_log_id": customer_log_id,
-                                    "user_id": user_id,
+                                    "campaigner_id": campaigner_id,
                                     "customer_id": customer_id,
                                     "user_question": user_question,
                                     "user_intent": intent_name,
@@ -739,7 +739,7 @@ def _should_include_specialist(specialist_config: Dict, data_sources: List[str],
 async def get_customer_logs(
     limit: int = 5,
     offset: int = 0,
-    user_id: int = None,
+    campaigner_id: int = None,
     session_id: str = None,
     current_user: Campaigner = Depends(get_current_user)
 ):
@@ -751,7 +751,7 @@ async def get_customer_logs(
             query = session.query(CustomerLog)
             
             # Apply filters - use current user's ID if not specified
-            target_campaigner_id = user_id if user_id else current_user.id
+            target_campaigner_id = campaigner_id if campaigner_id else current_user.id
             
             # Filter logs by campaigner_id
             query = query.filter(CustomerLog.campaigner_id == target_campaigner_id)
@@ -833,10 +833,10 @@ async def handle_dialogcx_webhook(
         logger.info(f"Webhook received: {json.dumps(raw_data, indent=2)}")
         
         # Detect payload format and extract data accordingly
-        if "user_id" in raw_data and "customer_id" in raw_data and "session_id" in raw_data:
+        if "campaigner_id" in raw_data and "customer_id" in raw_data and "session_id" in raw_data:
             # NEW STRUCTURED FORMAT
             logger.info("Processing structured payload format")
-            user_id = raw_data.get("user_id")
+            campaigner_id = raw_data.get("campaigner_id")
             customer_id = raw_data.get("customer_id")
             session_id = raw_data.get("session_id")
             user_question = raw_data.get("user_question", "")
@@ -886,23 +886,20 @@ async def handle_dialogcx_webhook(
             session_id_pattern = r'^[a-fA-F0-9-]{8,}$'
             if session_id and not re.match(session_id_pattern, session_id):
                 logger.warning(f"⚠️ Unusual session_id format: {session_id}")
-                # Check if it's a test/hardcoded value
-                if session_id in ["12345", "test", "demo"]:
-                    logger.warning(f"⚠️ Using test/demo session_id: {session_id}. This should not happen in production!")
                 # Don't fail for DialogCX - just log warning
             
             # 2. VALIDATE DATA TYPES
             try:
-                user_id = int(user_id) if user_id else None
+                campaigner_id = int(campaigner_id) if campaigner_id else None
                 customer_id = int(customer_id) if customer_id else None
             except (ValueError, TypeError):
-                logger.error(f"❌ Invalid user_id or customer_id type: user_id={user_id}, customer_id={customer_id}")
-                raise HTTPException(status_code=400, detail="user_id and customer_id must be valid integers")
+                logger.error(f"❌ Invalid campaigner_id or customer_id type: campaigner_id={campaigner_id}, customer_id={customer_id}")
+                raise HTTPException(status_code=400, detail="campaigner_id and customer_id must be valid integers")
             
-            # 3. VALIDATE USER_ID AND CUSTOMER_ID RANGES
-            if user_id and (user_id < 1 or user_id > 999999):
-                logger.error(f"❌ user_id out of valid range: {user_id}")
-                raise HTTPException(status_code=400, detail="user_id must be between 1 and 999999")
+            # 3. VALIDATE CAMPAIGNER_ID AND CUSTOMER_ID RANGES
+            if campaigner_id and (campaigner_id < 1 or campaigner_id > 999999):
+                logger.error(f"❌ campaigner_id out of valid range: {campaigner_id}")
+                raise HTTPException(status_code=400, detail="campaigner_id must be between 1 and 999999")
             
             if customer_id and (customer_id < 1 or customer_id > 999999):
                 logger.error(f"❌ customer_id out of valid range: {customer_id}")
@@ -977,7 +974,7 @@ async def handle_dialogcx_webhook(
                 "intent_confidence": intent_confidence,
                 "intent_parameters": intent_parameters,
                 "session_parameters": parameters,
-                "user_id": user_id,
+                "campaigner_id": campaigner_id,
                 "customer_id": customer_id
             }
             
@@ -997,12 +994,12 @@ async def handle_dialogcx_webhook(
 
             # Extract user information with support for both old and new field names
             campaigner_id = parameters.get("campaigner_id") or parameters.get("user_id")
-            agency_id = parameters.get("agency_id") or parameters.get("customer_id") 
+            agency_id = parameters.get("agency_id")  # No fallback - agency_id should be explicit
             customer_id = parameters.get("customer_id") or parameters.get("subcustomer_id")
             
             # Use new field names for internal processing
-            user_id = campaigner_id  # Map to internal user_id
-            customer_id = customer_id  # Map to internal customer_id
+            campaigner_id = campaigner_id  # Use campaigner_id directly
+            customer_id = customer_id  # Use customer_id directly
             intent_name = intent_info.get("displayName", "")
             
             # Extract additional parameters and VALIDATE session_id
@@ -1033,22 +1030,12 @@ async def handle_dialogcx_webhook(
         # Master agent will handle date extraction using its DateConversionTool
         # No need for hardcoded regex patterns - let the LLM handle it naturally
         
-        # FALLBACK: If no user_id found, try to get from default user (user_id: 5, customer_id: 5)
-        if not user_id:
-            logger.warning("No user_id found in payload, using default user (5, 5)")
-            user_id = 5
-            customer_id = 5
+        # FALLBACK: If no campaigner_id found, return error
+        if not campaigner_id:
+            logger.error("❌ No campaigner_id found in payload - cannot proceed without valid campaigner")
+            raise HTTPException(status_code=400, detail="campaigner_id is required")
             
-            # Update parameters with default user info
-            if "session_parameters" in matching_parameters:
-                matching_parameters["session_parameters"].update({
-                    "user_id": user_id,
-                    "customer_id": customer_id,
-                    "user_name": "Sato App",
-                    "user_email": "satoappco@gmail.com"
-                })
-            
-        logger.info(f"Processing for user_id: {user_id}, customer_id: {customer_id}")
+        logger.info(f"Processing for campaigner_id: {campaigner_id}, customer_id: {customer_id}")
         logger.info(f"DialogCX Session ID (full): {dialogcx_session_full_name if 'dialogcx_session_full_name' in locals() else 'N/A'}")
         logger.info(f"DialogCX Session ID (parsed): {dialogcx_session_id}")
         logger.info(f"Question: {user_question}")
@@ -1098,7 +1085,7 @@ async def handle_dialogcx_webhook(
         try:
             # Run CrewAI analysis synchronously
             crewai_result = await run_crewai_analysis_async(
-                user_id=user_id,
+                campaigner_id=campaigner_id,
                 customer_id=customer_id,
                 user_question=user_question,
                 intent_name=intent_name,

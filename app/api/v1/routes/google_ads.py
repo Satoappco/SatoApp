@@ -61,14 +61,14 @@ class GoogleAdsConnectionListResponse(BaseModel):
 
 
 class CreateAdsConnectionRequest(BaseModel):
-    customer_id: str
-    customer_name: str
+    account_id: str
+    account_name: str
     currency_code: str
     time_zone: str
     access_token: str
     refresh_token: str
     expires_in: int = 3600
-    subclient_id: int  # Required: which subclient owns this connection
+    customer_id: int  # Required: which customer owns this connection
 
 
 @router.post("/data", response_model=GoogleAdsDataResponse)
@@ -312,7 +312,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
             with get_session() as session:
                 # Create digital asset for Google Ads account
                 digital_asset = DigitalAsset(
-                    subclient_id=request.subclient_id,  # Use the provided subclient_id
+                    customer_id=request.customer_id,  # Use the provided customer_id
                     asset_type=AssetType.GOOGLE_ADS,
                     provider="Google",
                     name=request.customer_name,
@@ -448,9 +448,9 @@ async def get_available_metrics():
     }
 
 
-@router.get("/available-accounts/{subclient_id}")
+@router.get("/available-accounts/{customer_id}")
 async def get_available_google_ads_accounts(
-    subclient_id: int,
+    customer_id: int,
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -465,7 +465,7 @@ async def get_available_google_ads_accounts(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
                 Connection.campaigner_id == current_user.id,
-                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
                 Connection.revoked == False
             ).limit(1)
@@ -604,7 +604,7 @@ async def get_available_google_ads_accounts(
             # Mark which accounts are already connected
             connected_account_ids = []
             assets_statement = select(DigitalAsset).where(
-                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.asset_type == AssetType.GOOGLE_ADS
             )
             connected_assets = session.exec(assets_statement).all()

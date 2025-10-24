@@ -7,8 +7,16 @@ import logging
 
 from app.core.agents.graph.workflow import ConversationWorkflow
 from app.core.agents.crew.crew import AnalyticsCrew
+from app.core.auth import get_current_user
+from app.models.users import Campaigner
+from fastapi import Depends
 
 logger = logging.getLogger(__name__)
+
+
+def get_current_campaigner(current_user: Campaigner = Depends(get_current_user)) -> Campaigner:
+    """Get current authenticated campaigner (alias for get_current_user)"""
+    return current_user
 
 
 class ApplicationState:

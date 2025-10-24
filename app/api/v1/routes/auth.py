@@ -176,7 +176,7 @@ async def authenticate_with_google(
                 #     # Don't fail user creation if default data fails
             # Create JWT tokens
             token_data = {
-                "user_id": user.id,
+                "campaigner_id": user.id,
                 "email": user.email,
                 "role": user.role,
                 "agency_id": user.agency_id
@@ -279,9 +279,9 @@ async def refresh_token(request: RefreshTokenRequest):
                 detail="Refresh token has expired"
             )
         
-        # Get user ID from refresh token
-        user_id = payload.get("user_id")
-        if not user_id:
+        # Get campaigner ID from refresh token
+        campaigner_id = payload.get("campaigner_id")
+        if not campaigner_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
@@ -289,7 +289,7 @@ async def refresh_token(request: RefreshTokenRequest):
         
         # Get user from database
         with get_session() as session:
-            statement = select(Campaigner).where(Campaigner.id == user_id)
+            statement = select(Campaigner).where(Campaigner.id == campaigner_id)
             user = session.exec(statement).first()
             
             if not user:
@@ -300,7 +300,7 @@ async def refresh_token(request: RefreshTokenRequest):
         
         # Create new access token
         token_data = {
-            "user_id": user.id,
+            "campaigner_id": user.id,
             "email": user.email,
             "role": user.role,
             "agency_id": user.agency_id
@@ -340,7 +340,7 @@ async def get_user_sessions(current_user: Campaigner = Depends(get_current_user)
         
         session_data = [{
             "session_id": f"session_{current_user.id}",
-            "user_id": current_user.id,
+            "campaigner_id": current_user.id,
             "email": current_user.email,
             "phone": user.phone,
             "is_current": True

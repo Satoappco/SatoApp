@@ -49,13 +49,13 @@ async def get_oauth_url(redirect_uri: str, state: str = None):
         
         # Facebook Page specific scopes - only for page management and insights
         page_scopes = [
-            'email',                     # Basic user email
-            'public_profile',            # Basic user profile
+            'email',                     # Basic campaigner email
+            'public_profile',            # Basic campaigner profile
             'pages_read_engagement',     # Read page insights
             'pages_manage_metadata',     # Manage page metadata
             'pages_show_list',          # Show pages list
             'read_insights',            # Read insights data
-            'pages_read_user_content',  # Read user content on pages
+            'pages_read_user_content',  # Read campaigner content on pages
             'pages_manage_posts',       # Manage page posts
             'pages_manage_engagement'   # Manage page engagement
         ]
@@ -97,6 +97,56 @@ async def handle_oauth_callback(
     
     print(f"DEBUG: Facebook Page OAuth callback started with code: {request.code[:10]}...")
     
+    # Verify and extract campaigner context from signed state
+    campaigner_id = None
+    customer_id = None
+    
+    if request.state:
+        try:
+            from app.config.settings import get_settings
+            settings = get_settings()
+            
+            # Decode and verify the JWT
+            import jwt
+            payload = jwt.decode(
+                request.state,
+                settings.oauth_state_secret,
+                algorithms=["HS256"]
+            )
+            
+            campaigner_id = payload.get('campaigner_id')
+            customer_id = payload.get('customer_id')
+            timestamp = payload.get('timestamp')
+            
+            # Check expiration using JWT exp field
+            from datetime import datetime
+            if datetime.utcnow().timestamp() > payload.get('exp', 0):
+                raise HTTPException(
+                    status_code=400,
+                    detail="OAuth state has expired"
+                )
+            
+            print(f"DEBUG: User context extracted - Campaigner ID: {campaigner_id}, Customer ID: {customer_id}")
+            
+        except jwt.InvalidTokenError as e:
+            print(f"❌ Invalid OAuth state: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid OAuth state: {str(e)}"
+            )
+        except Exception as e:
+            print(f"❌ OAuth state verification failed: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to verify OAuth state: {str(e)}"
+            )
+    
+    if not campaigner_id or not customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No user found. Please sign in first."
+        )
+    
     try:
         from app.services.facebook_service import FacebookService
         
@@ -110,36 +160,25 @@ async def handle_oauth_callback(
         
         print(f"DEBUG: Token exchange successful for user: {token_data['user_name']}")
         
-        # Find user by email from Facebook
+        # Use campaigner_id from JWT state (already validated above)
         from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
         
-        user_email = token_data.get('user_email')
-        
         with get_session() as session:
-            user = None
+            # Get the campaigner who initiated this OAuth flow
+            campaigner = session.exec(
+                select(Campaigner).where(Campaigner.id == campaigner_id)
+            ).first()
             
-            if user_email:
-                # Try to find user by Facebook email
-                user_statement = select(User).where(User.email == user_email)
-                user = session.exec(user_statement).first()
-                print(f"DEBUG: Found user by Facebook email {user_email}: {user.id if user else 'None'}")
-            
-            if not user:
-                # Fallback: Find the demo user (ID 5) for now
-                user_statement = select(User).where(User.id == 5)
-                user = session.exec(user_statement).first()
-                print(f"DEBUG: Using demo user (ID 5): {user.email if user else 'Not found'}")
-                
-                if user:
-                    user_email = user.email  # Use the demo user's email
-            
-            if not user:
+            if not campaigner:
+                print(f"DEBUG: Campaigner {campaigner_id} not found in database")
                 return OAuthCallbackResponse(
                     success=False,
                     message="No user found. Please sign in first."
                 )
+            
+            print(f"DEBUG: OAuth successful for campaigner {campaigner.id} ({campaigner.email}), connecting for customer {customer_id}")
             
             # Get available Facebook pages (only pages, not ad accounts)
             print(f"🔍 DEBUG: Fetching Facebook pages for Page connection...")
@@ -181,9 +220,9 @@ async def handle_oauth_callback(
             access_token=token_data['access_token'],
             expires_in=token_data['expires_in'],
             user_name=token_data['user_name'],
-            user_email=user_email,
+            user_email=token_data.get('user_email', ''),
             state=request.state,  # Pass through the state parameter
-            user_id=user.id if user else None
+            user_id=campaigner.id if campaigner else None
         )
         
     except Exception as e:
@@ -196,8 +235,8 @@ async def handle_oauth_callback(
 
 class CreatePageConnectionRequest(BaseModel):
     """Request model for creating Facebook Page connection"""
-    user_id: int
-    subclient_id: int
+    campaigner_id: int
+    customer_id: int
     page_id: str
     page_name: str
     page_username: Optional[str] = None
@@ -224,12 +263,12 @@ async def create_facebook_page_connection(
         facebook_service = FacebookService()
         
         with get_session() as session:
-            # First, deactivate all other SOCIAL_MEDIA assets for this user/subclient
-            print(f"DEBUG: Deactivating other SOCIAL_MEDIA assets for user {request.user_id}, subclient {request.subclient_id}")
+            # First, deactivate all other SOCIAL_MEDIA assets for this campaigner/customer
+            print(f"DEBUG: Deactivating other SOCIAL_MEDIA assets for campaigner {request.campaigner_id}, customer {request.customer_id}")
             from sqlmodel import select, and_
             deactivate_statement = select(DigitalAsset).where(
                 and_(
-                    DigitalAsset.subclient_id == request.subclient_id,
+                    DigitalAsset.customer_id == request.customer_id,
                     DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
                     DigitalAsset.provider == "Facebook",
                     DigitalAsset.is_active == True
@@ -243,7 +282,7 @@ async def create_facebook_page_connection(
             
             # Create digital asset for the specific page
             digital_asset = DigitalAsset(
-                subclient_id=request.subclient_id,
+                customer_id=request.customer_id,
                 asset_type=AssetType.SOCIAL_MEDIA,
                 provider="Facebook",
                 name=request.page_name or f"Facebook Page {request.page_id}",
@@ -274,12 +313,12 @@ async def create_facebook_page_connection(
             
             # Create connection
             connection = Connection(
-                user_id=request.user_id,
                 digital_asset_id=digital_asset.id,
+                customer_id=request.customer_id,
+                campaigner_id=request.campaigner_id,
                 auth_type=AuthType.OAUTH2,
                 access_token_enc=access_token_enc,
                 expires_at=expires_at,
-                is_active=True,
                 revoked=False,
                 last_used_at=datetime.utcnow()
             )
