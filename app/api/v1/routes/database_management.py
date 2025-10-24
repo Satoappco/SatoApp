@@ -1332,50 +1332,6 @@ async def get_customers(
                 "customers": [
                     {
                         "id": customer.id,
-                        "name": customer.name,
-                        "type": customer.type,
-                        "status": customer.status,
-                        "plan": customer.plan,
-                        "billing_currency": customer.billing_currency,
-                        "vat_id": customer.vat_id,
-                        "address": customer.address,
-                        "primary_contact_user_id": customer.primary_contact_user_id,
-                        "domains": customer.domains,
-                        "tags": customer.tags,
-                        "notes": customer.notes,
-                        "created_at": customer.created_at.isoformat(),
-                        "updated_at": customer.updated_at.isoformat()
-                    }
-                    for customer in customers
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch customers: {str(e)}"
-        )
-
-
-@router.get("/customers")
-async def get_customers(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-    current_user: Campaigner = Depends(get_current_user)
-):
-    """Get all customers (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(Customer)
-            statement = statement.order_by(Customer.created_at.desc()).offset(offset).limit(limit)
-            customers = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(customers),
-                "customers": [
-                    {
-                        "id": customer.id,
                         "agency_id": customer.agency_id,
                         "full_name": customer.full_name,
                         "contact_email": customer.contact_email,

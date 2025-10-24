@@ -35,6 +35,8 @@ class CustomerCreate(BaseModel):
     facebook_page_url: Optional[str] = Field(None, max_length=500, description="Facebook page URL")
     instagram_page_url: Optional[str] = Field(None, max_length=500, description="Instagram page URL")
     llm_engine_preference: Optional[str] = Field(None, max_length=50, description="Preferred LLM engine")
+    enable_meta: Optional[bool] = Field(None, description="Enable Meta/Facebook marketing features")
+    enable_google: Optional[bool] = Field(None, description="Enable Google marketing features")
 
 
 class CustomerUpdate(BaseModel):
@@ -49,6 +51,8 @@ class CustomerUpdate(BaseModel):
     facebook_page_url: Optional[str] = Field(None, max_length=500)
     instagram_page_url: Optional[str] = Field(None, max_length=500)
     llm_engine_preference: Optional[str] = Field(None, max_length=50)
+    enable_meta: Optional[bool] = Field(None, description="Enable Meta/Facebook marketing features")
+    enable_google: Optional[bool] = Field(None, description="Enable Google marketing features")
     status: Optional[CustomerStatus] = None
     is_active: Optional[bool] = None
 
@@ -90,12 +94,14 @@ async def get_customers(
                         "facebook_page_url": customer.facebook_page_url,
                         "instagram_page_url": customer.instagram_page_url,
                         "llm_engine_preference": customer.llm_engine_preference,
+                        "enable_meta": customer.enable_meta,
+                        "enable_google": customer.enable_google,
                         "status": customer.status,
                         "is_active": customer.is_active,
                         "agency_id": customer.agency_id,
                         "assigned_campaigner_id": customer.assigned_campaigner_id,
-                        "created_at": customer.created_at.isoformat(),
-                        "updated_at": customer.updated_at.isoformat()
+                        "created_at": customer.created_at.isoformat() if customer.created_at else None,
+                        "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                     }
                     for customer in customers
                 ],
@@ -164,6 +170,8 @@ async def get_customer(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "enable_meta": customer.enable_meta,
+                    "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
@@ -171,8 +179,8 @@ async def get_customer(
                     "is_my_customer": customer.assigned_campaigner_id == current_user.id,
                     "has_rtm_data": rtm_entry is not None,
                     "has_questions_data": questions_entry is not None,
-                    "created_at": customer.created_at.isoformat(),
-                    "updated_at": customer.updated_at.isoformat()
+                    "created_at": customer.created_at.isoformat() if customer.created_at else None,
+                    "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                 }
             }
     
@@ -209,6 +217,8 @@ async def create_customer(
                 facebook_page_url=request.facebook_page_url,
                 instagram_page_url=request.instagram_page_url,
                 llm_engine_preference=request.llm_engine_preference,
+                enable_meta=request.enable_meta,
+                enable_google=request.enable_google,
                 assigned_campaigner_id=current_user.id,  # Auto-assign to current campaigner
                 status=CustomerStatus.ACTIVE,
                 is_active=True
@@ -253,7 +263,7 @@ async def create_customer(
                     "assigned_campaigner_id": new_customer.assigned_campaigner_id,
                     "status": new_customer.status,
                     "is_active": new_customer.is_active,
-                    "created_at": new_customer.created_at.isoformat()
+                    "created_at": new_customer.created_at.isoformat() if new_customer.created_at else None
                 }
             }
     
@@ -328,10 +338,12 @@ async def update_customer(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "enable_meta": customer.enable_meta,
+                    "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "assigned_campaigner_id": customer.assigned_campaigner_id,
-                    "updated_at": customer.updated_at.isoformat()
+                    "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                 }
             }
     
