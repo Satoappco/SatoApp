@@ -2,6 +2,7 @@
 
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, AIMessage
 import json
 import logging
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 class ChatbotNode:
     """Chatbot node that interacts with users and routes tasks to specialized agents."""
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
-        self.system_prompt = """You are a helpful marketing campaign assistant chatbot.
+        self.system_prompt = """
+You are a helpful marketing campaign assistant chatbot.
 
 Your role is to:
 1. Have natural conversations with users (campaigners) to understand their intent
@@ -147,7 +149,7 @@ Remember: You have access to the user's identity through the system - never ask 
 class AgentExecutorNode:
     """Node that executes the appropriate specialized agent."""
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
 
     def execute(self, state: GraphState) -> Dict[str, Any]:

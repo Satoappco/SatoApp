@@ -4,6 +4,8 @@ import logging
 import json
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -23,9 +25,9 @@ class SQLBasicInfoAgent:
     5. Interprets results and answers in the user's language
     """
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
-        self.validator_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)  # Dedicated validator
+        self.validator_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash") #ChatOpenAI(model="gpt-4o-mini", temperature=0)  # Dedicated validator
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a database query task.
