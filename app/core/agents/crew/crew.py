@@ -2,7 +2,8 @@
 
 from crewai import Crew, Process
 from typing import Dict, Any, List, Optional
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
+from crewai.llm import LLM
 import os
 
 from .agents import AnalyticsAgents
@@ -16,10 +17,16 @@ class AnalyticsCrew:
 
     def __init__(self):
         # Initialize LLM
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.3,
-            api_key=os.getenv("OPENAI_API_KEY")
+        # self.llm = ChatOpenAI(
+        #     model="gpt-4o",
+        #     temperature=0.3,
+        #     api_key=os.getenv("OPENAI_API_KEY")
+        # )
+
+        self.llm = LLM(
+            model="gemini/gemini-2.5-flash",
+            api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+            temperature=0.1
         )
 
         # Initialize agent factory
@@ -42,6 +49,55 @@ class AnalyticsCrew:
         if "google" in platforms or "both" in platforms:
             if not self.google_client:
                 self.google_client = GoogleMCPClient()
+
+    # TODO: use?
+    async def refresh_user_data_connections(self, campaigner_id: int, data_sources: List[str]):
+        # REFRESH GA4 TOKENS BEFORE GETTING CONNECTIONS
+        from app.services.google_analytics_service import GoogleAnalyticsService
+        from app.api.v1.routes.webhooks import refresh_user_ga4_tokens, refresh_user_facebook_tokens
+        ga_service = GoogleAnalyticsService()
+        user_connections = []
+        if "ga4" in data_sources:
+            try:
+                # STEP 1: Automatically refresh expired tokens before using them
+                # logger.info(f"🔄 Checking and refreshing GA4 tokens for user {campaigner_id}...")
+                await refresh_user_ga4_tokens(ga_service, campaigner_id)
+                
+                # STEP 2: Get user connections (should work now with fresh tokens)
+                if hasattr(ga_service, 'get_user_connections'):
+                    user_connections = await ga_service.get_user_connections(campaigner_id)
+                    # logger.info(f"✅ Found {len(user_connections)} GA4 connections for user")
+                else:
+                    pass
+                    # logger.info("get_user_connections method not implemented yet - continuing without user connections")
+            except Exception as e:
+                pass
+                # logger.warning(f"Could not get user connections: {e}")
+        
+        # Also refresh Google Ads tokens if Google Ads is in data sources
+        if "google_ads" in data_sources:
+            try:
+                from app.services.google_ads_service import GoogleAdsService
+                google_ads_service = GoogleAdsService()
+                # logger.info(f"🔄 Checking Google Ads connections for user {campaigner_id}...")
+                # Google Ads tokens are refreshed automatically when needed
+                # logger.info(f"✅ Google Ads service ready for user {campaigner_id}")
+            except Exception as e:
+                pass
+                # logger.warning(f"Could not initialize Google Ads service: {e}")
+        
+        # Also refresh Facebook tokens if Facebook is in data sources
+        if "facebook" in data_sources:
+            try:
+                from app.services.facebook_service import FacebookService
+                facebook_service = FacebookService()
+                # logger.info(f"🔄 Checking and refreshing Facebook tokens for user {campaigner_id}...")
+                await refresh_user_facebook_tokens(facebook_service, campaigner_id)
+                # logger.info(f"✅ Facebook service ready for user {campaigner_id}")
+            except Exception as e:
+                pass
+                # logger.warning(f"Could not initialize Facebook service: {e}")
+        
 
     def _get_facebook_tools(self) -> List:
         """Get Facebook MCP tools."""
@@ -66,7 +122,7 @@ class AnalyticsCrew:
         # Create agents
         master_agent = self.agents_factory.create_master_agent()
 
-        agents = [master_agent]
+        agents = []
         tasks = []
         specialist_tasks = []
 
@@ -110,7 +166,8 @@ class AnalyticsCrew:
         crew = Crew(
             agents=agents,
             tasks=tasks,
-            process=Process.sequential,  # Sequential to ensure specialists run first #TODO: validate if this should be sequential or hierarchical
+            process=Process.hierarchical,
+            manager_agent=master_agent,
             verbose=True
         )
 

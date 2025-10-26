@@ -144,5 +144,6 @@ Deliver a comprehensive report with:
             description=description,
             expected_output=expected_output,
             agent=agent,
+            async_execution=True,
             context=context  # This task depends on specialist tasks
         )
