@@ -36,17 +36,17 @@ async def get_agencies(
 ):
     """
     Get agencies for the current user
-    - Regular users: only their own agency
-    - Admin/Owner users: all agencies
+    - Regular users (OWNER, CAMPAIGNER, VIEWER): only their own agency
+    - Admin users: all agencies
     """
     try:
         with get_session() as session:
             agencies = []
             main_agency_id = current_campaigner.agency_id
             
-            # Check if user is admin or owner - they can see all agencies
-            if current_campaigner.role in [UserRole.ADMIN, UserRole.OWNER]:
-                # Get all agencies for admin/owner
+            # Check if user is admin - only ADMIN can see all agencies
+            if current_campaigner.role == UserRole.ADMIN:
+                # Get all agencies for admin
                 statement = select(Agency).order_by(Agency.name)
                 all_agencies = session.exec(statement).all()
                 
@@ -61,7 +61,7 @@ async def get_agencies(
                         "updated_at": agency.updated_at.isoformat() if agency.updated_at else None
                     })
             else:
-                # Regular users only see their own agency
+                # Regular users (including OWNER) only see their own agency
                 primary_agency = session.get(Agency, current_campaigner.agency_id)
                 if primary_agency:
                     agencies.append({
@@ -223,9 +223,8 @@ async def create_agency(
     """
     Create a new agency (Admin only)
     """
-    # Check if user is admin
-    # Check if user has permission (admin or owner)
-    if current_campaigner.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can create agencies
+    if current_campaigner.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create agencies"
@@ -275,9 +274,8 @@ async def update_agency(
     """
     Update an agency (Admin only)
     """
-    # Check if user is admin
-    # Check if user has permission (admin or owner)
-    if current_campaigner.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can update agencies
+    if current_campaigner.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can update agencies"
@@ -339,9 +337,8 @@ async def delete_agency(
     """
     Delete an agency (Admin only)
     """
-    # Check if user is admin
-    # Check if user has permission (admin or owner)
-    if current_campaigner.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can delete agencies
+    if current_campaigner.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can delete agencies"

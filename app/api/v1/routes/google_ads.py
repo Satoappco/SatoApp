@@ -159,6 +159,15 @@ async def get_google_ads_connections(
                 # Compute token status using backend logic
                 is_outdated = google_ads_service.is_token_expired(connection.expires_at) if connection.expires_at else True
                 
+                # Helper to format datetime with timezone
+                def format_datetime(dt):
+                    if not dt:
+                        return None
+                    # If timezone-naive, assume UTC and add Z
+                    if dt.tzinfo is None:
+                        return dt.isoformat() + 'Z'
+                    return dt.isoformat()
+                
                 connections.append(GoogleAdsConnectionResponse(
                     success=True,
                     message=f"Connected to {asset.name}",
@@ -167,8 +176,8 @@ async def get_google_ads_connections(
                     customer_name=asset.name,
                     account_email=connection.account_email,
                     is_active=asset.is_active,
-                    expires_at=connection.expires_at.isoformat() if connection.expires_at else None,
-                    last_used_at=connection.last_used_at.isoformat() if connection.last_used_at else None,
+                    expires_at=format_datetime(connection.expires_at),
+                    last_used_at=format_datetime(connection.last_used_at),
                     is_outdated=is_outdated
                 ))
             
@@ -228,6 +237,77 @@ async def refresh_google_ads_token(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to refresh token: {str(e)}"
+        )
+
+
+@router.get("/connections/{connection_id}")
+async def get_google_ads_connection(
+    connection_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    Get a single Google Ads connection by ID (includes access token for debugging)
+    """
+    try:
+        from app.config.database import get_session
+        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from sqlmodel import select, and_
+        
+        with get_session() as session:
+            # Verify user owns this connection
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                and_(
+                    Connection.id == connection_id,
+                    Connection.campaigner_id == current_user.id,
+                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                    DigitalAsset.provider == "Google"
+                )
+            )
+            
+            result = session.exec(statement).first()
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found"
+                )
+            
+            connection, asset = result
+            
+            # Decrypt access token for display
+            access_token = google_ads_service._decrypt_token(connection.access_token_enc)
+            
+            # Compute token status
+            is_outdated = google_ads_service.is_token_expired(connection.expires_at) if connection.expires_at else True
+            
+            # Helper to format datetime with timezone
+            def format_datetime(dt):
+                if not dt:
+                    return None
+                # If timezone-naive, assume UTC and add Z
+                if dt.tzinfo is None:
+                    return dt.isoformat() + 'Z'
+                return dt.isoformat()
+            
+            return {
+                "connection_id": connection.id,
+                "customer_id": asset.external_id,
+                "customer_name": asset.name,
+                "account_email": connection.account_email,
+                "is_active": asset.is_active,
+                "expires_at": format_datetime(connection.expires_at),
+                "last_used_at": format_datetime(connection.last_used_at),
+                "is_outdated": is_outdated,
+                "access_token": access_token
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get connection: {str(e)}"
         )
 
 

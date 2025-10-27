@@ -175,6 +175,13 @@ async def create_worker(
                     detail="Campaigner with this email already exists"
                 )
             
+            # OWNER can only create workers in their own agency, ADMIN can create in any agency
+            if current_user.role != UserRole.ADMIN and request.agency_id != current_user.agency_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only create workers in your own agency"
+                )
+            
             # Create new worker
             new_worker = Campaigner(
                 email=request.email,
@@ -243,8 +250,8 @@ async def update_worker(
                     detail="Worker not found"
                 )
             
-            # Verify worker is in the same agency
-            if worker.agency_id != current_user.agency_id:
+            # OWNER can only update workers in their own agency, ADMIN can update any
+            if current_user.role != UserRole.ADMIN and worker.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this worker"
@@ -319,8 +326,8 @@ async def delete_worker(
                     detail="Worker not found"
                 )
             
-            # Verify worker is in the same agency
-            if worker.agency_id != current_user.agency_id:
+            # OWNER can only delete workers in their own agency, ADMIN can delete any
+            if current_user.role != UserRole.ADMIN and worker.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this worker"

@@ -10,7 +10,7 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field, EmailStr
 
 from app.core.auth import get_current_user
-from app.models.users import Agency, Campaigner, Customer, CustomerStatus
+from app.models.users import Agency, Campaigner, Customer, CustomerStatus, UserRole
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.models.analytics import KpiGoal, DigitalAsset, Connection, UserPropertySelection, KpiValue
 from app.config.database import get_session
@@ -137,8 +137,8 @@ async def get_customer(
                     detail="Customer not found"
                 )
             
-            # Verify customer is in the same agency
-            if customer.agency_id != current_user.agency_id:
+            # OWNER can only access customers in their own agency, ADMIN can access any
+            if current_user.role != UserRole.ADMIN and customer.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
@@ -313,8 +313,8 @@ async def update_customer(
                     detail="Customer not found"
                 )
             
-            # Verify customer is in the same agency
-            if customer.agency_id != current_user.agency_id:
+            # OWNER can only update customers in their own agency, ADMIN can update from any agency
+            if current_user.role != UserRole.ADMIN and customer.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
@@ -413,11 +413,11 @@ async def delete_customer(
             if not customer:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Customer not found"
-                )
+                detail="Customer not found"
+            )
             
-            # Verify customer is in the same agency
-            if customer.agency_id != current_user.agency_id:
+            # OWNER can only delete customers in their own agency, ADMIN can delete from any agency
+            if current_user.role != UserRole.ADMIN and customer.agency_id != current_user.agency_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
