@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import re
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import select, and_
+from sqlmodel import select, and_, Session
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.auth import get_current_user
@@ -21,7 +21,7 @@ from app.utils.composite_id import compose_id
 from app.models.users import Campaigner, Agency, Customer, UserRole
 from app.models.analytics import KpiCatalog, KpiGoal, KpiValue, KpiSettings, DefaultKpiSettings, DigitalAsset, Connection, UserPropertySelection, Audience
 from app.models.agents import AgentConfig, RoutingRule, CustomerLog, DetailedExecutionLog
-from app.config.database import get_session
+from app.config.database import get_session, engine
 from app.config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -1128,46 +1128,55 @@ async def delete_kpi_goal(
     kpi_goal_id: int,
 ):
     """Delete a campaign KPI entry"""
+    session = None
     try:
-        with get_session() as session:
-            campaign = session.get(KpiGoal, kpi_goal_id)
+        session = Session(engine)
+        campaign = session.get(KpiGoal, kpi_goal_id)
+        
+        if not campaign:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KPI goal not found"
+            )
+        
+        # Delete corresponding KPI Value first (to satisfy foreign key constraint)
+        kpi_value = session.exec(
+            select(KpiValue).where(KpiValue.kpi_goal_id == kpi_goal_id)
+        ).first()
+        
+        if kpi_value:
+            session.delete(kpi_value)
+            logger.info(f"✅ Deleting KPI Value for KPI Goal {kpi_goal_id}")
+            # Flush the deletion to database before proceeding
+            session.flush()
+        
+        # Now delete the KPI Goal
+        session.delete(campaign)
+        
+        # Commit all deletions
+        session.commit()
+        logger.info(f"✅ Successfully deleted KPI Goal {kpi_goal_id}")
+        
+        return {
+            "success": True,
+            "message": "KPI goal deleted successfully"
+        }
             
-            if not campaign:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="KPI goal not found"
-                )
-            
-            # Auto-delete corresponding KPI Value
-            try:
-                # Find and delete KPI Value linked to this specific goal
-                kpi_value = session.exec(
-                    select(KpiValue).where(KpiValue.kpi_goal_id == kpi_goal_id)
-                ).first()
-                
-                if kpi_value:
-                    session.delete(kpi_value)
-                    logger.info(f"✅ Auto-deleted KPI Value for KPI Goal {kpi_goal_id}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Failed to auto-delete KPI Value for KPI Goal {kpi_goal_id}: {str(e)}")
-                # Don't fail the main operation if KPI Value deletion fails
-            
-            session.delete(campaign)
-            session.commit()
-            
-            return {
-                "success": True,
-                "message": "KPI goal deleted successfully"
-            }
-    
     except HTTPException:
+        if session:
+            session.rollback()
         raise
     except Exception as e:
+        logger.error(f"❌ Error deleting KPI goal {kpi_goal_id}: {str(e)}")
+        if session:
+            session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete campaign KPI: {str(e)}"
         )
+    finally:
+        if session:
+            session.close()
 
 
 # ===== KPI Values Routes =====
@@ -2677,8 +2686,8 @@ async def create_audience(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Create a new audience (admin only)"""
-    # Check if user is admin
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can create audiences
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create audiences"
@@ -2733,8 +2742,8 @@ async def update_audience(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Update an audience (admin only)"""
-    # Check if user is admin
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can update audiences
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can update audiences"
@@ -2797,8 +2806,8 @@ async def delete_audience(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Delete an audience (admin only)"""
-    # Check if user is admin
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can delete audiences
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can delete audiences"

@@ -6,7 +6,7 @@ Handles token storage, refresh, and GA4 API calls
 import json
 import hashlib
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import asyncio
 from typing import Dict, Any, Optional, List
@@ -223,8 +223,9 @@ class GoogleAnalyticsService:
             refresh_token_enc = self._encrypt_token(refresh_token)
             token_hash = self._generate_token_hash(access_token)
             
-            # Calculate expiration time
-            expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+            # Calculate expiration time with timezone-aware datetime
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+            now = datetime.now(timezone.utc)
             
             # Check for existing connection first
             connection_statement = select(Connection).where(
@@ -245,8 +246,8 @@ class GoogleAnalyticsService:
                 connection.expires_at = expires_at
                 connection.account_email = account_email
                 connection.scopes = self.GA4_SCOPES
-                connection.rotated_at = datetime.utcnow()
-                connection.last_used_at = datetime.utcnow()
+                connection.rotated_at = now
+                connection.last_used_at = now
             else:
                 print(f"DEBUG: Creating new connection for user {campaigner_id} and asset {digital_asset.id}")
                 # Create new connection
@@ -262,7 +263,7 @@ class GoogleAnalyticsService:
                     token_hash=token_hash,
                     expires_at=expires_at,
                     revoked=False,
-                    last_used_at=datetime.utcnow()
+                    last_used_at=now
                 )
             
             session.add(connection)
@@ -343,9 +344,10 @@ class GoogleAnalyticsService:
                 connection.access_token_enc = access_token_enc
                 connection.refresh_token_enc = refresh_token_enc
                 connection.token_hash = token_hash
-                connection.expires_at = datetime.utcnow() + timedelta(seconds=3600)  # 1 hour
-                connection.rotated_at = datetime.utcnow()
-                connection.last_used_at = datetime.utcnow()
+                now = datetime.now(timezone.utc)
+                connection.expires_at = now + timedelta(seconds=3600)  # 1 hour
+                connection.rotated_at = now
+                connection.last_used_at = now
                 
                 session.add(connection)
                 session.commit()
@@ -419,16 +421,17 @@ class GoogleAnalyticsService:
             refresh_token_enc = self._encrypt_token(refresh_token)
             token_hash = self._generate_token_hash(access_token)
             
-            # Calculate expiry
-            expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+            # Calculate expiry with timezone-aware datetime
+            now = datetime.now(timezone.utc)
+            expires_at = now + timedelta(seconds=expires_in)
             
             # Update connection
             connection.access_token_enc = access_token_enc
             connection.refresh_token_enc = refresh_token_enc
             connection.token_hash = token_hash
             connection.expires_at = expires_at
-            connection.rotated_at = datetime.utcnow()
-            connection.last_used_at = datetime.utcnow()
+            connection.rotated_at = now
+            connection.last_used_at = now
             connection.revoked = False  # Ensure it's not marked as revoked
             
             session.add(connection)
@@ -478,15 +481,16 @@ class GoogleAnalyticsService:
                 access_token_enc = self._encrypt_token(credentials.token)
                 refresh_token_enc = self._encrypt_token(credentials.refresh_token)
                 token_hash = self._generate_token_hash(credentials.token)
-                expires_at = datetime.utcnow() + timedelta(seconds=3600)
+                now = datetime.now(timezone.utc)
+                expires_at = now + timedelta(seconds=3600)
                 
                 # Update connection
                 connection.access_token_enc = access_token_enc
                 connection.refresh_token_enc = refresh_token_enc
                 connection.token_hash = token_hash
                 connection.expires_at = expires_at
-                connection.rotated_at = datetime.utcnow()
-                connection.last_used_at = datetime.utcnow()
+                connection.rotated_at = now
+                connection.last_used_at = now
                 connection.revoked = False
                 
                 session.add(connection)
@@ -560,13 +564,14 @@ class GoogleAnalyticsService:
                     refresh_token_enc = self._encrypt_token(credentials.refresh_token)
                     token_hash = self._generate_token_hash(credentials.token)
                     
-                    # Update connection
+                    # Update connection with timezone-aware datetime
+                    now = datetime.now(timezone.utc)
                     fresh_connection.access_token_enc = access_token_enc
                     fresh_connection.refresh_token_enc = refresh_token_enc
                     fresh_connection.token_hash = token_hash
-                    fresh_connection.expires_at = datetime.utcnow() + timedelta(seconds=3600)  # 1 hour
-                    fresh_connection.rotated_at = datetime.utcnow()
-                    fresh_connection.last_used_at = datetime.utcnow()
+                    fresh_connection.expires_at = now + timedelta(seconds=3600)  # 1 hour
+                    fresh_connection.rotated_at = now
+                    fresh_connection.last_used_at = now
                     
                     new_session.add(fresh_connection)
                     new_session.commit()
@@ -666,7 +671,11 @@ class GoogleAnalyticsService:
         if not expires_at:
             return True  # No expiry time means assume expired
         
-        current_time = datetime.utcnow()
+        # If datetime is naive, assume it's UTC
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        current_time = datetime.now(timezone.utc)
         time_until_expiry = expires_at - current_time
         
         # Consider expired if it expires within 5 minutes
@@ -706,7 +715,7 @@ class GoogleAnalyticsService:
                     if not self.is_ga_token_expired(connection.expires_at):
                         print(f"🔄 GA4 Token was already refreshed by another process")
                     else:
-                        current_time = datetime.utcnow()
+                        current_time = datetime.now(timezone.utc)
                         if connection.expires_at:
                             time_until_expiry = connection.expires_at - current_time
                             print(f"🔄 GA4 Token expires soon ({time_until_expiry}), refreshing...")
@@ -902,14 +911,23 @@ class GoogleAnalyticsService:
                 # Check if token is outdated using backend logic (avoids timezone issues)
                 is_outdated = self.is_ga_token_expired(connection.expires_at) if connection.expires_at else True
                 
+                # Helper to format datetime with timezone
+                def format_datetime(dt):
+                    if not dt:
+                        return None
+                    # If timezone-naive, assume UTC and add Z
+                    if dt.tzinfo is None:
+                        return dt.isoformat() + 'Z'
+                    return dt.isoformat()
+                
                 connections.append({
                     "connection_id": connection.id,
                     "digital_asset_id": digital_asset.id,
                     "property_id": digital_asset.external_id,
                     "property_name": digital_asset.name,
                     "account_email": connection.account_email,
-                    "expires_at": connection.expires_at.isoformat() if connection.expires_at else None,
-                    "last_used_at": connection.last_used_at.isoformat() if connection.last_used_at else None,
+                    "expires_at": format_datetime(connection.expires_at),
+                    "last_used_at": format_datetime(connection.last_used_at),
                     "is_active": digital_asset.is_active,
                     "is_outdated": is_outdated
                 })

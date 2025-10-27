@@ -115,6 +115,69 @@ async def get_ga_connections(
         )
 
 
+@router.get("/connections/{connection_id}")
+async def get_ga_connection(
+    connection_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    Get a single GA connection by ID (includes access token for debugging)
+    """
+    try:
+        # Verify campaigner owns this connection
+        with get_session() as session:
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.id == connection_id,
+                Connection.campaigner_id == current_user.id
+            )
+            result = session.exec(statement).first()
+            
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found"
+                )
+            
+            connection, asset = result
+            
+            # Decrypt access token for display
+            access_token = ga_service._decrypt_token(connection.access_token_enc)
+            
+            # Compute token status
+            is_outdated = ga_service.is_ga_token_expired(connection.expires_at) if connection.expires_at else True
+            
+            # Helper to format datetime with timezone
+            def format_datetime(dt):
+                if not dt:
+                    return None
+                # If timezone-naive, assume UTC and add Z
+                if dt.tzinfo is None:
+                    return dt.isoformat() + 'Z'
+                return dt.isoformat()
+            
+            return {
+                "connection_id": connection.id,
+                "property_id": asset.external_id,
+                "property_name": asset.name,
+                "account_email": connection.account_email,
+                "is_active": asset.is_active,
+                "expires_at": format_datetime(connection.expires_at),
+                "last_used_at": format_datetime(connection.last_used_at),
+                "is_outdated": is_outdated,
+                "access_token": access_token
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get connection: {str(e)}"
+        )
+
+
 @router.post("/connections/{connection_id}/refresh")
 async def refresh_ga_token(
     connection_id: int,
