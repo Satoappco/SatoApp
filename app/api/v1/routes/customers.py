@@ -10,7 +10,7 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field, EmailStr
 
 from app.core.auth import get_current_user
-from app.models.users import Campaigner, Customer, CustomerStatus
+from app.models.users import Agency, Campaigner, Customer, CustomerStatus
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.models.analytics import KpiGoal, DigitalAsset, Connection, UserPropertySelection, KpiValue
 from app.config.database import get_session
@@ -94,12 +94,16 @@ async def get_customers(
                         "facebook_page_url": customer.facebook_page_url,
                         "instagram_page_url": customer.instagram_page_url,
                         "llm_engine_preference": customer.llm_engine_preference,
+                        "country": customer.country,
+                        "currency": customer.currency,
                         "enable_meta": customer.enable_meta,
                         "enable_google": customer.enable_google,
                         "status": customer.status,
                         "is_active": customer.is_active,
                         "agency_id": customer.agency_id,
+                        "agency_name": customer.agency_name,
                         "assigned_campaigner_id": customer.assigned_campaigner_id,
+                        "campaigner_name": customer.campaigner_name,
                         "created_at": customer.created_at.isoformat() if customer.created_at else None,
                         "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                     }
@@ -170,12 +174,16 @@ async def get_customer(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "country": customer.country,
+                    "currency": customer.currency,
                     "enable_meta": customer.enable_meta,
                     "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
+                    "agency_name": customer.agency_name,
                     "assigned_campaigner_id": customer.assigned_campaigner_id,
+                    "campaigner_name": customer.campaigner_name,
                     "is_my_customer": customer.assigned_campaigner_id == current_user.id,
                     "has_rtm_data": rtm_entry is not None,
                     "has_questions_data": questions_entry is not None,
@@ -204,6 +212,13 @@ async def create_customer(
     """
     try:
         with get_session() as session:
+            # Fetch agency name for denormalization
+            agency = session.get(Agency, current_user.agency_id)
+            agency_name = agency.name if agency else None
+            
+            # Campaigner name is already available from current_user
+            campaigner_name = current_user.full_name
+            
             # Create customer - automatically assign to current campaigner
             new_customer = Customer(
                 agency_id=current_user.agency_id,
@@ -220,6 +235,8 @@ async def create_customer(
                 enable_meta=request.enable_meta,
                 enable_google=request.enable_google,
                 assigned_campaigner_id=current_user.id,  # Auto-assign to current campaigner
+                agency_name=agency_name,  # Denormalized agency name
+                campaigner_name=campaigner_name,  # Denormalized campaigner name
                 status=CustomerStatus.ACTIVE,
                 is_active=True
             )
@@ -319,6 +336,17 @@ async def update_customer(
             for field, value in update_data.items():
                 setattr(customer, field, value)
             
+            # Refresh denormalized data if campaigner assignment changed
+            if 'assigned_campaigner_id' in update_data:
+                if customer.assigned_campaigner_id:
+                    # Fetch campaigner name
+                    campaigner = session.get(Campaigner, customer.assigned_campaigner_id)
+                    customer.campaigner_name = campaigner.full_name if campaigner else None
+            
+            # Fetch agency name
+            agency = session.get(Agency, customer.agency_id)
+            customer.agency_name = agency.name if agency else None
+            
             session.add(customer)
             session.commit()
             session.refresh(customer)
@@ -342,7 +370,10 @@ async def update_customer(
                     "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
+                    "agency_id": customer.agency_id,
+                    "agency_name": customer.agency_name,
                     "assigned_campaigner_id": customer.assigned_campaigner_id,
+                    "campaigner_name": customer.campaigner_name,
                     "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                 }
             }

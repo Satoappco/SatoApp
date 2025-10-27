@@ -218,6 +218,57 @@ class KpiGoalUpdate(BaseModel):
     landing_page: Optional[str] = Field(None, max_length=500)
 
 
+class KpiGoalBulkItem(BaseModel):
+    """Schema for a single item in bulk KPI Goal operation"""
+    id: Optional[int] = 0  # 0 or None means new item
+    customer_id: Optional[int] = None
+    campaign_id: Optional[str] = Field(None, max_length=50)
+    campaign_name: Optional[str] = Field(None, max_length=255)
+    campaign_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad Group fields
+    ad_group_id: Optional[int] = None
+    ad_group_name: Optional[str] = Field(None, max_length=255)
+    ad_group_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad fields
+    ad_id: Optional[int] = None
+    ad_name: Optional[str] = Field(None, max_length=255)
+    ad_name_headline: Optional[str] = Field(None, max_length=500)
+    ad_status: Optional[str] = Field(None, max_length=50)
+    ad_score: Optional[int] = None
+    
+    # Campaign details
+    advertising_channel: Optional[str] = Field(None, max_length=100)
+    campaign_objective: Optional[str] = Field(None, max_length=100)
+    daily_budget: Optional[float] = None
+    spent: Optional[float] = None
+    target_audience: Optional[str] = Field(None, max_length=255)
+    
+    # KPI Goals
+    primary_kpi_1: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_1: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_2: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_3: Optional[str] = Field(None, max_length=255)
+    
+    # Additional fields
+    landing_page: Optional[str] = Field(None, max_length=500)
+
+
+class KpiGoalBulkUpdateRequest(BaseModel):
+    """Schema for bulk KPI Goal update"""
+    items: List[KpiGoalBulkItem]
+
+
+class KpiGoalBulkUpdateResponse(BaseModel):
+    """Schema for bulk KPI Goal update response"""
+    success: bool
+    message: str
+    created_count: int
+    updated_count: int
+    errors: List[Dict[str, Any]]
+
+
 class DigitalAssetCreate(BaseModel):
     """Schema for creating a Digital Asset entry"""
     customer_id: int
@@ -498,7 +549,8 @@ async def get_kpi_goals(
     """Get all KPI goals (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(KpiGoal)
+            # Left join KpiGoal with KpiValue to get related value data
+            statement = select(KpiGoal, KpiValue).join(KpiValue, KpiGoal.id == KpiValue.kpi_goal_id, isouter=True)
             
             # Apply filters (no user filtering - this is admin tool)
             conditions = []
@@ -509,41 +561,58 @@ async def get_kpi_goals(
                 statement = statement.where(and_(*conditions))
             
             statement = statement.order_by(KpiGoal.created_at.desc()).offset(offset).limit(limit)
-            campaigns = session.exec(statement).all()
+            results = session.exec(statement).all()
+            
+            campaigns = []
+            for goal, value in results:
+                campaign_data = {
+                    "id": goal.id,
+                    "customer_id": goal.customer_id,
+                    "campaign_id": goal.campaign_id,
+                    "campaign_name": goal.campaign_name,
+                    "campaign_status": goal.campaign_status,
+                    "ad_group_id": goal.ad_group_id,
+                    "ad_group_name": goal.ad_group_name,
+                    "ad_group_status": goal.ad_group_status,
+                    "ad_id": goal.ad_id,
+                    "ad_name": goal.ad_name,
+                    "ad_name_headline": goal.ad_name_headline,
+                    "ad_status": goal.ad_status,
+                    "ad_score": goal.ad_score,
+                    "advertising_channel": goal.advertising_channel,
+                    "campaign_objective": goal.campaign_objective,
+                    "daily_budget": goal.daily_budget,
+                    "spent": goal.spent,
+                    "target_audience": goal.target_audience,
+                    "primary_kpi_1": goal.primary_kpi_1,
+                    "secondary_kpi_1": goal.secondary_kpi_1,
+                    "secondary_kpi_2": goal.secondary_kpi_2,
+                    "secondary_kpi_3": goal.secondary_kpi_3,
+                    "landing_page": goal.landing_page,
+                    "created_at": goal.created_at.isoformat(),
+                    "updated_at": goal.updated_at.isoformat()
+                }
+                
+                # Add value data if available
+                if value:
+                    campaign_data["value_data"] = {
+                        "daily_budget": value.daily_budget,
+                        "spent": value.spent,
+                        "primary_kpi_1": value.primary_kpi_1,
+                        "secondary_kpi_1": value.secondary_kpi_1,
+                        "secondary_kpi_2": value.secondary_kpi_2,
+                        "secondary_kpi_3": value.secondary_kpi_3,
+                        "ad_score": value.ad_score
+                    }
+                else:
+                    campaign_data["value_data"] = None
+                
+                campaigns.append(campaign_data)
             
             return {
                 "success": True,
                 "count": len(campaigns),
-                "campaigns": [
-                    {
-                        "id": campaign.id,
-                        "customer_id": campaign.customer_id,
-                        "campaign_id": campaign.campaign_id,
-                        "campaign_name": campaign.campaign_name,
-                        "campaign_status": campaign.campaign_status,
-                        "ad_group_id": campaign.ad_group_id,
-                        "ad_group_name": campaign.ad_group_name,
-                        "ad_group_status": campaign.ad_group_status,
-                        "ad_id": campaign.ad_id,
-                        "ad_name": campaign.ad_name,
-                        "ad_name_headline": campaign.ad_name_headline,
-                        "ad_status": campaign.ad_status,
-                        "ad_score": campaign.ad_score,
-                        "advertising_channel": campaign.advertising_channel,
-                        "campaign_objective": campaign.campaign_objective,
-                        "daily_budget": campaign.daily_budget,
-                        "spent": campaign.spent,
-                        "target_audience": campaign.target_audience,
-                        "primary_kpi_1": campaign.primary_kpi_1,
-                        "secondary_kpi_1": campaign.secondary_kpi_1,
-                        "secondary_kpi_2": campaign.secondary_kpi_2,
-                        "secondary_kpi_3": campaign.secondary_kpi_3,
-                        "landing_page": campaign.landing_page,
-                        "created_at": campaign.created_at.isoformat(),
-                        "updated_at": campaign.updated_at.isoformat()
-                    }
-                    for campaign in campaigns
-                ]
+                "campaigns": campaigns
             }
     
     except Exception as e:
@@ -862,6 +931,198 @@ async def update_kpi_goal(
         )
 
 
+@router.post("/kpi-goals/bulk")
+async def bulk_update_kpi_goals(
+    bulk_data: KpiGoalBulkUpdateRequest
+):
+    """Bulk create/update KPI Goals in a single transaction"""
+    try:
+        with get_session() as session:
+            created_count = 0
+            updated_count = 0
+            errors = []
+            
+            # Separate items into creates and updates
+            items_to_create = []
+            items_to_update = {}
+            
+            for item in bulk_data.items:
+                # Items with id <= 0 or no id are new items
+                if not item.id or item.id <= 0:
+                    items_to_create.append(item)
+                else:
+                    items_to_update[item.id] = item
+            
+            # Process creates
+            for item in items_to_create:
+                try:
+                    # Required fields validation
+                    if not item.customer_id:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "customer_id is required for new items"
+                        })
+                        continue
+                    
+                    if not item.campaign_name:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "campaign_name is required"
+                        })
+                        continue
+                    
+                    if not item.advertising_channel:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "advertising_channel is required"
+                        })
+                        continue
+                    
+                    if not item.campaign_objective:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "campaign_objective is required"
+                        })
+                        continue
+                    
+                    if not item.target_audience:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "target_audience is required"
+                        })
+                        continue
+                    
+                    # Create new KPI Goal
+                    new_campaign = KpiGoal(
+                        customer_id=item.customer_id,
+                        campaign_id=item.campaign_id or f"campaign_{datetime.utcnow().timestamp()}",
+                        campaign_name=item.campaign_name,
+                        campaign_status=item.campaign_status or "ACTIVE",
+                        ad_group_id=item.ad_group_id,
+                        ad_group_name=item.ad_group_name,
+                        ad_group_status=item.ad_group_status,
+                        ad_id=item.ad_id,
+                        ad_name=item.ad_name,
+                        ad_name_headline=item.ad_name_headline,
+                        ad_status=item.ad_status,
+                        ad_score=item.ad_score,
+                        advertising_channel=item.advertising_channel,
+                        campaign_objective=item.campaign_objective,
+                        daily_budget=item.daily_budget,
+                        spent=item.spent,
+                        target_audience=item.target_audience,
+                        primary_kpi_1=item.primary_kpi_1,
+                        secondary_kpi_1=item.secondary_kpi_1,
+                        secondary_kpi_2=item.secondary_kpi_2,
+                        secondary_kpi_3=item.secondary_kpi_3,
+                        landing_page=item.landing_page,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    
+                    session.add(new_campaign)
+                    created_count += 1
+                except Exception as e:
+                    errors.append({
+                        "item": item.dict(),
+                        "error": str(e)
+                    })
+            
+            # Process updates
+            for goal_id, item in items_to_update.items():
+                try:
+                    campaign = session.get(KpiGoal, goal_id)
+                    if not campaign:
+                        errors.append({
+                            "item_id": goal_id,
+                            "error": "KPI goal not found"
+                        })
+                        continue
+                    
+                    # Update fields
+                    if item.customer_id is not None:
+                        campaign.customer_id = item.customer_id
+                    if item.campaign_id is not None:
+                        campaign.campaign_id = item.campaign_id
+                    if item.campaign_name is not None:
+                        campaign.campaign_name = item.campaign_name
+                    if item.campaign_status is not None:
+                        campaign.campaign_status = item.campaign_status
+                    if item.ad_group_id is not None:
+                        campaign.ad_group_id = item.ad_group_id
+                    if item.ad_group_name is not None:
+                        campaign.ad_group_name = item.ad_group_name
+                    if item.ad_group_status is not None:
+                        campaign.ad_group_status = item.ad_group_status
+                    if item.ad_id is not None:
+                        campaign.ad_id = item.ad_id
+                    if item.ad_name is not None:
+                        campaign.ad_name = item.ad_name
+                    if item.ad_name_headline is not None:
+                        campaign.ad_name_headline = item.ad_name_headline
+                    if item.ad_status is not None:
+                        campaign.ad_status = item.ad_status
+                    if item.ad_score is not None:
+                        campaign.ad_score = item.ad_score
+                    if item.advertising_channel is not None:
+                        campaign.advertising_channel = item.advertising_channel
+                    if item.campaign_objective is not None:
+                        campaign.campaign_objective = item.campaign_objective
+                    if item.daily_budget is not None:
+                        campaign.daily_budget = item.daily_budget
+                    if item.spent is not None:
+                        campaign.spent = item.spent
+                    if item.target_audience is not None:
+                        campaign.target_audience = item.target_audience
+                    if item.primary_kpi_1 is not None:
+                        campaign.primary_kpi_1 = item.primary_kpi_1
+                    if item.secondary_kpi_1 is not None:
+                        campaign.secondary_kpi_1 = item.secondary_kpi_1
+                    if item.secondary_kpi_2 is not None:
+                        campaign.secondary_kpi_2 = item.secondary_kpi_2
+                    if item.secondary_kpi_3 is not None:
+                        campaign.secondary_kpi_3 = item.secondary_kpi_3
+                    if item.landing_page is not None:
+                        campaign.landing_page = item.landing_page
+                    
+                    campaign.updated_at = datetime.utcnow()
+                    session.add(campaign)
+                    updated_count += 1
+                except Exception as e:
+                    errors.append({
+                        "item_id": goal_id,
+                        "error": str(e)
+                    })
+            
+            # Commit all changes in a single transaction
+            if errors and len(errors) == len(bulk_data.items):
+                # All items failed, don't commit
+                session.rollback()
+                return {
+                    "success": False,
+                    "message": "All items failed validation",
+                    "created_count": 0,
+                    "updated_count": 0,
+                    "errors": errors
+                }
+            
+            session.commit()
+            
+            return {
+                "success": len(errors) == 0,
+                "message": f"Bulk update completed: {created_count} created, {updated_count} updated, {len(errors)} errors",
+                "created_count": created_count,
+                "updated_count": updated_count,
+                "errors": errors
+            }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to bulk update KPI goals: {str(e)}"
+        )
+
+
 @router.delete("/kpi-goals/{kpi_goal_id}")
 async def delete_kpi_goal(
     kpi_goal_id: int,
@@ -922,7 +1183,8 @@ async def get_kpi_values(
     """Get all KPI values (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(KpiValue)
+            # Join KpiValue with KpiGoal to get related goal data
+            statement = select(KpiValue, KpiGoal).join(KpiGoal, KpiValue.kpi_goal_id == KpiGoal.id, isouter=True)
             
             # Apply filters
             conditions = []
@@ -935,41 +1197,58 @@ async def get_kpi_values(
                 statement = statement.where(and_(*conditions))
             
             statement = statement.order_by(KpiValue.created_at.desc()).offset(offset).limit(limit)
-            campaigns = session.exec(statement).all()
+            results = session.exec(statement).all()
+            
+            campaigns = []
+            for value, goal in results:
+                campaign_data = {
+                    "id": value.id,
+                    "customer_id": value.customer_id,
+                    "kpi_goal_id": value.kpi_goal_id,
+                    "campaign_id": value.campaign_id,
+                    "campaign_name": value.campaign_name,
+                    "campaign_status": value.campaign_status,
+                    "ad_group_id": value.ad_group_id,
+                    "ad_group_name": value.ad_group_name,
+                    "ad_group_status": value.ad_group_status,
+                    "ad_id": value.ad_id,
+                    "ad_name": value.ad_name,
+                    "ad_name_headline": value.ad_name_headline,
+                    "ad_status": value.ad_status,
+                    "ad_score": value.ad_score,
+                    "advertising_channel": value.advertising_channel,
+                    "campaign_objective": value.campaign_objective,
+                    "daily_budget": value.daily_budget,
+                    "spent": value.spent,
+                    "target_audience": value.target_audience,
+                    "primary_kpi_1": value.primary_kpi_1,
+                    "secondary_kpi_1": value.secondary_kpi_1,
+                    "secondary_kpi_2": value.secondary_kpi_2,
+                    "secondary_kpi_3": value.secondary_kpi_3,
+                    "landing_page": value.landing_page,
+                    "created_at": value.created_at.isoformat(),
+                    "updated_at": value.updated_at.isoformat()
+                }
+                
+                # Add goal data if available
+                if goal:
+                    campaign_data["goal_data"] = {
+                        "daily_budget": goal.daily_budget,
+                        "primary_kpi_1": goal.primary_kpi_1,
+                        "secondary_kpi_1": goal.secondary_kpi_1,
+                        "secondary_kpi_2": goal.secondary_kpi_2,
+                        "secondary_kpi_3": goal.secondary_kpi_3,
+                        "ad_score": goal.ad_score
+                    }
+                else:
+                    campaign_data["goal_data"] = None
+                
+                campaigns.append(campaign_data)
             
             return {
                 "success": True,
                 "count": len(campaigns),
-                "campaigns": [
-                    {
-                        "id": campaign.id,
-                        "customer_id": campaign.customer_id,
-                        "campaign_id": campaign.campaign_id,
-                        "campaign_name": campaign.campaign_name,
-                        "campaign_status": campaign.campaign_status,
-                        "ad_group_id": campaign.ad_group_id,
-                        "ad_group_name": campaign.ad_group_name,
-                        "ad_group_status": campaign.ad_group_status,
-                        "ad_id": campaign.ad_id,
-                        "ad_name": campaign.ad_name,
-                        "ad_name_headline": campaign.ad_name_headline,
-                        "ad_status": campaign.ad_status,
-                        "ad_score": campaign.ad_score,
-                        "advertising_channel": campaign.advertising_channel,
-                        "campaign_objective": campaign.campaign_objective,
-                        "daily_budget": campaign.daily_budget,
-                        "spent": campaign.spent,
-                        "target_audience": campaign.target_audience,
-                        "primary_kpi_1": campaign.primary_kpi_1,
-                        "secondary_kpi_1": campaign.secondary_kpi_1,
-                        "secondary_kpi_2": campaign.secondary_kpi_2,
-                        "secondary_kpi_3": campaign.secondary_kpi_3,
-                        "landing_page": campaign.landing_page,
-                        "created_at": campaign.created_at.isoformat(),
-                        "updated_at": campaign.updated_at.isoformat()
-                    }
-                    for campaign in campaigns
-                ]
+                "campaigns": campaigns
             }
     
     except Exception as e:

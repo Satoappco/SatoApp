@@ -50,6 +50,9 @@ class GoogleAnalyticsService:
     # Class-level refresh locks to prevent simultaneous token refresh attempts
     _refresh_locks = {}
     
+    # In-memory property cache: {cache_key: {properties: [...], timestamp: datetime}}
+    _property_cache = {}
+    
     # Google Analytics 4 scopes - comprehensive set for modern GA4 API
     GA4_SCOPES = [
         'https://www.googleapis.com/auth/analytics.readonly',
@@ -896,6 +899,9 @@ class GoogleAnalyticsService:
             
             connections = []
             for connection, digital_asset in results:
+                # Check if token is outdated using backend logic (avoids timezone issues)
+                is_outdated = self.is_ga_token_expired(connection.expires_at) if connection.expires_at else True
+                
                 connections.append({
                     "connection_id": connection.id,
                     "digital_asset_id": digital_asset.id,
@@ -904,7 +910,8 @@ class GoogleAnalyticsService:
                     "account_email": connection.account_email,
                     "expires_at": connection.expires_at.isoformat() if connection.expires_at else None,
                     "last_used_at": connection.last_used_at.isoformat() if connection.last_used_at else None,
-                    "is_active": digital_asset.is_active
+                    "is_active": digital_asset.is_active,
+                    "is_outdated": is_outdated
                 })
             
             return connections
@@ -1157,3 +1164,44 @@ class GoogleAnalyticsService:
                 "success": False,
                 "error": str(e)
             }
+    
+    @staticmethod
+    def cache_user_properties(campaigner_id: int, customer_id: int, properties: List[Dict[str, Any]]) -> None:
+        """Cache user properties for quick retrieval"""
+        from app.config.settings import get_settings
+        settings = get_settings()
+        
+        cache_key = f"ga_properties_{campaigner_id}_{customer_id}"
+        GoogleAnalyticsService._property_cache[cache_key] = {
+            "properties": properties,
+            "timestamp": datetime.now()
+        }
+    
+    @staticmethod
+    def get_cached_properties(campaigner_id: int, customer_id: int) -> Optional[List[Dict[str, Any]]]:
+        """Get cached properties if still fresh"""
+        from app.config.settings import get_settings
+        settings = get_settings()
+        
+        cache_key = f"ga_properties_{campaigner_id}_{customer_id}"
+        
+        if cache_key not in GoogleAnalyticsService._property_cache:
+            return None
+        
+        cache_entry = GoogleAnalyticsService._property_cache[cache_key]
+        cache_age = datetime.now() - cache_entry["timestamp"]
+        
+        # Return cached properties if less than TTL
+        if cache_age.total_seconds() < settings.ga_property_cache_ttl:
+            return cache_entry["properties"]
+        else:
+            # Cache expired, remove it
+            del GoogleAnalyticsService._property_cache[cache_key]
+            return None
+    
+    @staticmethod
+    def clear_property_cache(campaigner_id: int, customer_id: int) -> None:
+        """Clear property cache for user/customer"""
+        cache_key = f"ga_properties_{campaigner_id}_{customer_id}"
+        if cache_key in GoogleAnalyticsService._property_cache:
+            del GoogleAnalyticsService._property_cache[cache_key]

@@ -427,7 +427,10 @@ async def generate_invite_link(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Generate secure invite link for team member"""
+    print(f"🔵 Invite Generation Request - User ID: {current_user.id}, Role: {current_user.role}")
+    
     if current_user.role not in [UserRole.OWNER, UserRole.ADMIN]:
+        print(f"❌ Permission denied - User role: {current_user.role}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only owners and admins can generate invites"
@@ -464,13 +467,24 @@ async def generate_invite_link(
             frontend_url = os.getenv("FRONTEND_URL", "https://localhost:3000")
             invite_url = f"{frontend_url}/join?token={invite.token}"
             
-            return {
+            print(f"✅ Invite URL generated: {invite_url}")
+            
+            response_data = {
                 "success": True,
                 "invite_token": invite.token,
                 "invite_url": invite_url,
                 "expires_at": invite.expires_at.isoformat()
             }
+            
+            print(f"📤 Returning response: {response_data}")
+            return response_data
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ Error generating invite: {str(e)}")
+        print(f"❌ Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate invite: {str(e)}"

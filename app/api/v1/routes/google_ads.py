@@ -54,6 +54,7 @@ class GoogleAdsConnectionResponse(BaseModel):
     is_active: bool
     expires_at: Optional[str] = None
     last_used_at: Optional[str] = None
+    is_outdated: Optional[bool] = None
 
 
 class GoogleAdsConnectionListResponse(BaseModel):
@@ -154,6 +155,10 @@ async def get_google_ads_connections(
             connections = []
             for connection, asset in results:
                 print(f"DEBUG: Google Ads connection: {connection.id} - {asset.name} - Active: {asset.is_active}")
+                
+                # Compute token status using backend logic
+                is_outdated = google_ads_service.is_token_expired(connection.expires_at) if connection.expires_at else True
+                
                 connections.append(GoogleAdsConnectionResponse(
                     success=True,
                     message=f"Connected to {asset.name}",
@@ -163,7 +168,8 @@ async def get_google_ads_connections(
                     account_email=connection.account_email,
                     is_active=asset.is_active,
                     expires_at=connection.expires_at.isoformat() if connection.expires_at else None,
-                    last_used_at=connection.last_used_at.isoformat() if connection.last_used_at else None
+                    last_used_at=connection.last_used_at.isoformat() if connection.last_used_at else None,
+                    is_outdated=is_outdated
                 ))
             
             return GoogleAdsConnectionListResponse(connections=connections)
@@ -172,6 +178,56 @@ async def get_google_ads_connections(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get Google Ads connections: {str(e)}"
+        )
+
+
+@router.post("/connections/{connection_id}/refresh")
+async def refresh_google_ads_token(
+    connection_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    Refresh Google Ads access token - if refresh token is expired, returns re-auth URL
+    """
+    
+    try:
+        # Verify campaigner owns this connection
+        with get_session() as session:
+            statement = select(Connection).where(
+                Connection.id == connection_id,
+                Connection.campaigner_id == current_user.id
+            )
+            connection = session.exec(statement).first()
+            
+            if not connection:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found"
+                )
+        
+        result = await google_ads_service.refresh_google_ads_token(connection_id)
+        return result
+    
+    except ValueError as e:
+        error_msg = str(e)
+        # If refresh token is expired, return re-auth URL instead of error
+        if "Please re-authorize:" in error_msg:
+            reauth_url = error_msg.split("Please re-authorize: ")[1]
+            return {
+                "success": False,
+                "requires_reauth": True,
+                "reauth_url": reauth_url,
+                "message": "Refresh token expired. Please re-authorize to get fresh tokens."
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh token: {str(e)}"
         )
 
 

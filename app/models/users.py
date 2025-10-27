@@ -117,6 +117,10 @@ class Customer(BaseModel, table=True):
     enable_meta: Optional[bool] = Field(default=None, description="Enable Meta/Facebook marketing features")
     enable_google: Optional[bool] = Field(default=None, description="Enable Google marketing features")
     
+    # Denormalized fields for fast access (duplicated from agencies and campaigners)
+    agency_name: Optional[str] = Field(default=None, max_length=255, description="Denormalized agency name for fast read access")
+    campaigner_name: Optional[str] = Field(default=None, max_length=255, description="Denormalized campaigner name for fast read access")
+    
     # Active status
     is_active: bool = Field(default=True, description="Whether this customer record is active")
 
