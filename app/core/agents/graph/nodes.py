@@ -2,6 +2,7 @@
 
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, AIMessage
 import json
 import logging
@@ -9,6 +10,7 @@ import logging
 from .state import GraphState
 from .agents import get_agent
 from ..database.tools import DatabaseTool
+from app.services.agent_service import AgentService
 
 logger = logging.getLogger(__name__)
 
@@ -16,17 +18,59 @@ logger = logging.getLogger(__name__)
 class ChatbotNode:
     """Chatbot node that interacts with users and routes tasks to specialized agents."""
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
-        self.system_prompt = """You are a helpful marketing campaign assistant chatbot.
+        self.agent_service = AgentService()
+        self.system_prompt = self._load_system_prompt()
+
+    def _load_system_prompt(self) -> str:
+        """Load chatbot system prompt from database or use fallback."""
+        try:
+            # Try to get chatbot orchestrator config from database
+            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator")
+
+            if chatbot_config:
+                logger.info("✅ Loaded chatbot orchestrator config from database")
+
+                # Build system prompt from database config
+                role = chatbot_config.get('role', 'Marketing Campaign Assistant Chatbot')
+                goal = chatbot_config.get('goal', '')
+                backstory = chatbot_config.get('backstory', '')
+                task_template = chatbot_config.get('task', '')
+
+                # Combine into a system prompt
+                prompt_parts = []
+                if role:
+                    prompt_parts.append(f"{role}.")
+                if backstory:
+                    prompt_parts.append(f"\n{backstory}")
+                if goal:
+                    prompt_parts.append(f"\nYour goal: {goal}")
+                if task_template:
+                    prompt_parts.append(f"\nTask instructions:\n{task_template}")
+
+                return "\n".join(prompt_parts)
+            else:
+                logger.warning("⚠️  Chatbot orchestrator config not found in database, using fallback")
+                return self._get_fallback_prompt()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load chatbot config from database: {e}")
+            return self._get_fallback_prompt()
+
+    def _get_fallback_prompt(self) -> str:
+        """Fallback system prompt if database config is not available."""
+        return """
+Your name is Sato. You are a helpful marketing campaign assistant chatbot.
 
 Your role is to:
-1. Have natural conversations with users (campaigners) to understand their intent
+1. Have natural conversations with users (campaigners) in their own language to understand their intent
 2. Ask clarifying follow-up questions when needed
 3. Route tasks to the appropriate specialized agent when you have enough information
 
 IMPORTANT: The user is already authenticated and their campaigner_id is automatically provided to all agents.
-You do NOT need to ask users for their ID - it's already available in the system.
+You do NOT need to ask users for their ID - it's already available in the system. 
+you can't answer questions related to other users or campaigners.
 
 Available agents you can route to:
 - basic_info_agent: Answers questions about agency info, user info, campaigns, and KPIs using database access
@@ -135,7 +179,7 @@ Remember: You have access to the user's identity through the system - never ask 
 
         except (json.JSONDecodeError, KeyError) as e:
             # If not JSON, treat as clarification message
-            logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}")
+            logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}. content: {content}")
             return {
                 "messages": state["messages"] + [AIMessage(content=response.content)],
                 "needs_clarification": True,
@@ -147,7 +191,7 @@ Remember: You have access to the user's identity through the system - never ask 
 class AgentExecutorNode:
     """Node that executes the appropriate specialized agent."""
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
 
     def execute(self, state: GraphState) -> Dict[str, Any]:

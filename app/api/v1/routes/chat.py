@@ -42,9 +42,21 @@ async def chat(
         logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
 
         # Get conversation workflow for this thread (with campaigner_id)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Request: {request}")
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campainer: {current_user.full_name} (ID: {current_user.id})")
         workflow = app_state.get_conversation_workflow(current_user.id, thread_id)
-
+        
+        # Most likely never come here because of get_current_user requires msg len >= 1
+        if not request.message.strip():
+            # Return chat intialization response without processing
+            logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
+            return ChatResponse(
+                message="",
+                thread_id=thread_id,
+                needs_clarification=False,
+                ready_for_analysis=False,
+                intent=None
+            )
+        
         # Process message
         logger.debug(f"🔄 [Chat] Processing message through workflow...")
         result = workflow.process_message(request.message)

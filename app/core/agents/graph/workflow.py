@@ -2,7 +2,8 @@
 
 from typing import Literal
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 import os
 import logging
@@ -42,11 +43,12 @@ class ConversationWorkflow:
         }
 
         # Initialize LLM
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.7,
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
+        # self.llm = ChatOpenAI(
+        #     model="gpt-4o-mini",
+        #     temperature=0.7,
+        #     api_key=os.getenv("OPENAI_API_KEY")
+        # )
+        self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
         logger.debug(f"🤖 [Workflow] LLM initialized: gpt-4o-mini")
 
         # Initialize nodes
@@ -156,6 +158,7 @@ class ConversationWorkflow:
 
 
 # Module-level function to build and return the compiled graph
+#TODO: Review why it is needed if already in ConversationWorkflow
 def build_graph():
     """Build and return the compiled chatbot routing graph.
 
@@ -165,11 +168,12 @@ def build_graph():
         Compiled graph application
     """
     # Initialize LLM
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.7,
-        api_key=os.getenv("OPENAI_API_KEY")
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    # llm = ChatOpenAI(
+    #     model="gpt-4o-mini",
+    #     temperature=0.7,
+    #     api_key=os.getenv("OPENAI_API_KEY")
+    # )
 
     # Initialize nodes
     chatbot_node = ChatbotNode(llm)
@@ -239,7 +243,7 @@ try:
     graph = build_graph()
 except Exception as e:
     # During testing, graph will be built lazily
-    if not os.getenv("OPENAI_API_KEY"):
-        graph = None
-    else:
+    # if not os.getenv("OPENAI_API_KEY"):
+    #     graph = None
+    # else:
         raise

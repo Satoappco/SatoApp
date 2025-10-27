@@ -3,6 +3,7 @@
 from typing import Dict, Any
 import logging
 from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 from ..crew.crew import AnalyticsCrew
 from .sql_agent import SQLBasicInfoAgent
 
@@ -15,7 +16,7 @@ class AnalyticsCrewPlaceholder:
     (Facebook Ads, Google Marketing, etc.) and generate insights.
     """
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
         self.analytics_crew = AnalyticsCrew()
 
@@ -73,7 +74,7 @@ class CampaignPlanningCrewPlaceholder:
     and distribute them to advertising platforms.
     """
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: BaseChatModel):
         self.llm = llm
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -99,7 +100,7 @@ class CampaignPlanningCrewPlaceholder:
         }
 
 
-def get_agent(agent_name: str, llm: ChatOpenAI):
+def get_agent(agent_name: str, llm: BaseChatModel):
     """Get an agent instance by name.
 
     Args:
