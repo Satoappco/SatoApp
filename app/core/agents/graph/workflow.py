@@ -5,11 +5,13 @@ from langgraph.graph import StateGraph, END
 # from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from langchain_community.chat_message_histories import PostgresChatMessageHistory
 import os
 import logging
 
 from .state import GraphState
 from .nodes import ChatbotNode, AgentExecutorNode, ErrorHandlerNode
+from app.core.agents.database.connection import get_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +25,35 @@ class ConversationWorkflow:
     3. Routes tasks to specialized agents when ready
     """
 
-    def __init__(self, campaigner_id: int = 1):
-        logger.info("🏗️  [Workflow] Initializing ConversationWorkflow")
+    def __init__(self, campaigner_id: int = 1, thread_id: str = "default"):
+        logger.info(f"🏗️  [Workflow] Initializing ConversationWorkflow for thread: {thread_id[:8]}...")
 
-        # Store campaigner_id for this workflow
+        # Store campaigner_id and thread_id for this workflow
         self.campaigner_id = campaigner_id
-        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner_id}")
+        self.thread_id = thread_id
+        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner_id} | Thread ID: {thread_id[:8]}...")
+
+        # Initialize PostgreSQL chat message history
+        try:
+            connection_string = get_database_url()
+            # Use a unique session_id combining campaigner_id and thread_id
+            session_id = f"campaigner_{campaigner_id}_thread_{thread_id}"
+            self.message_history = PostgresChatMessageHistory(
+                connection_string=connection_string,
+                session_id=session_id
+            )
+            logger.info(f"✅ [Workflow] PostgreSQL chat history initialized for session: {session_id[:30]}...")
+        except Exception as e:
+            logger.error(f"❌ [Workflow] Failed to initialize PostgreSQL chat history: {e}")
+            raise
 
         # Initialize conversation state (persistent across messages)
+        # Load existing messages from database
+        existing_messages = self.message_history.messages
+        logger.debug(f"📜 [Workflow] Loaded {len(existing_messages)} existing messages from database")
+
         self.conversation_state = {
-            "messages": [],
+            "messages": existing_messages,  # Load from PostgreSQL
             "next_agent": None,
             "agent_task": None,
             "agent_result": None,
@@ -130,7 +151,14 @@ class ConversationWorkflow:
         logger.info(f"🔄 [Workflow] Processing message: '{message[:50]}...'")
         logger.debug(f"♻️  [Workflow] Continuing with {len(self.conversation_state.get('messages', []))} existing messages")
 
-        # Add user message to persistent state
+        # Add user message to PostgreSQL history
+        try:
+            self.message_history.add_user_message(message)
+            logger.debug(f"💾 [Workflow] User message saved to PostgreSQL")
+        except Exception as e:
+            logger.error(f"❌ [Workflow] Failed to save user message to PostgreSQL: {e}")
+
+        # Add user message to state for processing
         self.conversation_state["messages"].append(HumanMessage(content=message))
 
         # Reset flags for this turn
@@ -146,6 +174,19 @@ class ConversationWorkflow:
 
         # Update persistent state with result
         self.conversation_state.update(result)
+
+        # Save AI response to PostgreSQL
+        messages = result.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "content"):
+                try:
+                    # Only save if it's an AI message (not user message)
+                    if last_message.type == "ai":
+                        self.message_history.add_ai_message(last_message.content)
+                        logger.debug(f"💾 [Workflow] AI message saved to PostgreSQL")
+                except Exception as e:
+                    logger.error(f"❌ [Workflow] Failed to save AI message to PostgreSQL: {e}")
 
         logger.info(
             f"✅ [Workflow] Graph completed | "

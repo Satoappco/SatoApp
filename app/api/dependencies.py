@@ -28,7 +28,10 @@ class ApplicationState:
         """Get or create conversation workflow for thread."""
         if thread_id not in self._conversation_workflows:
             logger.info(f"🆕 [AppState] Creating new workflow for thread: {thread_id[:8]}... | Campaigner: {campaigner_id}")
-            self._conversation_workflows[thread_id] = ConversationWorkflow(campaigner_id=campaigner_id)
+            self._conversation_workflows[thread_id] = ConversationWorkflow(
+                campaigner_id=campaigner_id,
+                thread_id=thread_id
+            )
         else:
             logger.debug(f"♻️  [AppState] Reusing existing workflow for thread: {thread_id[:8]}...")
         return self._conversation_workflows[thread_id]

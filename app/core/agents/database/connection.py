@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 def get_database_url() -> str:
     """
     Get database URL from environment variables.
-
     Supports both DATABASE_URL (full URL) or individual components.
-
     Returns:
         Database connection URL
 
