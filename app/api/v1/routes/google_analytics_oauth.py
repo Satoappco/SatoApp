@@ -4,12 +4,18 @@ Handles the OAuth flow and automatically creates GA4 connections
 """
 
 import os
+import uuid
+import asyncio
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from google_auth_oauthlib.flow import Flow
 
 router = APIRouter(prefix="/google-analytics", tags=["google-analytics-oauth"])
+
+# In-memory session storage for async property fetching
+# Format: {session_id: {credentials: Credentials, properties: [...], accounts_to_process: [...], current_page_tokens: {...}, is_complete: bool}}
+PROPERTY_FETCH_SESSIONS = {}
 
 
 
@@ -175,7 +181,10 @@ class OAuthCallbackResponse(BaseModel):
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     expires_in: Optional[int] = None
-    properties: Optional[List[Dict[str, Any]]] = None  # List of available properties
+    properties: Optional[List[Dict[str, Any]]] = None  # List of available properties (initial batch)
+    session_id: Optional[str] = None  # Session ID for async loading
+    is_complete: Optional[bool] = None  # Whether all properties are loaded
+    estimated_total: Optional[int] = None  # Estimated total property count
 
 
 class CreateConnectionRequest(BaseModel):
@@ -381,53 +390,115 @@ async def handle_oauth_callback(
         # Store OAuth tokens temporarily (in a real app, use Redis or database)
         # For now, we'll just return the tokens and available properties to the frontend
         
-        # Get real GA4 properties
-        properties = []
+        # Get settings for pagination configuration
+        from app.config.settings import get_settings
+        settings = get_settings()
+        
+        # Get real GA4 properties with pagination
+        initial_properties = []
         try:
             from google.analytics.admin import AnalyticsAdminServiceClient
             from google.analytics.admin_v1alpha.types import ListPropertiesRequest
             client = AnalyticsAdminServiceClient(credentials=credentials)
             
-            print("DEBUG: Fetching real GA4 properties from Google...")
+            print("DEBUG: Fetching GA4 properties with pagination...")
             
-            # List all accounts
-            accounts = client.list_accounts()
-            for account in accounts:
-                print(f"DEBUG: Found GA account: {account.display_name}")
-                # List properties for each account using proper request format
-                request = ListPropertiesRequest(filter=f"parent:{account.name}")
-                account_properties = client.list_properties(request=request)
-                for property_obj in account_properties:
-                    properties.append({
-                        'property_id': property_obj.name.split('/')[-1],
-                        'property_name': property_obj.display_name,
-                        'account_id': account.name.split('/')[-1],
-                        'account_name': account.display_name,
-                        'display_name': property_obj.display_name
-                    })
-                    print(f"DEBUG: Found GA property: {property_obj.display_name} (ID: {property_obj.name.split('/')[-1]})")
+            # List all accounts first
+            accounts = list(client.list_accounts())
+            accounts_list = [{"name": acc.name, "display_name": acc.display_name} for acc in accounts]
+            
+            print(f"DEBUG: Found {len(accounts_list)} GA accounts")
+            
+            # Fetch initial batch of properties (limited by page_size)
+            session_id = str(uuid.uuid4())
+            initial_properties = []
+            total_accounts = len(accounts_list)
+            accounts_to_process = []
+            current_page_tokens = {}
+            
+            # Fetch properties from first account(s) to get initial batch
+            properties_fetched = 0
+            reached_limit = False
+            for i, account in enumerate(accounts_list):
+                if properties_fetched >= settings.ga_initial_properties_limit:
+                    # Store remaining accounts for async processing
+                    accounts_to_process = accounts_list[i:]  # From current account onwards
+                    reached_limit = True
+                    print(f"DEBUG: Reached {settings.ga_initial_properties_limit} property limit at account {i+1}/{total_accounts}")
+                    break
+                
+                print(f"DEBUG: Processing account {i+1}/{total_accounts}: {account['display_name']}")
+                try:
+                    request = ListPropertiesRequest(
+                        filter=f"parent:{account['name']}",
+                        page_size=settings.ga_properties_page_size
+                    )
+                    account_properties = client.list_properties(request=request)
+                    
+                    for property_obj in account_properties:
+                        if properties_fetched >= settings.ga_initial_properties_limit:
+                            # Reached initial limit, store remaining accounts for async processing
+                            accounts_to_process = accounts_list[i:]  # From current account onwards (might have more props)
+                            reached_limit = True
+                            break
+                        
+                        initial_properties.append({
+                            'property_id': property_obj.name.split('/')[-1],
+                            'property_name': property_obj.display_name,
+                            'account_id': account['name'].split('/')[-1],
+                            'account_name': account['display_name'],
+                            'display_name': property_obj.display_name
+                        })
+                        properties_fetched += 1
+                        print(f"DEBUG: Found GA property: {property_obj.display_name} (ID: {property_obj.name.split('/')[-1]})")
+                    
+                    if reached_limit:
+                        break
+                        
+                except Exception as e:
+                    print(f"WARNING: Failed to fetch properties for account {account['display_name']}: {e}")
+                    # Continue with next account - don't break
+                    pass
+            
+            # If we never set accounts_to_process, no more work to do
+            if not reached_limit:
+                accounts_to_process = []
+                print(f"DEBUG: Processed all accounts, no more properties to fetch")
+            
+            # Determine if loading is complete
+            is_complete = len(accounts_to_process) == 0
+            
+            # Store session for async fetching
+            PROPERTY_FETCH_SESSIONS[session_id] = {
+                "credentials": credentials,
+                "properties": initial_properties.copy(),
+                "accounts_to_process": accounts_to_process,
+                "current_page_tokens": current_page_tokens,
+                "is_complete": is_complete,
+                "campaigner_id": campaigner_id,
+                "customer_id": customer_id
+            }
+            
+            print(f"DEBUG: Initial fetch complete - {len(initial_properties)} properties, {len(accounts_to_process)} accounts remaining, is_complete={is_complete}")
+            
         except Exception as e:
             print(f"DEBUG: Failed to get GA4 properties: {e}")
             import traceback
             traceback.print_exc()
             # Return error instead of demo data
-            return {
-                "success": False,
-                "error": f"Failed to fetch Google Analytics properties: {str(e)}",
-                "properties": []
-            }
+            return OAuthCallbackResponse(
+                success=False,
+                message=f"Failed to fetch Google Analytics properties: {str(e)}"
+            )
         
-        if not properties:
+        # If no properties at all found
+        if not initial_properties and not accounts_to_process:
             return OAuthCallbackResponse(
                 success=False,
                 message="No Google Analytics properties found for this account"
             )
         
-        print(f"DEBUG: Found {len(properties)} GA properties total")
-        
-        # Debug: Print all properties found
-        for i, prop in enumerate(properties):
-            print(f"DEBUG: Property {i+1}: {prop['property_name']} (ID: {prop['property_id']})")
+        print(f"DEBUG: Returning {len(initial_properties)} initial properties, session_id: {session_id}")
         
         # Use campaigner_id from JWT state (already validated above)
         from app.models.users import Campaigner
@@ -460,7 +531,10 @@ async def handle_oauth_callback(
             access_token=credentials.token,
             refresh_token=credentials.refresh_token or '',
             expires_in=3600,
-            properties=properties  # Include the properties list for frontend selection
+            properties=initial_properties,  # Initial batch of properties
+            session_id=session_id,  # For polling for more properties
+            is_complete=is_complete,  # Use the computed value
+            estimated_total=None  # Will be populated by progress endpoint
         )
         
     except Exception as e:
@@ -609,3 +683,160 @@ async def get_ga_properties(request: dict):
         import traceback
         traceback.print_exc()
         return {"success": False, "message": f"Failed to get properties: {str(e)}"}
+
+
+@router.get("/fetch-properties-progress/{session_id}")
+async def get_properties_progress(session_id: str):
+    """Poll endpoint for checking progress of async property fetching"""
+    try:
+        if session_id not in PROPERTY_FETCH_SESSIONS:
+            return {
+                "success": False,
+                "message": "Session not found",
+                "properties": [],
+                "is_complete": True
+            }
+        
+        session_data = PROPERTY_FETCH_SESSIONS[session_id]
+        
+        # If already complete, just return current state
+        if session_data["is_complete"]:
+            return {
+                "success": True,
+                "properties": session_data["properties"],
+                "is_complete": True,
+                "progress": {
+                    "property_count": len(session_data["properties"])
+                }
+            }
+        
+        # Otherwise, start async fetching if not already started
+        if "fetching" not in session_data:
+            session_data["fetching"] = True
+            # Start background task to fetch remaining properties
+            asyncio.create_task(fetch_remaining_properties(session_id, session_data))
+        
+        # Return current properties
+        return {
+            "success": True,
+            "properties": session_data["properties"],
+            "is_complete": session_data["is_complete"],
+            "progress": {
+                "property_count": len(session_data["properties"]),
+                "accounts_remaining": len(session_data.get("accounts_to_process", []))
+            }
+        }
+    
+    except Exception as e:
+        print(f"Error getting properties progress: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "message": str(e),
+            "properties": [],
+            "is_complete": True
+        }
+
+
+async def fetch_remaining_properties(session_id: str, session_data: Dict[str, Any]):
+    """Background task to fetch remaining properties in batches"""
+    try:
+        from google.analytics.admin import AnalyticsAdminServiceClient
+        from google.analytics.admin_v1alpha.types import ListPropertiesRequest
+        from app.config.settings import get_settings
+        
+        settings = get_settings()
+        credentials = session_data["credentials"]
+        client = AnalyticsAdminServiceClient(credentials=credentials)
+        
+        print(f"DEBUG: Starting async property fetch for session {session_id}")
+        
+        accounts_to_process = session_data.get("accounts_to_process", [])
+        batch_size = settings.ga_async_batch_size
+        batch_delay = settings.ga_async_batch_delay
+        
+        current_batch = []
+        properties_in_batch = 0
+        
+        for account in accounts_to_process:
+            if session_data["is_complete"]:
+                break
+            
+            try:
+                print(f"DEBUG: Processing account: {account['display_name']}")
+                request = ListPropertiesRequest(
+                    filter=f"parent:{account['name']}",
+                    page_size=settings.ga_properties_page_size
+                )
+                account_properties = client.list_properties(request=request)
+                
+                for property_obj in account_properties:
+                    # Check if we should pause and release this batch
+                    if properties_in_batch >= batch_size:
+                        # Add batch to session
+                        session_data["properties"].extend(current_batch)
+                        print(f"DEBUG: Released batch of {len(current_batch)} properties (total: {len(session_data['properties'])})")
+                        print(f"DEBUG: Session now has {len(session_data['properties'])} total properties for polling")
+                        
+                        # Wait before next batch
+                        await asyncio.sleep(batch_delay)
+                        
+                        # Reset batch
+                        current_batch = []
+                        properties_in_batch = 0
+                    
+                    property_data = {
+                        'property_id': property_obj.name.split('/')[-1],
+                        'property_name': property_obj.display_name,
+                        'account_id': account['name'].split('/')[-1],
+                        'account_name': account['display_name'],
+                        'display_name': property_obj.display_name
+                    }
+                    current_batch.append(property_data)
+                    properties_in_batch += 1
+                    print(f"DEBUG: Added property to batch: {property_obj.display_name}")
+                
+            except Exception as e:
+                print(f"WARNING: Failed to fetch properties for account {account['display_name']}: {e}")
+                continue
+        
+        # Add any remaining properties in the current batch
+        if current_batch:
+            session_data["properties"].extend(current_batch)
+            print(f"DEBUG: Released final batch of {len(current_batch)} properties")
+        
+        # Deduplicate properties by property_id
+        seen_ids = set()
+        unique_properties = []
+        for prop in session_data["properties"]:
+            if prop['property_id'] not in seen_ids:
+                seen_ids.add(prop['property_id'])
+                unique_properties.append(prop)
+        
+        session_data["properties"] = unique_properties
+        print(f"DEBUG: Deduplicated properties: {len(session_data['properties'])} unique (from {len(unique_properties) + len(seen_ids) - len(session_data['properties'])} with duplicates)")
+        
+        # Mark as complete
+        session_data["is_complete"] = True
+        print(f"DEBUG: Async property fetch complete for session {session_id}, total properties: {len(session_data['properties'])}")
+        
+        # Cache the results
+        from app.services.google_analytics_service import GoogleAnalyticsService
+        GoogleAnalyticsService.cache_user_properties(
+            session_data["campaigner_id"],
+            session_data["customer_id"],
+            session_data["properties"]
+        )
+        
+        # Schedule cleanup (remove after 10 minutes)
+        await asyncio.sleep(600)
+        if session_id in PROPERTY_FETCH_SESSIONS:
+            del PROPERTY_FETCH_SESSIONS[session_id]
+            print(f"DEBUG: Cleaned up session {session_id}")
+    
+    except Exception as e:
+        print(f"ERROR: Failed to fetch remaining properties: {e}")
+        import traceback
+        traceback.print_exc()
+        session_data["is_complete"] = True  # Mark as complete even on error

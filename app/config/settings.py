@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     max_concurrent_analyses: int = 10
     request_timeout_seconds: int = 30
     
+    # GA Property Fetching Configuration
+    ga_initial_properties_limit: int = 20  # Properties to return immediately
+    ga_properties_page_size: int = 50      # Batch size for fetching
+    ga_async_batch_size: int = 10          # Properties per batch in background fetch
+    ga_async_batch_delay: float = 0.5      # Delay between batches (seconds)
+    ga_property_cache_ttl: int = 3600      # Cache for 1 hour
+    
     # Monitoring
     sentry_dsn: Optional[str] = None
     log_level: str = "INFO"

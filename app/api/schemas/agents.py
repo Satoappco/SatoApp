@@ -17,7 +17,7 @@ class AgentConfigRequest(BaseModel):
     task: Optional[str] = Field("", description="Task template", max_length=200000)
     capabilities: Dict[str, Any] = Field(default_factory=dict, description="Agent capabilities")
     tools: List[str] = Field(default_factory=list, description="Assigned tools")
-    max_iterations: int = Field(1, ge=1, le=10, description="Maximum iterations")
+    max_iterations: int = Field(1, ge=1, le=50, description="Maximum iterations")
     allow_delegation: bool = Field(False, description="Allow delegation to other agents")
     verbose: bool = Field(True, description="Verbose logging")
     
@@ -84,12 +84,12 @@ class AgentConfigData(BaseModel):
     goal: str
     backstory: Optional[str] = ""
     task: Optional[str] = ""
-    capabilities: Dict[str, Any]
-    tools: List[str]
-    max_iterations: int
-    allow_delegation: bool
-    verbose: bool
-    is_active: bool
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
+    tools: List[str] = Field(default_factory=list)
+    max_iterations: int = Field(1, ge=1, le=50)
+    allow_delegation: bool = False
+    verbose: bool = True
+    is_active: bool = True
     created_at: str
     updated_at: str
 

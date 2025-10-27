@@ -670,6 +670,9 @@ class GoogleAdsService:
             
             connections = []
             for connection, digital_asset in results:
+                # Check if token is outdated using backend logic (avoids timezone issues)
+                is_outdated = self.is_token_expired(connection.expires_at) if connection.expires_at else True
+                
                 connections.append({
                     "connection_id": connection.id,
                     "digital_asset_id": digital_asset.id,
@@ -678,7 +681,8 @@ class GoogleAdsService:
                     "account_email": connection.account_email,
                     "expires_at": connection.expires_at.isoformat() if connection.expires_at else None,
                     "is_active": digital_asset.is_active,
-                    "created_at": connection.created_at.isoformat() if connection.created_at else None
+                    "created_at": connection.created_at.isoformat() if connection.created_at else None,
+                    "is_outdated": is_outdated
                 })
             
             return connections

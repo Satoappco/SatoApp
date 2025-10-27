@@ -88,9 +88,15 @@ except FileNotFoundError:
 
 # Parse all environment variables and convert to development URLs
 env_vars = {}
+# Reserved environment variables that Cloud Run sets automatically
+RESERVED_VARS = ['PORT']
+
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
+        # Skip reserved environment variables
+        if key in RESERVED_VARS:
+            continue
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue

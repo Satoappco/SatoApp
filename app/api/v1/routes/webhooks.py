@@ -995,7 +995,7 @@ async def handle_dialogcx_webhook(
             # Extract user information with support for both old and new field names
             campaigner_id = parameters.get("campaigner_id") or parameters.get("user_id")
             agency_id = parameters.get("agency_id")  # No fallback - agency_id should be explicit
-            customer_id = parameters.get("customer_id") or parameters.get("subcustomer_id")
+            customer_id = parameters.get("customer_id")
             
             # Use new field names for internal processing
             campaigner_id = campaigner_id  # Use campaigner_id directly

@@ -90,9 +90,10 @@ class AgentService:
             
         # Define all valid placeholders that can be used in task templates
         valid_placeholders = {
-            'objective', 'campaigner_id', 'customer_id', 'intent_name', 
+            'objective', 'campaigner_id', 'customer_id', 'customer_name', 'intent_name', 
             'data_sources', 'data_source', 'available_specialists',
-            'date_range', 'timezone', 'currency', 'attribution_window'
+            'date_range', 'timezone', 'currency', 'attribution_window',
+            'current_date'
         }
         
         try:
@@ -179,7 +180,11 @@ class AgentService:
             if isinstance(config_data.get('tools'), list):
                 config_data['tools'] = json.dumps(config_data['tools'])
             
-            return self.db_manager.upsert_agent_config(config_data)
+            # Store in database
+            result = self.db_manager.upsert_agent_config(config_data)
+            
+            # Convert back to objects for response
+            return self._convert_datetime_to_string(result)
             
         except AgentException:
             raise
