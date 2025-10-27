@@ -10,6 +10,7 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from ..tools.postgres_tool import PostgresTool
+from app.services.agent_service import AgentService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class SQLBasicInfoAgent:
     def __init__(self, llm: BaseChatModel):
         self.llm = llm
         self.validator_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash") #ChatOpenAI(model="gpt-4o-mini", temperature=0)  # Dedicated validator
+        self.agent_service = AgentService()
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a database query task.
@@ -121,8 +123,98 @@ class SQLBasicInfoAgent:
 
         context_str = "\n".join(context_parts) if context_parts else ""
 
-        # Build the system message with proper escaping
-        system_message = """You are an expert SQL database assistant with READ-ONLY access to a PostgreSQL database.
+        # Load system message from database or use fallback
+        system_message = self._load_system_prompt(schema_str, context_str)
+
+
+        # Create prompt template
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_message),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{input}"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ])
+
+        # Create tool-calling agent
+        agent = create_tool_calling_agent(
+            llm=self.llm,
+            tools=[postgres_tool],
+            prompt=prompt
+        )
+
+        # Create agent executor
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=[postgres_tool],
+            verbose=True,
+            max_iterations=5,
+            handle_parsing_errors=True,
+            return_intermediate_steps=False
+        )
+
+        return agent_executor
+
+    def _load_system_prompt(self, schema_str: str, context_str: str) -> str:
+        """Load SQL agent system prompt from database or use fallback.
+
+        Args:
+            schema_str: Formatted database schema string
+            context_str: Formatted context string
+
+        Returns:
+            System prompt string
+        """
+        try:
+            # Try to get SQL agent config from database
+            sql_agent_config = self.agent_service.get_agent_config("sql_database_expert")
+
+            if sql_agent_config:
+                logger.info("✅ Loaded SQL database expert config from database")
+
+                # Build system prompt from database config
+                role = sql_agent_config.get('role', 'SQL database assistant')
+                goal = sql_agent_config.get('goal', '')
+                backstory = sql_agent_config.get('backstory', '')
+                task_template = sql_agent_config.get('task', '')
+
+                # Build the system message
+                prompt_parts = []
+                if role:
+                    prompt_parts.append(f"{role}.")
+                if backstory:
+                    prompt_parts.append(f"\n{backstory}")
+                if goal:
+                    prompt_parts.append(f"\nYour goal: {goal}")
+
+                # Add schema and context
+                prompt_parts.append(f"\nDatabase Schema:\n```json\n{schema_str}\n```")
+                if context_str:
+                    prompt_parts.append(f"\n{context_str}")
+
+                # Add task instructions
+                if task_template:
+                    prompt_parts.append(f"\n{task_template}")
+
+                return "\n".join(prompt_parts)
+            else:
+                logger.warning("⚠️  SQL database expert config not found in database, using fallback")
+                return self._get_fallback_prompt(schema_str, context_str)
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load SQL agent config from database: {e}")
+            return self._get_fallback_prompt(schema_str, context_str)
+
+    def _get_fallback_prompt(self, schema_str: str, context_str: str) -> str:
+        """Fallback system prompt if database config is not available.
+
+        Args:
+            schema_str: Formatted database schema string
+            context_str: Formatted context string
+
+        Returns:
+            Fallback system prompt
+        """
+        return """You are an expert SQL database assistant with READ-ONLY access to a PostgreSQL database.
 
 Your role is to:
 1. Understand the user's question
@@ -188,30 +280,3 @@ When answering:
 - If no data found, explain what was searched
 - Respond in the user's language
 """
-
-        # Create prompt template
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_message),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
-
-        # Create tool-calling agent
-        agent = create_tool_calling_agent(
-            llm=self.llm,
-            tools=[postgres_tool],
-            prompt=prompt
-        )
-
-        # Create agent executor
-        agent_executor = AgentExecutor(
-            agent=agent,
-            tools=[postgres_tool],
-            verbose=True,
-            max_iterations=5,
-            handle_parsing_errors=True,
-            return_intermediate_steps=False
-        )
-
-        return agent_executor
