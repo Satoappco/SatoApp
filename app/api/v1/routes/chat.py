@@ -43,7 +43,7 @@ async def chat(
 
         # Get conversation workflow for this thread (with campaigner_id)
         logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campainer: {current_user.full_name} (ID: {current_user.id})")
-        workflow = app_state.get_conversation_workflow(current_user.id, thread_id)
+        workflow = app_state.get_conversation_workflow(current_user, thread_id)
         
         # Most likely never come here because of get_current_user requires msg len >= 1
         if not request.message.strip():

@@ -272,6 +272,7 @@ LIMIT 20
 4. Use proper JOINs to ensure security filtering
 5. Include LIMIT clauses to prevent large result sets (max 100 rows)
 6. Use meaningful column aliases for clarity
+7. only a single sql query is allowed, so DO NOT use semicolon(;) in the query. queries with semicolon will be rejected.
 
 When answering:
 - Be specific and reference actual data from query results

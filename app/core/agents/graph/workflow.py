@@ -12,6 +12,7 @@ import logging
 from .state import GraphState
 from .nodes import ChatbotNode, AgentExecutorNode, ErrorHandlerNode
 from app.core.agents.database.connection import get_database_url
+from app.models.users import Campaigner
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +26,19 @@ class ConversationWorkflow:
     3. Routes tasks to specialized agents when ready
     """
 
-    def __init__(self, campaigner_id: int = 1, thread_id: str = "default"):
+    def __init__(self, campaigner: Campaigner, thread_id: str = "default"):
         logger.info(f"🏗️  [Workflow] Initializing ConversationWorkflow for thread: {thread_id[:8]}...")
 
-        # Store campaigner_id and thread_id for this workflow
-        self.campaigner_id = campaigner_id
+        # Store campaigner id and thread_id for this workflow
+        self.campaigner = campaigner
         self.thread_id = thread_id
-        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner_id} | Thread ID: {thread_id[:8]}...")
+        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner.id} | Thread ID: {thread_id[:8]}...")
 
         # Initialize PostgreSQL chat message history
         try:
             connection_string = get_database_url()
-            # Use a unique session_id combining campaigner_id and thread_id
-            session_id = f"campaigner_{campaigner_id}_thread_{thread_id}"
+            # Use a unique session_id combining campaigner id and thread_id
+            session_id = f"campaigner_{campaigner.id}_thread_{thread_id}"
             self.message_history = PostgresChatMessageHistory(
                 connection_string=connection_string,
                 session_id=session_id
@@ -60,7 +61,7 @@ class ConversationWorkflow:
             "needs_clarification": False,
             "conversation_complete": False,
             "error": None,
-            "campaigner_id": campaigner_id
+            "campaigner": campaigner
         }
 
         # Initialize LLM

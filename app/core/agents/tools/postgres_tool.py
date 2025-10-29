@@ -48,8 +48,8 @@ class PostgresTool(BaseTool):
 
     Security: All queries are automatically filtered by the campaigner's agency.
     The tool ONLY accepts SELECT queries - no INSERT, UPDATE, DELETE, or DDL.
-
-    Input should be a valid PostgreSQL SELECT query.
+    
+    Input should be a valid SINGLE PostgreSQL SELECT query.
     Output will be a JSON array of result rows.
     """
 

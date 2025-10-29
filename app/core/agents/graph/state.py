@@ -2,7 +2,7 @@
 
 from typing import TypedDict, List, Dict, Any, Optional, Literal
 from langgraph.graph import MessagesState
-
+from app.models.users import Campaigner
 
 class GraphState(MessagesState):
     """State for the chatbot routing graph.
@@ -24,4 +24,4 @@ class GraphState(MessagesState):
     error: Optional[str]
 
     # User context (for authorization and data filtering)
-    campaigner_id: Optional[int] # ID of the authenticated campaigner
+    campaigner: Campaigner # ID of the authenticated campaigner

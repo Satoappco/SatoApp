@@ -7,6 +7,7 @@ import logging
 
 from app.core.agents.graph.workflow import ConversationWorkflow
 from app.core.agents.crew.crew import AnalyticsCrew
+from app.models.users import Campaigner
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,12 @@ class ApplicationState:
             logger.info("🏗️  [AppState] Created new ApplicationState singleton")
         return cls._instance
 
-    def get_conversation_workflow(self, campaigner_id: int, thread_id: str = "default") -> ConversationWorkflow:
+    def get_conversation_workflow(self, current_user: Campaigner, thread_id: str = "default") -> ConversationWorkflow:
         """Get or create conversation workflow for thread."""
         if thread_id not in self._conversation_workflows:
-            logger.info(f"🆕 [AppState] Creating new workflow for thread: {thread_id[:8]}... | Campaigner: {campaigner_id}")
+            logger.info(f"🆕 [AppState] Creating new workflow for thread: {thread_id[:8]}... | Campaigner: {current_user.id}")
             self._conversation_workflows[thread_id] = ConversationWorkflow(
-                campaigner_id=campaigner_id,
+                campaigner=current_user,
                 thread_id=thread_id
             )
         else:
