@@ -39,7 +39,7 @@ class ChatbotNode:
         """Load chatbot system prompt from database or use fallback."""
         try:
             # Try to get chatbot orchestrator config from database
-            chatbot_config = self.agent_service.get_agent_config("Sato main chatbot") if os.getenv("USE_DATABASE_CONFIG", "false") == "true" else None
+            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator") if os.getenv("USE_DATABASE_CONFIG", "false") == "true" else None
 
             if chatbot_config:
                 logger.info("✅ Loaded chatbot orchestrator config from database")
