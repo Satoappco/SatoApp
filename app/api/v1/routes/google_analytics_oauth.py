@@ -118,11 +118,96 @@ async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
     """
     Get Google Analytics OAuth URL for frontend to redirect to
     Accepts optional state parameter to preserve user context through OAuth flow
+    Only shows consent screen if no existing connection or scopes have changed
     """
     try:
         # Get settings
         from app.config.settings import get_settings
         settings = get_settings()
+        
+        # Requested scopes for Google Analytics
+        requested_scopes = [
+            'openid',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/analytics.readonly',
+            'https://www.googleapis.com/auth/analytics',
+            'https://www.googleapis.com/auth/analytics.manage.users.readonly'
+        ]
+        
+        # Determine if consent is needed by checking for existing connections
+        prompt_consent = True  # Default to consent
+        
+        if state:
+            try:
+                import jwt
+                from datetime import datetime
+                
+                # Decode JWT state to get campaigner_id and customer_id
+                payload = jwt.decode(
+                    state,
+                    settings.oauth_state_secret,
+                    algorithms=["HS256"]
+                )
+                
+                campaigner_id = payload.get('campaigner_id')
+                customer_id = payload.get('customer_id')
+                
+                # Check expiration
+                if datetime.utcnow().timestamp() > payload.get('exp', 0):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="OAuth state has expired"
+                    )
+                
+                # Query database for existing connections
+                if campaigner_id and customer_id:
+                    from app.config.database import get_session
+                    from app.models.analytics import Connection, DigitalAsset, AssetType
+                    from sqlmodel import select, and_
+                    
+                    with get_session() as session:
+                        # Find existing GA4 connections
+                        statement = select(Connection, DigitalAsset).join(
+                            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                        ).where(
+                            and_(
+                                Connection.campaigner_id == campaigner_id,
+                                Connection.customer_id == customer_id,
+                                DigitalAsset.asset_type == AssetType.GA4,
+                                Connection.revoked == False,
+                                Connection.expires_at.isnot(None)
+                            )
+                        )
+                        
+                        results = session.exec(statement).all()
+                        
+                        # Check if any existing connection has matching scopes
+                        for conn, asset in results:
+                            if conn.scopes:
+                                # Sort and compare scope lists
+                                conn_scopes = sorted(conn.scopes)
+                                requested_scopes_sorted = sorted(requested_scopes)
+                                
+                                if conn_scopes == requested_scopes_sorted:
+                                    # Matching scopes found - no need for consent
+                                    prompt_consent = False
+                                    print(f"✅ Found existing connection with matching scopes - skipping consent")
+                                    break
+                        
+                        if not prompt_consent:
+                            print(f"✅ Existing connection found with matching GA4 scopes - no consent needed")
+                        else:
+                            print(f"⚠️ No existing connection or scopes differ - consent required")
+                            
+            except jwt.InvalidTokenError:
+                # If state is invalid, default to consent
+                print(f"⚠️ Invalid OAuth state - defaulting to consent")
+                prompt_consent = True
+            except Exception as e:
+                # On any error, default to consent for safety
+                print(f"⚠️ Error checking existing connections: {e} - defaulting to consent")
+                prompt_consent = True
         
         # Create OAuth flow
         flow = Flow.from_client_config(
@@ -135,25 +220,24 @@ async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
                     "redirect_uris": [redirect_uri]
                 }
             },
-            scopes=[
-                'openid',
-                'https://www.googleapis.com/auth/userinfo.profile',
-                'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/analytics.readonly',
-                'https://www.googleapis.com/auth/analytics',
-                'https://www.googleapis.com/auth/analytics.manage.users.readonly'
-            ]
+            scopes=requested_scopes
         )
         
         # Set redirect URI
         flow.redirect_uri = redirect_uri
         
+        # Build authorization URL parameters
+        auth_params = {
+            "access_type": "offline",
+            "state": state  # Pass through the state parameter
+        }
+        
+        # Only add prompt parameter if consent is needed
+        if prompt_consent:
+            auth_params["prompt"] = "consent"
+        
         # Get authorization URL with state parameter
-        auth_url, _ = flow.authorization_url(
-            access_type='offline',
-            prompt='consent',
-            state=state  # Pass through the state parameter
-        )
+        auth_url, _ = flow.authorization_url(**auth_params)
         
         return {"auth_url": auth_url}
         

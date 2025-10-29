@@ -133,7 +133,6 @@ class DefaultDataService:
         """Create default agent configurations"""
         default_agents = [
             {
-                "agent_type": "seo_campaign_manager",
                 "name": "SEO Campaign Manager",
                 "role": "Expert SEO campaign manager specializing in search engine optimization and organic traffic growth",
                 "goal": "Analyze and optimize SEO campaigns to improve organic search rankings and traffic",
@@ -146,7 +145,6 @@ class DefaultDataService:
                 "capabilities": '{"data_sources": ["google_analytics", "google_search_console"], "specializations": ["seo", "organic_traffic", "keyword_optimization"]}'
             },
             {
-                "agent_type": "social_media_specialist",
                 "name": "Social Media Specialist",
                 "role": "Social media marketing expert focused on Facebook, Instagram, and other social platforms",
                 "goal": "Optimize social media campaigns to increase engagement, reach, and conversions",
@@ -159,7 +157,6 @@ class DefaultDataService:
                 "capabilities": '{"data_sources": ["facebook_ads", "instagram"], "specializations": ["social_media", "paid_social", "engagement"]}'
             },
             {
-                "agent_type": "ppc_specialist",
                 "name": "PPC Specialist",
                 "role": "Pay-per-click advertising expert specializing in Google Ads and other PPC platforms",
                 "goal": "Optimize PPC campaigns to maximize ROI and minimize cost per acquisition",
@@ -174,13 +171,15 @@ class DefaultDataService:
         ]
         
         for agent_data in default_agents:
-            # Check if agent already exists
+            # Check if agent already exists by name
             existing = session.exec(
-                select(AgentConfig).where(AgentConfig.agent_type == agent_data["agent_type"])
+                select(AgentConfig).where(AgentConfig.name == agent_data["name"])
             ).first()
             
             if not existing:
-                agent_config = AgentConfig(**agent_data)
+                # Filter out any invalid fields before creating AgentConfig
+                valid_fields = {k: v for k, v in agent_data.items() if hasattr(AgentConfig, k)}
+                agent_config = AgentConfig(**valid_fields)
                 session.add(agent_config)
                 logger.info(f"Created agent config: {agent_data['name']}")
     
@@ -197,6 +196,10 @@ class DefaultDataService:
             logger.warning(f"No default KPI settings found for customer {customer_id}")
             return
         
+        # Track currency-based KPIs for verification
+        currency_based_kpis = []
+        created_count = 0
+        
         # Create customer-specific KPI settings from defaults
         for default_setting in default_settings:
             # Check if this KPI setting already exists for this customer
@@ -212,6 +215,18 @@ class DefaultDataService:
             ).first()
             
             if not existing:
+                # Check if this is a currency-based KPI (primary KPIs that typically use currency)
+                is_currency_kpi = (
+                    default_setting.kpi_type == 'Primary' and 
+                    default_setting.unit in ['₪', '$', '€', '£', '¥', 'ש"ח']
+                )
+                if is_currency_kpi:
+                    currency_based_kpis.append({
+                        'name': default_setting.kpi_name,
+                        'objective': default_setting.campaign_objective,
+                        'unit': default_setting.unit
+                    })
+                
                 customer_kpi = KpiSettings(
                     composite_id=composite_id,
                     customer_id=customer_id,
@@ -223,9 +238,15 @@ class DefaultDataService:
                     unit=default_setting.unit
                 )
                 session.add(customer_kpi)
-                logger.info(f"Created KPI setting for customer {customer_id}: {default_setting.kpi_name}")
+                created_count += 1
+                logger.info(f"Created KPI setting for customer {customer_id}: {default_setting.kpi_name} ({default_setting.campaign_objective}, {default_setting.kpi_type}), unit: {default_setting.unit}")
         
-        logger.info(f"Created default KPI settings for customer {customer_id}")
+        # Log summary with currency unit verification
+        logger.info(f"Created {created_count} default KPI settings for customer {customer_id}")
+        if currency_based_kpis:
+            logger.info(f"Currency-based KPIs created for customer {customer_id}: {currency_based_kpis}")
+        else:
+            logger.warning(f"No currency-based KPIs found for customer {customer_id} - this may indicate an issue with default settings")
     
     
     def _create_default_questions(self, session: Session, customer_id: int, agency_id: int, campaigner_id: int):

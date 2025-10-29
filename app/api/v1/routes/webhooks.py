@@ -421,11 +421,14 @@ async def run_crewai_analysis_async(
                 logger.info(f"Skipping specialist: {specialist_data['name']} (not relevant for this request)")
                 continue
                 
-            agent_type = specialist_data["agent_type"]
+            # Use agent name as identifier (agent_type was removed)
+            agent_name = specialist_data.get("name", "")
+            # For tool lookup, try name first, fall back to deriving from name
+            agent_identifier = agent_name.lower().replace(" ", "_")
             
             # Get tools for this agent dynamically
             # Note: customer_id in this context is actually subclient_id
-            agent_tools = get_tools_for_agent(agent_type, user_connections, campaigner_id=campaigner_id, customer_id=customer_id, subclient_id=customer_id)
+            agent_tools = get_tools_for_agent(agent_identifier, user_connections, campaigner_id=campaigner_id, customer_id=customer_id, subclient_id=customer_id)
             
             # Create specialist agent using ONLY database configuration with timing
             specialist_agent = timing_wrapper.create_timed_agent(
@@ -460,13 +463,13 @@ async def run_crewai_analysis_async(
                 )
             else:
                 # Fallback if no task in database
-                specialist_task_description = f"Analyze {agent_type} data for: {user_question}"
+                specialist_task_description = f"Analyze {agent_name} data for: {user_question}"
             
             # CRITICAL FIX: Set context=[master_task] so specialist output feeds back to master
             specialist_task = Task(
                 description=specialist_task_description,
                 agent=specialist_agent,
-                expected_output=f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema",
+                expected_output=f"Detailed {agent_name} analysis following the specialist reply schema",
                 context=[master_task]  # ✅ This ensures output goes to master, not directly to user
             )
             specialist_tasks.append(specialist_task)
@@ -577,6 +580,7 @@ async def run_crewai_analysis_async(
             crewai_input_prompt=crewai_input_prompt,
             master_answer=str(result),
             campaigner_id=campaigner_id,
+            customer_id=customer_id,
             success=is_success,
             error_message=error_message
         )
@@ -729,10 +733,12 @@ def _should_include_specialist(specialist_config: Dict, data_sources: List[str],
     """Determine if a specialist should be included based on context"""
     from app.core.constants import should_include_agent
     
-    agent_type = specialist_config["agent_type"]
+    # Use agent name as identifier (agent_type was removed)
+    agent_name = specialist_config.get("name", "")
+    agent_identifier = agent_name.lower().replace(" ", "_")
     
     # Use standardized logic
-    return should_include_agent(agent_type, data_sources, user_question)
+    return should_include_agent(agent_identifier, data_sources, user_question)
 
 
 @router.get("/customer-logs")
@@ -740,21 +746,60 @@ async def get_customer_logs(
     limit: int = 5,
     offset: int = 0,
     campaigner_id: int = None,
+    customer_id: int = None,
     session_id: str = None,
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Get customer logs with filtering options - Used by frontend LogsViewer"""
     try:
         from app.config.database import get_session
+        from app.models.users import Customer
         
         with get_session() as session:
             query = session.query(CustomerLog)
             
+            # Check user role
+            user_role = current_user.role.upper() if current_user.role else 'CAMPAIGNER'
+            is_admin = user_role == 'ADMIN'
+            is_owner = user_role == 'OWNER'
+            is_privileged = is_admin or is_owner  # OWNER and ADMIN can see all customers
+            
             # Apply filters - use current user's ID if not specified
             target_campaigner_id = campaigner_id if campaigner_id else current_user.id
             
-            # Filter logs by campaigner_id
-            query = query.filter(CustomerLog.campaigner_id == target_campaigner_id)
+            # For non-privileged users, filter by campaigner_id to ensure they only see their logs
+            if not is_privileged:
+                query = query.filter(CustomerLog.campaigner_id == target_campaigner_id)
+            elif campaigner_id:
+                # Privileged users can optionally filter by campaigner_id
+                query = query.filter(CustomerLog.campaigner_id == campaigner_id)
+            
+            # Handle customer_id filtering
+            if not is_privileged:
+                # Regular campaigners must provide customer_id and can only see their assigned customers
+                if not customer_id:
+                    # Regular campaigner must select a customer - return empty result
+                    query = query.filter(CustomerLog.customer_id == -1)  # Impossible filter
+                else:
+                    # Verify that the requested customer_id belongs to this user
+                    customer_ids = session.query(Customer.id).filter(
+                        Customer.assigned_campaigner_id == current_user.id,
+                        Customer.is_active == True
+                    ).all()
+                    customer_id_list = [c[0] for c in customer_ids]
+                    
+                    if customer_id not in customer_id_list:
+                        # User doesn't have access to this customer - return empty result
+                        query = query.filter(CustomerLog.customer_id == -1)  # Impossible filter
+                    else:
+                        # Filter by the requested customer_id
+                        query = query.filter(CustomerLog.customer_id == customer_id)
+            else:
+                # OWNER and ADMIN - filter by customer_id if provided, otherwise show all
+                if customer_id:
+                    # Admin selected specific customer - show ONLY logs for that customer
+                    query = query.filter(CustomerLog.customer_id == customer_id)
+                # If no customer_id, privileged users see all logs (including NULL customer_id if any)
             
             if session_id:
                 query = query.filter(CustomerLog.session_id == session_id)
@@ -781,6 +826,7 @@ async def get_customer_logs(
                     "total_execution_time_ms": log.total_execution_time_ms,
                     "timing_breakdown": json.loads(log.timing_breakdown) if log.timing_breakdown else {},
                     "campaigner_id": log.campaigner_id,
+                    "customer_id": log.customer_id,
                     "analysis_id": log.analysis_id,
                     "success": log.success,
                     "error_message": log.error_message,
@@ -803,7 +849,27 @@ async def get_customer_logs(
             }
             
     except Exception as e:
-        logger.error(f"Failed to get customer logs: {str(e)}")
+        error_message = str(e)
+        logger.error(f"Failed to get customer logs: {error_message}")
+        
+        # Check if the error is about missing customer_id column (migration not run)
+        if "customer_id" in error_message.lower() and ("does not exist" in error_message.lower() or "undefinedcolumn" in error_message.lower()):
+            logger.warning("customer_id column not found - migration may not have been run. Returning empty results.")
+            # Return empty result instead of error
+            return {
+                "success": True,
+                "total_count": 0,
+                "logs": [],
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": False,
+                    "total_pages": 0,
+                    "current_page": 1,
+                    "total_count": 0
+                }
+            }
+        
         raise HTTPException(status_code=500, detail=f"Failed to get customer logs: {str(e)}")
 
 

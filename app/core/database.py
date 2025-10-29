@@ -20,14 +20,14 @@ class DatabaseManager:
         self.get_session = get_session
     
     # Agent Configuration Management
-    def get_agent_config(self, agent_type: str) -> Optional[Dict[str, Any]]:
-        """Get agent configuration by type"""
+    def get_agent_config(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get agent configuration by name"""
         try:
             with self.get_session() as session:
                 from app.models.agents import AgentConfig
                 
                 statement = select(AgentConfig).where(
-                    AgentConfig.agent_type == agent_type,
+                    AgentConfig.name == name,
                     AgentConfig.is_active == True
                 )
                 agent_config = session.exec(statement).first()
@@ -37,20 +37,20 @@ class DatabaseManager:
                 return None
                 
         except Exception as e:
-            logger.error(f"Failed to get agent config for {agent_type}: {str(e)}")
+            logger.error(f"Failed to get agent config for {name}: {str(e)}")
             raise DatabaseException(f"Failed to get agent config: {str(e)}")
     
-    def get_agent_config_by_type(self, agent_type: str, include_inactive: bool = False) -> Optional[Dict[str, Any]]:
-        """Get agent configuration by type, optionally including inactive agents"""
+    def get_agent_config_by_name(self, name: str, include_inactive: bool = False) -> Optional[Dict[str, Any]]:
+        """Get agent configuration by name, optionally including inactive agents"""
         try:
             with self.get_session() as session:
                 from app.models.agents import AgentConfig
                 
                 if include_inactive:
-                    statement = select(AgentConfig).where(AgentConfig.agent_type == agent_type)
+                    statement = select(AgentConfig).where(AgentConfig.name == name)
                 else:
                     statement = select(AgentConfig).where(
-                        AgentConfig.agent_type == agent_type,
+                        AgentConfig.name == name,
                         AgentConfig.is_active == True
                     )
                 
@@ -61,7 +61,7 @@ class DatabaseManager:
                 return None
                 
         except Exception as e:
-            logger.error(f"Failed to get agent config for {agent_type}: {str(e)}")
+            logger.error(f"Failed to get agent config for {name}: {str(e)}")
             raise DatabaseException(f"Failed to get agent config: {str(e)}")
     
     def upsert_agent_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,9 +77,9 @@ class DatabaseManager:
                     statement = select(AgentConfig).where(AgentConfig.id == config_data['id'])
                     existing_config = session.exec(statement).first()
                 
-                # If not found by ID, try to find by agent_type (for new agents or type-based updates)
-                if not existing_config:
-                    statement = select(AgentConfig).where(AgentConfig.agent_type == config_data['agent_type'])
+                # If not found by ID, try to find by name (for new agents or name-based updates)
+                if not existing_config and 'name' in config_data:
+                    statement = select(AgentConfig).where(AgentConfig.name == config_data['name'])
                     existing_config = session.exec(statement).first()
                 
                 if existing_config:
@@ -96,18 +96,20 @@ class DatabaseManager:
                     session.refresh(existing_config)
                     return self._agent_config_to_dict(existing_config)
                 else:
-                    # Create new config
+                    # Create new config (NO agent_type field)
                     new_config = AgentConfig(
-                        agent_type=config_data['agent_type'],
                         name=config_data['name'],
                         role=config_data['role'],
                         goal=config_data['goal'],
                         backstory=config_data['backstory'],
+                        task=config_data.get('task'),
                         capabilities=json.dumps(config_data.get('capabilities', {})),
                         tools=json.dumps(config_data.get('tools', [])),
                         max_iterations=config_data.get('max_iterations', 3),
+                        allow_delegation=config_data.get('allow_delegation', False),
+                        verbose=config_data.get('verbose', True),
                         is_active=config_data.get('is_active', True),
-                        created_by_user_id=config_data.get('created_by_user_id')
+                        created_by_campaigner_id=config_data.get('created_by_campaigner_id')
                     )
                     
                     session.add(new_config)
@@ -119,56 +121,52 @@ class DatabaseManager:
             logger.error(f"Failed to upsert agent config: {str(e)}")
             raise DatabaseException(f"Failed to upsert agent config: {str(e)}")
     
-    def delete_agent_config(self, agent_type: str) -> bool:
-        """Permanently delete agent configuration from database"""
+    def delete_agent_config(self, name: str) -> bool:
+        """Permanently delete agent configuration from database by name"""
         try:
             with self.get_session() as session:
                 from app.models.agents import AgentConfig
                 
-                # Find the agent by type
-                statement = select(AgentConfig).where(AgentConfig.agent_type == agent_type)
+                # Find the agent by name
+                statement = select(AgentConfig).where(AgentConfig.name == name)
                 agent_config = session.exec(statement).first()
                 
                 if not agent_config:
-                    logger.warning(f"Agent {agent_type} not found for deletion")
+                    logger.warning(f"Agent {name} not found for deletion")
                     return False
                 
                 # Delete the agent
                 session.delete(agent_config)
                 session.commit()
                 
-                logger.info(f"Successfully deleted agent {agent_type} from database")
+                logger.info(f"Successfully deleted agent {name} from database")
                 return True
                 
         except Exception as e:
-            logger.error(f"Failed to delete agent config {agent_type}: {str(e)}")
+            logger.error(f"Failed to delete agent config {name}: {str(e)}")
             raise DatabaseException(f"Failed to delete agent config: {str(e)}")
     
     def get_all_specialist_agents(self) -> List[Dict[str, Any]]:
-        """Get all specialist agent configurations"""
+        """Get all agent configurations (no agent_type distinction)"""
         try:
             with self.get_session() as session:
                 from app.models.agents import AgentConfig
                 
-                # Exclude master agent types from specialist agents
-                master_types = ['seo_campaign_manager', 'master', 'seo_master', 'campaign_manager']
-                statement = select(AgentConfig).where(
-                    ~AgentConfig.agent_type.in_(master_types),
-                    AgentConfig.is_active == True
-                )
-                specialist_configs = session.exec(statement).all()
+                # Get all active agents (no agent_type filtering)
+                statement = select(AgentConfig).where(AgentConfig.is_active == True)
+                configs = session.exec(statement).all()
                 
-                return [self._agent_config_to_dict(config) for config in specialist_configs]
+                return [self._agent_config_to_dict(config) for config in configs]
                 
         except Exception as e:
-            logger.error(f"Failed to get specialist agents: {str(e)}")
-            raise DatabaseException(f"Failed to get specialist agents: {str(e)}")
+            logger.error(f"Failed to get agents: {str(e)}")
+            raise DatabaseException(f"Failed to get agents: {str(e)}")
     
     def _agent_config_to_dict(self, agent_config) -> Dict[str, Any]:
         """Convert AgentConfig model to dictionary"""
         return {
             "id": agent_config.id,
-            "agent_type": agent_config.agent_type,
+            # agent_type removed
             "name": agent_config.name,
             "role": agent_config.role,
             "goal": agent_config.goal,

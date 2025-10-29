@@ -209,19 +209,22 @@ async def run_crewai_analysis_for_test(
         
         logger.info(f"📊 Available specialist agents: {len(specialist_agents_data)}")
         for specialist_data in specialist_agents_data:
-            logger.info(f"🔍 Checking specialist: {specialist_data['name']} (type: {specialist_data['agent_type']})")
+            # Use agent name as identifier (agent_type was removed)
+            agent_name = specialist_data.get("name", "")
+            logger.info(f"🔍 Checking specialist: {agent_name}")
             # Only include relevant specialists
             if not _should_include_specialist(specialist_data, data_sources, intent_name, user_question):
-                logger.info(f"Skipping specialist: {specialist_data['name']} (not relevant for this request)")
+                logger.info(f"Skipping specialist: {agent_name} (not relevant for this request)")
                 continue
                 
-            agent_type = specialist_data["agent_type"]
+            # For tool lookup, use name converted to identifier format
+            agent_identifier = agent_name.lower().replace(" ", "_")
             
             # Get tools for this agent dynamically
-            logger.info(f"🔧 Getting tools for agent type: {agent_type}")
+            logger.info(f"🔧 Getting tools for agent: {agent_identifier}")
             # Use customer_id as subclient_id for database queries
-            agent_tools = get_tools_for_agent(agent_type, user_connections, campaigner_id=campaigner_id, customer_id=customer_id)
-            logger.info(f"🔧 Agent {agent_type} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
+            agent_tools = get_tools_for_agent(agent_identifier, user_connections, campaigner_id=campaigner_id, customer_id=customer_id)
+            logger.info(f"🔧 Agent {agent_identifier} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
             
             # Create specialist agent using ONLY database configuration with timing
             specialist_agent = timing_wrapper.create_timed_agent(
@@ -257,10 +260,10 @@ async def run_crewai_analysis_for_test(
                 )
             else:
                 # Fallback if no task in database
-                specialist_task_description = f"Analyze {agent_type} data for: {user_question}"
+                specialist_task_description = f"Analyze {agent_identifier} data for: {user_question}"
             
-            # Set expected output based on agent type
-            expected_output = f"Detailed {specialist_data['agent_type']} analysis following the specialist reply schema"
+            # Set expected output based on agent name
+            expected_output = f"Detailed {agent_name} analysis following the specialist reply schema"
             
             # CRITICAL FIX: Set context=[master_task] so specialist output feeds back to master
             specialist_task = Task(
@@ -426,6 +429,7 @@ async def run_crewai_analysis_for_test(
                 crewai_input_prompt=crewai_input_prompt,
                 master_answer=str(result),
                 campaigner_id=campaigner_id,
+                customer_id=customer_id,
                 success=is_success,
                 error_message=error_message
             )
@@ -483,10 +487,12 @@ def _should_include_specialist(specialist_config: Dict, data_sources: List[str],
     """Determine if a specialist should be included based on context"""
     from app.core.constants import should_include_agent
     
-    agent_type = specialist_config["agent_type"]
+    # Use agent name as identifier (agent_type was removed)
+    agent_name = specialist_config.get("name", "")
+    agent_identifier = agent_name.lower().replace(" ", "_")
     
     # Use standardized logic
-    return should_include_agent(agent_type, data_sources, user_question)
+    return should_include_agent(agent_identifier, data_sources, user_question)
 
 
 @router.post("/crewai", response_model=CrewAITestResponse)
