@@ -40,9 +40,10 @@ echo ""
 
 # Load environment variables from .env file
 echo -e "${BLUE}📄 Loading environment variables from .env file...${NC}"
-if [ ! -f ".env" ]; then
-    echo -e "${RED}❌ ERROR: .env file not found!${NC}"
-    echo "Please create a .env file with required environment variables."
+if [ ! -f "../.env" ]; then
+    echo -e "${RED}❌ ERROR: .env file not found in SatoApp directory!${NC}"
+    echo "Please create a .env file in the SatoApp directory with required environment variables."
+    echo "Expected location: $(pwd)/../.env"
     exit 1
 fi
 
@@ -79,17 +80,23 @@ def parse_env_line(line):
 
 # Read .env file
 try:
-    with open('.env', 'r', encoding='utf-8') as f:
+    with open('../.env', 'r', encoding='utf-8') as f:
         lines = f.readlines()
 except FileNotFoundError:
-    print("ERROR: .env file not found!", file=sys.stderr)
+    print("ERROR: .env file not found in SatoApp directory!", file=sys.stderr)
     sys.exit(1)
 
 # Parse all environment variables and convert to development URLs
 env_vars = {}
+# Reserved environment variables that Cloud Run sets automatically
+RESERVED_VARS = ['PORT']
+
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
+        # Skip reserved environment variables
+        if key in RESERVED_VARS:
+            continue
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue
@@ -169,8 +176,10 @@ echo ""
 echo -e "${BLUE}🚀 Building Docker image for development (clean build, no cache)...${NC}"
 IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
 
-# Build image without cache
+# Build image without cache from the parent directory (SatoApp/)
+cd ..
 gcloud builds submit --tag $IMAGE_NAME --no-cache
+cd scripts
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Docker build failed!${NC}"

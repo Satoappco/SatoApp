@@ -105,13 +105,24 @@ def create_app() -> FastAPI:
         """Custom handler for Pydantic validation errors"""
         logger.error(f"Validation error on {request.url}: {exc.errors()}")
         logger.error(f"Request body: {await request.body()}")
+        
+        # Convert errors to serializable format
+        serializable_errors = []
+        for error in exc.errors():
+            serializable_error = {
+                "loc": error.get("loc", []),
+                "msg": str(error.get("msg", "")),
+                "type": error.get("type", "")
+            }
+            serializable_errors.append(serializable_error)
+        
         return JSONResponse(
             status_code=422,
             content={
                 "detail": {
                     "message": "Request validation failed",
-                    "errors": exc.errors(),
-                    "body": exc.body
+                    "errors": serializable_errors,
+                    "body": str(exc.body) if exc.body else None
                 }
             }
         )

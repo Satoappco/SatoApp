@@ -42,19 +42,20 @@ async def verify_websocket_token(token: str) -> dict:
         )
         
         # Extract user information
-        user_id = payload.get("user_id") or payload.get("sub")
+        user_id = payload.get("campaigner_id")
         email = payload.get("email")
         
         if not user_id:
             raise WebSocketException(
                 code=status.WS_1008_POLICY_VIOLATION,
-                reason="Invalid token: missing user ID"
+                reason="Invalid token: missing campaigner ID"
             )
         
         logger.info(f"✅ WebSocket token verified: user_id={user_id}, email={email}")
         
         return {
             "user_id": int(user_id),
+            "campaigner_id": int(user_id),
             "email": email,
             "customer_id": payload.get("customer_id")
         }

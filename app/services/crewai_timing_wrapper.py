@@ -742,7 +742,7 @@ class CrewAITimingWrapper:
     
     def create_customer_log(self, user_intent: str, original_query: str, 
                            crewai_input_prompt: str, master_answer: str, 
-                           user_id: int = None, success: bool = True, 
+                           campaigner_id: int = None, success: bool = True, 
                            error_message: str = None) -> str:
         """Create customer log entry with detailed execution logs"""
         # Get detailed execution log
@@ -757,7 +757,7 @@ class CrewAITimingWrapper:
             crewai_input_prompt=crewai_input_prompt,
             master_answer=master_answer,
             crewai_log=crewai_log,
-            user_id=user_id,
+            campaigner_id=campaigner_id,
             analysis_id=self.analysis_id,
             success=success,
             error_message=error_message

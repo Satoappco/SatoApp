@@ -10,15 +10,15 @@ from .common import BaseResponse
 class AgentConfigRequest(BaseModel):
     """Request schema for agent configuration"""
     id: Optional[int] = None
-    agent_type: str = Field(..., description="Agent type from constants", min_length=1, max_length=100)
-    name: str = Field(..., description="Agent name", min_length=1, max_length=100)
-    role: str = Field(..., description="Agent role", min_length=1, max_length=200)
-    goal: str = Field(..., description="Agent goal", min_length=1, max_length=500)
-    backstory: str = Field(..., description="Agent backstory", min_length=1, max_length=1000)
-    task: Optional[str] = Field("", description="Task template", max_length=2000)
+    agent_type: str = Field(..., description="Agent type from constants", min_length=1)
+    name: str = Field(..., description="Agent name", min_length=1)
+    role: str = Field(..., description="Agent role", min_length=1)
+    goal: str = Field(..., description="Agent goal", min_length=1)
+    backstory: str = Field(..., description="Agent backstory", min_length=1)
+    task: Optional[str] = Field("", description="Task template")
     capabilities: Dict[str, Any] = Field(default_factory=dict, description="Agent capabilities")
     tools: List[str] = Field(default_factory=list, description="Assigned tools")
-    max_iterations: int = Field(1, ge=1, le=10, description="Maximum iterations")
+    max_iterations: int = Field(1, ge=1, le=50, description="Maximum iterations")
     allow_delegation: bool = Field(False, description="Allow delegation to other agents")
     verbose: bool = Field(True, description="Verbose logging")
     
@@ -86,12 +86,12 @@ class AgentConfigData(BaseModel):
     goal: str
     backstory: str
     task: Optional[str] = ""
-    capabilities: Dict[str, Any]
-    tools: List[str]
-    max_iterations: int
-    allow_delegation: bool
-    verbose: bool
-    is_active: bool
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
+    tools: List[str] = Field(default_factory=list)
+    max_iterations: int = Field(1, ge=1, le=50)
+    allow_delegation: bool = False
+    verbose: bool = True
+    is_active: bool = True
     created_at: str
     updated_at: str
 

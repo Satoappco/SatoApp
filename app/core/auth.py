@@ -130,25 +130,25 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         print(f"DEBUG: Validating token: {credentials.credentials[:20]}...")
         # Verify the access token
         payload = verify_token(credentials.credentials, "access")
-        user_id = payload.get("user_id")
+        campaigner_id = payload.get("campaigner_id")
         
-        print(f"DEBUG: Token payload user_id: {user_id}")
+        print(f"DEBUG: Token payload campaigner_id: {campaigner_id}")
         
-        if user_id is None:
-            print("DEBUG: No user_id in token payload")
+        if campaigner_id is None:
+            print("DEBUG: No campaigner_id in token payload")
             raise AuthenticationError("Invalid token payload")
         
         # Get user from database
         with get_session() as session:
-            user = session.get(Campaigner, user_id)
+            user = session.get(Campaigner, campaigner_id)
             if user is None:
-                print(f"DEBUG: User {user_id} not found in database")
+                print(f"DEBUG: Campaigner {campaigner_id} not found in database")
                 raise AuthenticationError("Campaigner not found")
             
-            print(f"DEBUG: User found: {user.id}, status: {user.status}")
+            print(f"DEBUG: Campaigner found: {user.id}, status: {user.status}")
             
             if user.status != "active":
-                print(f"DEBUG: User {user_id} status is not active: {user.status}")
+                print(f"DEBUG: Campaigner {campaigner_id} status is not active: {user.status}")
                 raise AuthenticationError("Campaigner account is not active")
             
             return user
@@ -183,7 +183,7 @@ def create_user_session(
     import secrets
     
     session = CampaignerSession(
-        user_id=user.id,
+        campaigner_id=user.id,
         session_token=secrets.token_urlsafe(32),
         access_token=access_token,
         refresh_token=refresh_token,
@@ -219,20 +219,20 @@ def refresh_access_token(refresh_token: str) -> Dict[str, str]:
     
     # Verify refresh token
     payload = verify_token(refresh_token, "refresh")
-    user_id = payload.get("user_id")
+    campaigner_id = payload.get("campaigner_id")
     
-    if user_id is None:
+    if campaigner_id is None:
         raise AuthenticationError("Invalid refresh token")
     
     # Get user from database
     with get_session() as session:
-        user = session.get(Campaigner, user_id)
+        user = session.get(Campaigner, campaigner_id)
         if user is None or user.status != "active":
             raise AuthenticationError("Campaigner not found or inactive")
         
         # Create new access token
         access_token_data = {
-            "user_id": user.id,
+            "campaigner_id": user.id,
             "email": user.email,
             "role": user.role,
             "primary_customer_id": user.primary_customer_id

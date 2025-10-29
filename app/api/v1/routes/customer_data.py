@@ -610,6 +610,8 @@ async def get_customer_info(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "enable_meta": customer.enable_meta,
+                    "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
@@ -676,8 +678,8 @@ async def update_customer_info(
             update_fields = [
                 'full_name', 'contact_email', 'phone', 'address', 'opening_hours',
                 'narrative_report', 'website_url', 'facebook_page_url', 
-                'instagram_page_url', 'llm_engine_preference', 'status', 'is_active',
-                'assigned_campaigner_id', 'country', 'currency'
+                'instagram_page_url', 'llm_engine_preference', 'enable_meta', 'enable_google',
+                'status', 'is_active', 'assigned_campaigner_id', 'country', 'currency'
             ]
             
             for field in update_fields:
@@ -705,6 +707,8 @@ async def update_customer_info(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "enable_meta": customer.enable_meta,
+                    "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,

@@ -22,14 +22,14 @@ class DialogCXService:
     def __init__(self):
         self.db_manager = db_manager
     
-    def get_user_context(self, user_id: str) -> Dict[str, Any]:
+    def get_user_context(self, campaigner_id: str) -> Dict[str, Any]:
         """Get user context data for DialogCX initialization"""
         try:
             # Get user's connected assets/services
-            user_assets = self._get_user_connected_assets(user_id)
+            user_assets = self._get_user_connected_assets(campaigner_id)
             
             return {
-                "user_id": user_id,
+                "campaigner_id": campaigner_id,
                 "available_assets": [asset.get('asset_type') for asset in user_assets],
                 "connected_services": [asset.get('platform') for asset in user_assets],
                 "capabilities": self._get_user_analysis_capabilities(user_assets)
@@ -39,7 +39,7 @@ class DialogCXService:
             logger.error(f"Failed to get user context: {str(e)}")
             raise SatoAppException(f"Failed to get user context: {str(e)}")
     
-    def _get_user_connected_assets(self, user_id: str) -> List[Dict[str, Any]]:
+    def _get_user_connected_assets(self, campaigner_id: str) -> List[Dict[str, Any]]:
         """Get user's connected marketing assets"""
         try:
             # Query the assets and connections tables
@@ -51,7 +51,7 @@ class DialogCXService:
                     Connection, DigitalAsset.id == Connection.digital_asset_id
                 ).where(
                     and_(
-                        Connection.campaigner_id == user_id,
+                        Connection.campaigner_id == campaigner_id,
                         Connection.revoked == False,
                         DigitalAsset.is_active == True
                     )
@@ -179,7 +179,7 @@ class DialogCXService:
             # Structure the data as expected by Master Agent
             dialogcx_payload = {
                 'sessionInfo': session_info,
-                'user_id': parameters.get('user_id'),
+                'campaigner_id': parameters.get('campaigner_id'),
                 'customer_id': parameters.get('customer_id'),
                 'session_id': session_info.get('session', '').split('/')[-1] if session_info.get('session') else generate_session_id(),
                 'intent_type': raw_data.get('intentInfo', {}).get('displayName', ''),
@@ -188,7 +188,7 @@ class DialogCXService:
             }
             
             # Log the DialogCX request for monitoring
-            logger.info(f"DialogCX webhook: {dialogcx_payload.get('intent_type')} from user {dialogcx_payload.get('user_id')}")
+            logger.info(f"DialogCX webhook: {dialogcx_payload.get('intent_type')} from campaigner {dialogcx_payload.get('campaigner_id')}")
             
             # Route to database-driven master agent system
             from app.services.agent_service import AgentService
@@ -237,7 +237,7 @@ class DialogCXService:
         """Store DialogCX interaction for analytics"""
         try:
             self.db_manager.store_chat_message(
-                user_name=f"user_{payload.get('user_id', 'unknown')}",
+                user_name=f"campaigner_{payload.get('campaigner_id', 'unknown')}",
                 message=payload.get('parameters', {}).get('user_question', 'DialogCX interaction'),
                 session_id=payload.get('session_id'),
                 raw_data={
