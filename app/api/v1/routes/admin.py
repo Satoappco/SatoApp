@@ -241,15 +241,15 @@ async def get_agent_details(
     agent_name: str,
     _: bool = Depends(verify_api_key)
 ):
-    """Get detailed information about a specific agent"""
+    """Get detailed information about a specific agent by name"""
     try:
         agent_service = AgentService()
-        agent = agent_service.get_agent_by_type(agent_name)
+        agent = agent_service.get_agent_config(agent_name)
         
         if not agent:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Agent type '{agent_name}' not found"
+                detail=f"Agent name '{agent_name}' not found"
             )
         
         return agent
@@ -267,19 +267,33 @@ async def update_agent_task(
     task: str,
     _: bool = Depends(verify_api_key)
 ):
-    """Update an agent's task template"""
+    """Update an agent's task template by name"""
     try:
         agent_service = AgentService()
-        success = agent_service.update_agent_task(agent_name, task)
+        # Get existing agent first
+        existing_agent = agent_service.get_agent_config(agent_name)
         
-        if success:
+        if not existing_agent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Agent name '{agent_name}' not found"
+            )
+        
+        # Update agent with new task
+        config_data = existing_agent.copy()
+        config_data['task'] = task
+        updated_agent = agent_service.create_or_update_agent(config_data)
+        
+        if updated_agent:
             return {"message": f"Successfully updated task for agent '{agent_name}'"}
         else:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Agent type '{agent_name}' not found"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update agent task"
             )
             
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

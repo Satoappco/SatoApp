@@ -58,22 +58,47 @@ class AgentConfigRequest(BaseModel):
     
     @validator('tools')
     def validate_tools(cls, v):
-        """Validate tools list"""
+        """Validate tools list - allow human-readable names and auto-convert to valid tool names"""
         if not isinstance(v, list):
             raise ValueError("Tools must be a list")
+        
+        # Tool name mapping from human-readable to valid identifiers
+        tool_mapping = {
+            "google analytics api": "ga4_analytics_tool",
+            "ga4 api": "ga4_analytics_tool",
+            "google ads api": "google_ads_tool",
+            "meta marketing api": "facebook_tool",
+            "facebook ads manager": "facebook_tool",
+            "google search console": "search_console_tool",
+            "search console api": "search_console_tool",
+        }
+        
+        # Normalize and convert tools
+        normalized_tools = []
+        for tool in v:
+            tool_lower = tool.lower().strip()
+            # Check if it's already a valid tool name
+            if tool_lower in tool_mapping.values():
+                normalized_tools.append(tool_lower)
+            elif tool_lower in tool_mapping:
+                normalized_tools.append(tool_mapping[tool_lower])
+            else:
+                # If it doesn't match, try to find a similar one or raise error
+                # For now, accept any tool name
+                normalized_tools.append(tool)
         
         # Validate tool names if constants available
         try:
             from app.core.constants import ToolName
             valid_tools = [tool.value for tool in ToolName]
-            for tool in v:
-                if tool not in valid_tools:
-                    raise ValueError(f"Invalid tool: {tool}. Must be one of: {', '.join(valid_tools)}")
+            invalid_tools = [tool for tool in normalized_tools if tool not in valid_tools]
+            if invalid_tools:
+                raise ValueError(f"Invalid tool(s): {', '.join(invalid_tools)}. Must be one of: {', '.join(valid_tools)}")
         except ImportError:
             # Fallback if constants not available
             pass
         
-        return v
+        return normalized_tools
 
 
 class AgentConfigData(BaseModel):

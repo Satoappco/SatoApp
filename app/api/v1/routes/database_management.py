@@ -154,12 +154,12 @@ class KpiGoalCreate(BaseModel):
     campaign_status: str = Field(max_length=50, default="ACTIVE")
     
     # Ad Group fields
-    ad_group_id: Optional[int] = None
+    ad_group_id: Optional[str] = Field(None, max_length=50)
     ad_group_name: Optional[str] = Field(None, max_length=255)
     ad_group_status: Optional[str] = Field(None, max_length=50)
     
     # Ad fields
-    ad_id: Optional[int] = None
+    ad_id: Optional[str] = Field(None, max_length=50)
     ad_name: Optional[str] = Field(None, max_length=255)
     ad_name_headline: Optional[str] = Field(None, max_length=500) #clear description for llm 
     ad_status: Optional[str] = Field(None, max_length=50)
@@ -190,12 +190,12 @@ class KpiGoalUpdate(BaseModel):
     campaign_status: Optional[str] = Field(None, max_length=50)
     
     # Ad Group fields
-    ad_group_id: Optional[int] = None
+    ad_group_id: Optional[str] = Field(None, max_length=50)
     ad_group_name: Optional[str] = Field(None, max_length=255)
     ad_group_status: Optional[str] = Field(None, max_length=50)
     
     # Ad fields
-    ad_id: Optional[int] = None
+    ad_id: Optional[str] = Field(None, max_length=50)
     ad_name: Optional[str] = Field(None, max_length=255)
     ad_name_headline: Optional[str] = Field(None, max_length=500)
     ad_status: Optional[str] = Field(None, max_length=50)
@@ -227,12 +227,12 @@ class KpiGoalBulkItem(BaseModel):
     campaign_status: Optional[str] = Field(None, max_length=50)
     
     # Ad Group fields
-    ad_group_id: Optional[int] = None
+    ad_group_id: Optional[str] = Field(None, max_length=50)
     ad_group_name: Optional[str] = Field(None, max_length=255)
     ad_group_status: Optional[str] = Field(None, max_length=50)
     
     # Ad fields
-    ad_id: Optional[int] = None
+    ad_id: Optional[str] = Field(None, max_length=50)
     ad_name: Optional[str] = Field(None, max_length=255)
     ad_name_headline: Optional[str] = Field(None, max_length=500)
     ad_status: Optional[str] = Field(None, max_length=50)
@@ -857,7 +857,11 @@ async def update_kpi_goal(
             # Update fields
             update_data = campaign_data.dict(exclude_unset=True)
             for key, value in update_data.items():
-                setattr(campaign, key, value)
+                try:
+                    setattr(campaign, key, value)
+                except Exception as e:
+                    logger.error(f"Failed to set attribute {key} with value {value}: {str(e)}")
+                    raise
             
             campaign.updated_at = datetime.utcnow()
             
@@ -1478,12 +1482,20 @@ async def get_agent_configs(
             if active_only:
                 statement = statement.where(AgentConfig.is_active == True)
             
-            statement = statement.order_by(AgentConfig.name)
+            # Sort: master agent (name contains "master") first, then by name
             agents = session.exec(statement).all()
+            agents_list = list(agents)
+            
+            # Sort agents: master agent first, then alphabetically by name
+            def sort_key(agent):
+                name_lower = agent.name.lower()
+                return (0 if 'master' in name_lower else 1, name_lower)
+            
+            agents_list.sort(key=sort_key)
             
             return {
                 "success": True,
-                "count": len(agents),
+                "count": len(agents_list),
                 "agents": [
                     {
                         "id": agent.id,
@@ -1981,12 +1993,18 @@ async def get_user_property_selections(
 async def get_customer_logs(
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
+    customer_id: int = Query(None, description="Filter by customer ID"),
     current_user: Campaigner = Depends(get_current_user)
 ):
-    """Get all customer logs (admin view - shows all data)"""
+    """Get all customer logs (admin view - shows all data or filtered by customer_id)"""
     try:
         with get_session() as session:
             statement = select(CustomerLog)
+            
+            # Filter by customer_id if provided
+            if customer_id:
+                statement = statement.where(CustomerLog.customer_id == customer_id)
+            
             statement = statement.order_by(CustomerLog.date_time.desc()).offset(offset).limit(limit)
             logs = session.exec(statement).all()
             
@@ -2006,6 +2024,7 @@ async def get_customer_logs(
                         "total_execution_time_ms": log.total_execution_time_ms,
                         "timing_breakdown": log.timing_breakdown,
                         "campaigner_id": log.campaigner_id,
+                        "customer_id": log.customer_id,
                         "analysis_id": log.analysis_id,
                         "success": log.success,
                         "error_message": log.error_message,
@@ -2372,6 +2391,94 @@ async def delete_kpi_setting(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete KPI setting: {str(e)}"
+        )
+
+
+@router.post("/kpi-settings/reset-to-defaults/{customer_id}")
+async def reset_kpi_settings_to_defaults(
+    customer_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """Reset customer's KPI settings to match current default settings"""
+    try:
+        with get_session() as session:
+            # Verify customer belongs to user's agency
+            customer = session.get(Customer, customer_id)
+            if not customer or customer.agency_id != current_user.agency_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Customer not found or access denied"
+                )
+            
+            # Verify customer is assigned to current campaigner
+            if customer.assigned_campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied - customer not assigned to you"
+                )
+            
+            # Get all current default KPI settings
+            default_settings = session.exec(
+                select(DefaultKpiSettings).order_by(
+                    DefaultKpiSettings.display_order,
+                    DefaultKpiSettings.campaign_objective,
+                    DefaultKpiSettings.kpi_name
+                )
+            ).all()
+            
+            if not default_settings:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No default KPI settings found"
+                )
+            
+            # Use pattern matching for shared access within agency
+            pattern = f"{customer.agency_id}_%_{customer_id}"
+            
+            # Delete all existing customer KPI settings
+            existing_settings = session.exec(
+                select(KpiSettings).where(
+                    KpiSettings.composite_id.like(pattern)
+                )
+            ).all()
+            
+            deleted_count = len(existing_settings)
+            for setting in existing_settings:
+                session.delete(setting)
+            
+            # Create new customer settings from current defaults
+            composite_id = f"{customer.agency_id}_{current_user.id}_{customer_id}"
+            created_count = 0
+            
+            for default_setting in default_settings:
+                customer_kpi = KpiSettings(
+                    composite_id=composite_id,
+                    customer_id=customer_id,
+                    campaign_objective=default_setting.campaign_objective,
+                    kpi_name=default_setting.kpi_name,
+                    kpi_type=default_setting.kpi_type,
+                    direction=default_setting.direction,
+                    default_value=default_setting.default_value,
+                    unit=default_setting.unit
+                )
+                session.add(customer_kpi)
+                created_count += 1
+            
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": f"KPI settings reset to defaults successfully",
+                "deleted_count": deleted_count,
+                "created_count": created_count
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset KPI settings to defaults: {str(e)}"
         )
 
 

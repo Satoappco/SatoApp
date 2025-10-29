@@ -182,12 +182,12 @@ class KpiGoal(BaseModel, table=True):
     campaign_status: str = Field(max_length=50, default="ACTIVE")  # ACTIVE/PAUSED/INACTIVE
     
     # Ad Group information
-    ad_group_id: Optional[int] = Field(default=None)
+    ad_group_id: Optional[str] = Field(default=None, max_length=50)
     ad_group_name: Optional[str] = Field(default=None, max_length=255)
     ad_group_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
     
     # Ad information
-    ad_id: Optional[int] = Field(default=None)
+    ad_id: Optional[str] = Field(default=None, max_length=50)
     ad_name: Optional[str] = Field(default=None, max_length=255)
     ad_name_headline: Optional[str] = Field(default=None, max_length=500)
     ad_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
@@ -240,12 +240,12 @@ class KpiValue(BaseModel, table=True):
     campaign_status: str = Field(max_length=50, default="ACTIVE")  # ACTIVE/PAUSED/INACTIVE
     
     # Ad Group information
-    ad_group_id: Optional[int] = Field(default=None)
+    ad_group_id: Optional[str] = Field(default=None, max_length=50)
     ad_group_name: Optional[str] = Field(default=None, max_length=255)
     ad_group_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE
     
     # Ad information
-    ad_id: Optional[int] = Field(default=None)
+    ad_id: Optional[str] = Field(default=None, max_length=50)
     ad_name: Optional[str] = Field(default=None, max_length=255)
     ad_name_headline: Optional[str] = Field(default=None, max_length=500)
     ad_status: Optional[str] = Field(default=None, max_length=50)  # ACTIVE/PAUSED/INACTIVE

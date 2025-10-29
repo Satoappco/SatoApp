@@ -45,8 +45,8 @@ if ! grep -q "GOOGLE_ADS_DEVELOPER_TOKEN=" .env || grep -q "GOOGLE_ADS_DEVELOPER
     echo ""
 fi
 
-# Convert .env to YAML format for Cloud Run with production URLs
-echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format with production URLs...${NC}"
+# Convert .env to YAML format for Cloud Run
+echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format...${NC}"
 python3 << 'PYTHON_SCRIPT'
 import os
 import re
@@ -84,7 +84,7 @@ except FileNotFoundError:
     print("ERROR: .env file not found!", file=sys.stderr)
     sys.exit(1)
 
-# Parse all environment variables and convert localhost to production URLs
+# Parse all environment variables - use values as-is from .env file
 env_vars = {}
 for line in lines:
     key, value = parse_env_line(line)
@@ -93,23 +93,8 @@ for line in lines:
         if value.startswith('your-') or value.startswith('your_'):
             continue
         
-        # Convert localhost URLs to production URLs
-        # Handle wss:// protocol first
-        if value.startswith('wss://localhost:8000') or value == 'wss://localhost:8000':
-            value = value.replace('wss://localhost:8000', 'wss://sato-backend-v2-397762748853.me-west1.run.app')
-        # Handle https:// and https:// protocols
-        elif 'https://localhost:8000' in value or 'https://localhost:8000' in value:
-            value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
-            value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
-        elif 'https://localhost:3000' in value or 'https://localhost:3000' in value:
-            value = value.replace('https://localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
-            value = value.replace('https://localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
-        # Handle bare localhost references
-        elif 'localhost:8000' in value:
-            value = value.replace('localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
-        elif 'localhost:3000' in value:
-            value = value.replace('localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
-        
+        # Use values as-is from .env file (no transformation needed)
+        # The .env symlink already points to the correct environment file (production)
         env_vars[key] = value
 
 # Write YAML file for Cloud Run
@@ -125,12 +110,25 @@ with open('.env.cloudrun.yaml', 'w', encoding='utf-8') as f:
             # Simple quoted value
             f.write(f'{key}: "{value}"\n')
 
-print(f"✅ Converted {len(env_vars)} environment variables to YAML format with production URLs")
+print(f"✅ Converted {len(env_vars)} environment variables to YAML format")
 PYTHON_SCRIPT
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ ERROR: Failed to convert .env to YAML format!${NC}"
     exit 1
+fi
+
+# Check for INTERNAL_AUTH_TOKEN in .env
+if ! grep -q "^INTERNAL_AUTH_TOKEN=" .env; then
+    echo -e "${RED}❌ ERROR: INTERNAL_AUTH_TOKEN not found in .env${NC}"
+    echo ""
+    echo "Please add INTERNAL_AUTH_TOKEN to your .env file:"
+    echo "  INTERNAL_AUTH_TOKEN=your-secure-random-token"
+    echo ""
+    echo "Generate one with: openssl rand -hex 32"
+    exit 1
+else
+    echo -e "${GREEN}✅ INTERNAL_AUTH_TOKEN found in .env${NC}"
 fi
 
 # Validate required environment variables
@@ -154,7 +152,7 @@ if [ ${#MISSING_VARS[@]} -ne 0 ]; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ Environment variables loaded and validated with production URLs${NC}"
+echo -e "${GREEN}✅ Environment variables loaded and validated${NC}"
 echo ""
 
 # Build image with no cache and deploy

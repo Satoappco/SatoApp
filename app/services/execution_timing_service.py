@@ -71,7 +71,7 @@ class ExecutionTimingService:
 
     def create_customer_log(self, session_id: str, user_intent: str, original_query: str, 
                            crewai_input_prompt: str, master_answer: str, crewai_log: str,
-                           campaigner_id: int = None, analysis_id: str = None, success: bool = True,
+                           campaigner_id: int = None, customer_id: int = None, analysis_id: str = None, success: bool = True,
                            error_message: str = None) -> str:
         """Create comprehensive customer log entry"""
         try:
@@ -94,6 +94,7 @@ class ExecutionTimingService:
                     total_execution_time_ms=total_time_ms,
                     timing_breakdown=json.dumps(timing_breakdown),
                     campaigner_id=campaigner_id,
+                    customer_id=customer_id,
                     analysis_id=analysis_id,
                     success=success,
                     error_message=error_message,
@@ -103,7 +104,7 @@ class ExecutionTimingService:
                 session.add(customer_log)
                 session.commit()
                 
-                logger.info(f"📊 Customer log created for session {session_id}")
+                logger.info(f"📊 Customer log created for session {session_id}, customer_id={customer_id}")
                 return session_id
                 
         except Exception as e:

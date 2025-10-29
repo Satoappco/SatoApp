@@ -12,7 +12,8 @@ class AgentConfig(BaseModel, table=True):
     """Agent configuration model for master and specialist agents"""
     __tablename__ = "agent_configs"
     
-    name: str = Field(max_length=100)
+    # agent_type removed - using name as unique identifier
+    name: str = Field(max_length=100, unique=True, index=True)
     role: str = Field(description="Agent role description")
     goal: str = Field(description="Agent goal description")
     backstory: str = Field(description="Agent backstory description")
@@ -57,6 +58,7 @@ class CustomerLog(BaseModel, table=True):
     
     # Additional metadata
     campaigner_id: Optional[int] = Field(default=None)
+    customer_id: Optional[int] = Field(default=None, foreign_key="customers.id", description="Customer ID - specific customer this log belongs to")
     analysis_id: Optional[str] = Field(default=None, max_length=255)
     success: bool = Field(default=True)
     error_message: Optional[str] = Field(default=None)
