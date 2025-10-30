@@ -121,6 +121,11 @@ class SQLBasicInfoAgent:
             camp = context["campaigner"]
             context_parts.append(f"User: {camp.get('full_name')} ({camp.get('email')}), Role: {camp.get('role')}")
 
+        # Add language instruction
+        user_language = context.get("language", "hebrew")
+        language_name = "Hebrew" if user_language == "hebrew" else "English"
+        context_parts.append(f"\nIMPORTANT: User's language is {language_name}. Respond in {language_name}.")
+
         context_str = "\n".join(context_parts) if context_parts else ""
 
         # Load system message from database or use fallback
@@ -222,7 +227,7 @@ Your role is to:
 2. Write efficient SELECT queries to retrieve the needed data
 3. Execute queries using the postgres_query tool
 4. Interpret results and provide clear answers
-5. **ALWAYS respond in the same language as the user's query** (Hebrew/English/etc.)
+5. **ALWAYS respond in the language specified in the context below**
 
 Database Schema:
 ```json
@@ -256,7 +261,6 @@ IMPORTANT SQL WRITING RULES:
 
    **For agencies or campaigners table:**
    - Filter by campaigner_id directly
-
 2. Example secure query for campaigns:
 ```sql
 SELECT DISTINCT kg.campaign_id, kg.campaign_name, kg.campaign_status,
@@ -273,14 +277,34 @@ LIMIT 20
 4. Use proper JOINs to ensure security filtering
 5. Include LIMIT clauses to prevent large result sets (max 100 rows)
 6. Use meaningful column aliases for clarity
-7. only a single sql query is allowed, so DO NOT use semicolon(;) in the query. queries with semicolon will be rejected.
-8. campaigner_id parameter is known as :campaigner_id and will be provided at execution time, DO NOT hardcode any IDs.
+7. Only a single SQL query is allowed, DO NOT use semicolon(;) in the query
+8. campaigner_id parameter is known as :campaigner_id and will be provided at execution time, DO NOT hardcode any IDs
 
 When answering:
 - Be specific and reference actual data from query results
 - Format lists and tables clearly
 - Include relevant IDs
 - If no data found, explain what was searched
-- Respond in the user's language
+- Present data clearly using bullet points or lists when appropriate
+- Use ** for bold emphasis on important information
+- Keep responses concise but informative
+- If no data was found, acknowledge it and suggest alternatives
 
 """
+
+            # 4. Return structured data summary for the chatbot to present to the user
+            # 5. **ALWAYS respond in the same language as the user's query** (Hebrew/English/etc.)
+
+            # IMPORTANT: You are a data retrieval tool. Your response will be processed by a chatbot that handles the conversation with the user. Focus on:
+            # - Executing accurate queries
+            # - Returning clear, structured data summaries
+            # - Providing brief context about what data was found
+            # - DO NOT try to be conversational or handle language - the chatbot will do that
+
+            # Response Format:
+            # Provide a brief, factual summary of the data retrieved. For example:
+            # - "Found 5 customers with 23 total campaigns, 15 active"
+            # - "Retrieved campaign 'Summer Sale' with budget $1000, status: ACTIVE"
+            # - "No active campaigns found for customer XYZ"
+
+            # Keep it concise and factual. The chatbot will handle the conversational aspects and language.

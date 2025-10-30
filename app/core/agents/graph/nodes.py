@@ -60,6 +60,36 @@ class ChatbotNode:
             logger.error(f"❌ Failed to load chatbot config from database: {e}")
             return self._get_fallback_prompt()
 
+    def _detect_user_language(self, messages: list) -> str:
+        """Detect the user's language from their messages.
+
+        Args:
+            messages: List of conversation messages
+
+        Returns:
+            Language code ('hebrew', 'english', 'unknown')
+        """
+        # Get the last user message
+        for msg in reversed(messages):
+            if hasattr(msg, 'type') and msg.type == 'human':
+                content = msg.content.lower()
+
+                # Simple heuristic: check for Hebrew characters
+                hebrew_chars = sum(1 for char in content if '\u0590' <= char <= '\u05FF')
+                total_chars = sum(1 for char in content if char.isalpha())
+
+                if total_chars == 0:
+                    continue
+
+                # If more than 30% Hebrew characters, it's Hebrew
+                if hebrew_chars / total_chars > 0.3:
+                    return "hebrew"
+                else:
+                    return "english"
+
+        # Default to hebrew as specified in system prompt
+        return "hebrew"
+
     def _format_campaigner_info(self, info: Dict[str, Any]) -> str:
         """Format comprehensive campaigner information for system prompt.
 
@@ -226,6 +256,10 @@ if the user request is simple and can be answered without an agent, provide a di
                 agent_name = parsed.get("agent")
                 task = parsed.get("task", {})
                 task["campaigner_id"] = campaigner.id
+
+                # Detect user's language from their messages
+                user_language = self._detect_user_language(state["messages"])
+
                 # Gather agency and campaigner context for agents
                 try:
                     db_tool = DatabaseTool(campaigner.id)
@@ -234,12 +268,13 @@ if the user request is simple and can be answered without an agent, provide a di
 
                     task["context"] = {
                         "agency": agency_info,
-                        "campaigner": campaigner_info
+                        "campaigner": campaigner_info,
+                        "language": user_language
                     }
-                    logger.debug(f"📊 [ChatbotNode] Added context to task: agency={agency_info.get('name') if agency_info else None}")
+                    logger.debug(f"📊 [ChatbotNode] Added context to task: agency={agency_info.get('name') if agency_info else None}, language={user_language}")
                 except Exception as e:
                     logger.warning(f"⚠️  [ChatbotNode] Failed to gather context: {str(e)}")
-                    task["context"] = {}
+                    task["context"] = {"language": user_language}
 
                 logger.info(f"✅ [ChatbotNode] Intent ready! Routing to agent: {agent_name}")
                 logger.debug(f"📋 [ChatbotNode] Task: {task}")
