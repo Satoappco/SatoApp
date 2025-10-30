@@ -20,6 +20,7 @@ class DatabaseManager:
         self.get_session = get_session
     
     # Agent Configuration Management
+    #TODO: Remove, duplicate of get_agent_config_by_name
     def get_agent_config(self, name: str) -> Optional[Dict[str, Any]]:
         """Get agent configuration by name"""
         try:

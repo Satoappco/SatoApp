@@ -74,4 +74,8 @@ api_router.include_router(campaign_sync.router, tags=["campaign-sync"])
 if os.getenv("ENVIRONMENT", "production") in ["development", "dev", "local"]:
     api_router.include_router(debug_campaigners.router, tags=["debug"])
 
+# Conditionally include debug routes ONLY in development
+if os.getenv("ENVIRONMENT", "production") in ["development", "dev", "local"]:
+    api_router.include_router(debug_campaigners.router, tags=["debug"])
+
 __all__ = ["api_router"]

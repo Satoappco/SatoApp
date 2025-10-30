@@ -182,7 +182,7 @@ def update_agent_config(
         from app.core.database import db_manager
         from app.models.agents import AgentConfig
         from app.config.database import get_session
-        
+
         with db_manager.get_session() as session:
             existing = session.exec(
                 select(AgentConfig).where(

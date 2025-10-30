@@ -83,14 +83,14 @@ class AgentService:
             logger.error(f"Failed to get all agents: {str(e)}")
             raise AgentException(f"Failed to get all agents: {str(e)}")
     
-    def get_agent_config(self, name: str) -> Optional[Dict[str, Any]]:
-        """Get specific agent configuration by name"""
+    def get_agent_config(self, agent_name: str) -> Optional[Dict[str, Any]]:
+        """Get specific agent configuration"""
         try:
-            agent_config = self.db_manager.get_agent_config(name)
+            agent_config = self.db_manager.get_agent_config(agent_name)
             return self._convert_datetime_to_string(agent_config)
             
         except Exception as e:
-            logger.error(f"Failed to get agent config for {name}: {str(e)}")
+            logger.error(f"Failed to get agent config for {agent_name}: {str(e)}")
             raise AgentException(f"Failed to get agent config: {str(e)}")
     
     
@@ -156,7 +156,32 @@ class AgentService:
             # No longer auto-assigning tools/data sources based on agent_type
             # Tools and data sources should be manually configured per agent
             # This gives users more flexibility in agent configuration
-            
+            # Auto-assign tools based on agent type
+            """
+            agent_name = config_data.get('name')
+            if agent_name:
+                try:
+                    from app.core.constants import get_tools_for_agent, get_data_sources_for_agent
+                    
+                    # Auto-assign tools
+                    auto_tools = get_tools_for_agent(agent_name)
+                    if auto_tools:
+                        config_data['tools'] = auto_tools
+                        logger.info(f"Auto-assigned tools for {agent_name}: {auto_tools}")
+                    
+                    # Auto-assign data sources if not provided
+                    if 'capabilities' not in config_data:
+                        config_data['capabilities'] = {}
+                    
+                    if 'data_sources' not in config_data['capabilities'] or not config_data['capabilities']['data_sources']:
+                        auto_data_sources = get_data_sources_for_agent(agent_name)
+                        if auto_data_sources:
+                            config_data['capabilities']['data_sources'] = auto_data_sources
+                            logger.info(f"Auto-assigned data sources for {agent_name}: {auto_data_sources}")
+                    
+                except ImportError as e:
+                    logger.warning(f"Could not auto-assign tools/data sources: {e}")
+            """
             # Set default values
             config_data.setdefault('capabilities', {})
             config_data.setdefault('tools', [])
@@ -182,17 +207,17 @@ class AgentService:
             logger.error(f"Failed to create/update agent: {str(e)}")
             raise AgentException(f"Failed to create/update agent: {str(e)}")
     
-    def deactivate_agent(self, name: str) -> bool:
+    def deactivate_agent(self, agent_name: str) -> bool:
         """Deactivate an agent configuration"""
         try:
             # Check if agent exists
-            existing_agent = self.get_agent_config(name)
+            existing_agent = self.get_agent_config(agent_name)
             if not existing_agent:
-                raise AgentException(f"Agent with name '{name}' not found")
+                raise AgentException(f"Agent type '{agent_name}' not found")
             
             # Deactivate agent
             config_data = {
-                "name": name,
+                "agent_name": agent_name,
                 "is_active": False
             }
             
@@ -202,20 +227,20 @@ class AgentService:
         except AgentException:
             raise
         except Exception as e:
-            logger.error(f"Failed to deactivate agent {name}: {str(e)}")
+            logger.error(f"Failed to deactivate agent {agent_name}: {str(e)}")
             raise AgentException(f"Failed to deactivate agent: {str(e)}")
     
-    def toggle_agent_status(self, name: str, is_active: bool) -> bool:
+    def toggle_agent_status(self, agent_name: str, is_active: bool) -> bool:
         """Toggle agent active/inactive status by name"""
         try:
             # Check if agent exists (including inactive ones)
-            existing_agent = self.db_manager.get_agent_config_by_name(name, include_inactive=True)
+            existing_agent = self.db_manager.get_agent_config_by_name(agent_name, include_inactive=True)
             if not existing_agent:
-                raise AgentException(f"Agent with name '{name}' not found")
+                raise AgentException(f"Agent with name '{agent_name}' not found")
             
             # Toggle status
             config_data = {
-                "name": name,
+                "name": agent_name,
                 "is_active": is_active
             }
             
@@ -225,32 +250,32 @@ class AgentService:
         except AgentException:
             raise
         except Exception as e:
-            logger.error(f"Failed to toggle agent status {name}: {str(e)}")
+            logger.error(f"Failed to toggle agent status {agent_name}: {str(e)}")
             raise AgentException(f"Failed to toggle agent status: {str(e)}")
     
-    def permanent_delete_agent(self, name: str) -> bool:
+    def permanent_delete_agent(self, agent_name: str) -> bool:
         """Permanently delete an agent configuration from database by name"""
         try:
-            logger.info(f"Attempting to permanently delete agent: {name}")
+            logger.info(f"Attempting to permanently delete agent: {agent_name}")
             
             # Check if agent exists (including inactive ones)
-            existing_agent = self.db_manager.get_agent_config_by_name(name, include_inactive=True)
+            existing_agent = self.db_manager.get_agent_config_by_name(agent_name, include_inactive=True)
             logger.info(f"Agent lookup result: {existing_agent is not None}")
             
             if not existing_agent:
-                logger.error(f"Agent with name '{name}' not found in database")
-                raise AgentException(f"Agent with name '{name}' not found")
+                logger.error(f"Agent with name '{agent_name}' not found in database")
+                raise AgentException(f"Agent with name '{agent_name}' not found")
             
             logger.info(f"Found agent: {existing_agent.get('name', 'Unknown')} (ID: {existing_agent.get('id', 'Unknown')})")
             
             # Permanently delete from database
-            success = self.db_manager.delete_agent_config(name)
+            success = self.db_manager.delete_agent_config(agent_name)
             logger.info(f"Delete operation result: {success}")
             
             if not success:
-                raise AgentException(f"Failed to delete agent {name} from database")
+                raise AgentException(f"Failed to delete agent {agent_name} from database")
             
-            logger.info(f"Successfully deleted agent {name}")
+            logger.info(f"Successfully deleted agent {agent_name}")
             return True
             
         except AgentException as e:
