@@ -346,25 +346,24 @@ class DatabaseTool:
 
     def get_comprehensive_campaigner_info(self, customer_id: Optional[int] = None) -> Dict[str, Any]:
         """
-        Get comprehensive campaigner information including agency, customers, digital assets, and connections.
+        Get comprehensive campaigner information including agency and customers with campaign statistics.
 
         Args:
             customer_id: Optional customer ID to filter for specific customer
 
         Returns:
             Dictionary containing:
-            - campaigner: User profile information
-            - agency: Agency information
-            - customers: List of customers with their digital assets and connections
+            - campaigner: User profile information (without ID)
+            - agency: Agency information (without ID)
+            - total_customers: Total number of customers
+            - customers: List of first 30 customers with campaign statistics
         """
         # Base query for campaigner and agency
         base_query = """
         SELECT
-            c.id as campaigner_id,
             c.full_name as campaigner_name,
             c.email as campaigner_email,
             c.role as campaigner_role,
-            a.id as agency_id,
             a.name as agency_name
         FROM campaigners c
         JOIN agencies a ON c.agency_id = a.id
@@ -379,7 +378,7 @@ class DatabaseTool:
 
         base_info = base_results[0]
 
-        # Query for customers with digital assets and connections
+        # Get total number of customers
         customer_filter = ""
         params = {"campaigner_id": self.campaigner_id}
 
@@ -387,90 +386,60 @@ class DatabaseTool:
             customer_filter = "AND cu.id = :customer_id"
             params["customer_id"] = customer_id
 
+        total_customers_query = f"""
+        SELECT COUNT(DISTINCT cu.id) as total_customers
+        FROM campaigners c
+        JOIN agencies a ON c.agency_id = a.id
+        LEFT JOIN customers cu ON a.id = cu.agency_id
+        WHERE c.id = :campaigner_id
+          AND cu.is_active = true
+          {customer_filter}
+        """
+
+        total_results = self._execute_query(total_customers_query, params)
+        total_customers = total_results[0]['total_customers'] if total_results else 0
+
+        # Query for customers with campaign statistics (first 30)
         customers_query = f"""
         SELECT
             cu.id as customer_id,
             cu.full_name as customer_name,
-            cu.status as customer_type,
-            cu.is_active as customer_plan,
-            da.id as asset_id,
-            da.asset_type as asset_type,
-            da.provider as asset_provider,
-            da.external_id as asset_external_id,
-            da.status as asset_status,
-            conn.id as connection_id,
-            conn.account_email as connection_email,
-            conn.expires_at as connection_expiration
+            COUNT(DISTINCT kg.campaign_id) as total_campaigns,
+            COUNT(DISTINCT CASE WHEN kg.campaign_status = 'ACTIVE' THEN kg.campaign_id END) as active_campaigns
         FROM campaigners c
         JOIN agencies a ON c.agency_id = a.id
         LEFT JOIN customers cu ON a.id = cu.agency_id
-        LEFT JOIN digital_assets da ON cu.id = da.customer_id
-        LEFT JOIN connections conn ON da.id = conn.digital_asset_id
-        WHERE c.id = :campaigner_id {customer_filter}
-        ORDER BY cu.id, da.id, conn.id
+        LEFT JOIN kpi_goals kg ON cu.id = kg.customer_id
+        WHERE c.id = :campaigner_id
+          AND cu.is_active = true
+          {customer_filter}
+        GROUP BY cu.id, cu.full_name
+        ORDER BY cu.full_name
+        LIMIT 30
         """
 
         customer_results = self._execute_query(customers_query, params)
 
-        # Organize data by customer
-        customers_dict = {}
+        # Build customers list
+        customers_list = []
         for row in customer_results:
-            cust_id = row.get('customer_id')
-            if not cust_id:
-                continue
-
-            if cust_id not in customers_dict:
-                customers_dict[cust_id] = {
-                    'id': cust_id,
-                    'name': row.get('customer_name'),
-                    'type': row.get('customer_type'),
-                    'plan': 'Active' if row.get('customer_plan') else 'Inactive',
-                    'digital_assets': []
-                }
-
-            # Add digital asset if exists and not already added
-            asset_id = row.get('asset_id')
-            if asset_id:
-                # Check if this asset is already in the list
-                existing_asset = next(
-                    (a for a in customers_dict[cust_id]['digital_assets'] if a['id'] == asset_id),
-                    None
-                )
-
-                if not existing_asset:
-                    asset = {
-                        'id': asset_id,
-                        'type': row.get('asset_type'),
-                        'provider': row.get('asset_provider'),
-                        'external_id': row.get('asset_external_id'),
-                        'status': row.get('asset_status'),
-                        'connections': []
-                    }
-                    customers_dict[cust_id]['digital_assets'].append(asset)
-                else:
-                    asset = existing_asset
-
-                # Add connection if exists
-                conn_id = row.get('connection_id')
-                if conn_id and not any(c['id'] == conn_id for c in asset['connections']):
-                    asset['connections'].append({
-                        'id': conn_id,
-                        'email': row.get('connection_email'),
-                        'expiration': row.get('connection_expiration')
-                    })
+            customers_list.append({
+                'name': row.get('customer_name'),
+                'total_campaigns': row.get('total_campaigns', 0),
+                'active_campaigns': row.get('active_campaigns', 0)
+            })
 
         return {
             'campaigner': {
-                'id': base_info['campaigner_id'],
                 'name': base_info['campaigner_name'],
                 'email': base_info['campaigner_email'],
                 'role': base_info['campaigner_role']
             },
             'agency': {
-                'id': base_info['agency_id'],
                 'name': base_info['agency_name']
             },
-            'customers': list(customers_dict.values())
+            'total_customers': total_customers,
+            'customers': customers_list
         }
 
 

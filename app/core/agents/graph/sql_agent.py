@@ -125,7 +125,7 @@ class SQLBasicInfoAgent:
 
         # Load system message from database or use fallback
         system_message = self._load_system_prompt(schema_str, context_str)
-
+        logger.debug(f"📜 [SQLBasicInfoAgent] System prompt loaded: \n{system_message}")
 
         # Create prompt template
         prompt = ChatPromptTemplate.from_messages([
@@ -214,7 +214,8 @@ class SQLBasicInfoAgent:
         Returns:
             Fallback system prompt
         """
-        return """You are an expert SQL database assistant with READ-ONLY access to a PostgreSQL database.
+        return """
+You are an expert SQL database assistant with READ-ONLY access to a PostgreSQL database.
 
 Your role is to:
 1. Understand the user's question
@@ -273,6 +274,7 @@ LIMIT 20
 5. Include LIMIT clauses to prevent large result sets (max 100 rows)
 6. Use meaningful column aliases for clarity
 7. only a single sql query is allowed, so DO NOT use semicolon(;) in the query. queries with semicolon will be rejected.
+8. campaigner_id parameter is known as :campaigner_id and will be provided at execution time, DO NOT hardcode any IDs.
 
 When answering:
 - Be specific and reference actual data from query results
@@ -280,4 +282,5 @@ When answering:
 - Include relevant IDs
 - If no data found, explain what was searched
 - Respond in the user's language
+
 """

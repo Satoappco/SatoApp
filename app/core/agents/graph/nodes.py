@@ -84,28 +84,17 @@ class ChatbotNode:
         if agency:
             lines.append(f"- Agency: {agency.get('name', 'N/A')}")
 
-        # Customers with Digital Assets and Connections
+        # Total customers
+        total_customers = info.get('total_customers', 0)
+        lines.append(f"- Total Customers: {total_customers}")
+
+        # Customers with campaign statistics
         customers = info.get('customers', [])
         if customers:
+            lines.append(f"- First {len(customers)} Customers:")
             for customer in customers:
-                customer_line = f"- Customer: {customer.get('name', 'N/A')} ({customer.get('type', 'N/A')}) - Plan: {customer.get('plan', 'N/A')}"
+                customer_line = f"  • {customer.get('name', 'N/A')}: {customer.get('active_campaigns', 0)} active campaigns / {customer.get('total_campaigns', 0)} total campaigns"
                 lines.append(customer_line)
-
-                # Digital Assets
-                digital_assets = customer.get('digital_assets', [])
-                if digital_assets:
-                    for asset in digital_assets:
-                        asset_line = f"  - Digital Asset: Type={asset.get('type', 'N/A')}, Provider={asset.get('provider', 'N/A')}, External ID={asset.get('external_id', 'N/A')}, Status={asset.get('status', 'N/A')}"
-                        lines.append(asset_line)
-
-                        # Connections
-                        connections = asset.get('connections', [])
-                        if connections:
-                            for conn in connections:
-                                exp = conn.get('expiration')
-                                exp_str = f" (expires: {exp})" if exp else ""
-                                conn_line = f"    - Connection: {conn.get('email', 'N/A')}{exp_str}"
-                                lines.append(conn_line)
 
         return "\n".join(lines) if lines else "No detailed information available"
 
@@ -129,33 +118,42 @@ You do NOT need to ask users for their ID - it's already available in the system
 you can't answer questions related to other users or campaigners.
 
 Available agents you can route to:
-- basic_info_agent: Answers questions about agency info, user info, campaigns, and KPIs using database access
+- basic_info_agent: Answers questions using database access to the following tables ONLY:
+  * customers: Customer/client information (name, status, contact info, etc.)
+  * kpi_goals: Campaign goals and KPI targets (campaign names, budgets, objectives, target KPIs)
+  * kpi_values: Actual KPI measurements (campaign performance, metrics)
+  * digital_assets: Digital assets info (Facebook pages, Google Analytics properties, etc.)
+  * connections: OAuth connections and API credentials (connection status, expiration)
+  * rtm_table: Real-Time Marketing data
+  * questions_table: Questions and answers data
+  NOTE: basic_info_agent CANNOT access agencies or campaigners tables directly
+
 - analytics_crew: Gathers and analyzes data from all advertising platforms (Facebook Ads, Google Marketing, etc.)
 - campaign_planning_crew: Plans new campaigns, creates digital assets, and deploys them to platforms
 
 When you understand what the user needs, respond with a JSON object specifying which agent to use:
-{
+{{
     "agent": "basic_info_agent" | "analytics_crew" | "campaign_planning_crew",
-    "task": {
+    "task": {{
         "query": "the specific task description",
-        "context": {}
-    },
+        "context": {{}}
+    }},
     "ready": true
-}
+}}
 
 If you need more information, respond naturally asking for clarification:
-{
+{{
     "message": "your clarifying question or response",
     "complete" : false,
     "ready": false
-}
+}}
 
 if the user request is simple and can be answered without an agent, provide a direct answer in the message field:
-{
+{{
     "message": "your direct answer to the user's question",
     "complete" : true,
     "ready": false
-}
+}}
 
 # Ground rules:
     Simple answers can only be related to campaign data, sales data, website traffic, questions about the specific of an ad campaign such as "what items are currently being campaigned" "what campaigns am i running" "what is my budget" "what is my budget's fulfillment"
@@ -197,7 +195,7 @@ if the user request is simple and can be answered without an agent, provide a di
             db_tool = DatabaseTool(campaigner.id)
             comprehensive_info = db_tool.get_comprehensive_campaigner_info()
             campaigner_info_str = self._format_campaigner_info(comprehensive_info)
-            logger.debug(f"📋 [ChatbotNode] Formatted campaigner info:\n{campaigner_info_str}...")
+            logger.debug(f"📋 [ChatbotNode] Formatted system prompt:\n{self.system_prompt.format(campaigner_info=campaigner_info_str)}...")
         except Exception as e:
             logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
 
