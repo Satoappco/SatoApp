@@ -27,7 +27,8 @@ from .routes import (
     # crewai,
     database_management,
     customer_data,
-    countries_currencies
+    countries_currencies,
+    settings
 )
 from app.api.v1.routes.chat import router as chat_router
 
@@ -63,6 +64,7 @@ api_router.include_router(database_management.router, tags=["database-management
 api_router.include_router(customer_data.router, tags=["customer-data"])
 api_router.include_router(chat_router, tags=["chat"])
 api_router.include_router(countries_currencies.router, prefix="/constants", tags=["constants"])
+api_router.include_router(settings.router, tags=["settings"])
 
 # Conditionally include debug routes ONLY in development
 if os.getenv("ENVIRONMENT", "production") in ["development", "dev", "local"]:
