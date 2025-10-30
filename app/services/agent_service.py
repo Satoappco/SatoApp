@@ -72,14 +72,14 @@ class AgentService:
             logger.error(f"Failed to get all agents: {str(e)}")
             raise AgentException(f"Failed to get all agents: {str(e)}")
     
-    def get_agent_config(self, agent_type: str) -> Optional[Dict[str, Any]]:
+    def get_agent_config(self, agent_name: str) -> Optional[Dict[str, Any]]:
         """Get specific agent configuration"""
         try:
-            agent_config = self.db_manager.get_agent_config(agent_type)
+            agent_config = self.db_manager.get_agent_config(agent_name)
             return self._convert_datetime_to_string(agent_config)
             
         except Exception as e:
-            logger.error(f"Failed to get agent config for {agent_type}: {str(e)}")
+            logger.error(f"Failed to get agent config for {agent_name}: {str(e)}")
             raise AgentException(f"Failed to get agent config: {str(e)}")
     
     
@@ -130,7 +130,7 @@ class AgentService:
         """Create or update agent configuration with automatic tool and data source assignment"""
         try:
             # Validate required fields
-            required_fields = ['agent_type', 'name', 'role', 'goal', 'backstory']
+            required_fields = ['name', 'role', 'goal', 'backstory']
             for field in required_fields:
                 if not config_data.get(field):
                     raise AgentException(f"Missing required field: {field}")
@@ -142,26 +142,26 @@ class AgentService:
                     raise AgentException(f"Task template validation failed: {error_message}")
             
             # Auto-assign tools based on agent type
-            agent_type = config_data.get('agent_type')
-            if agent_type:
+            agent_name = config_data.get('name')
+            if agent_name:
                 try:
                     from app.core.constants import get_tools_for_agent, get_data_sources_for_agent
                     
                     # Auto-assign tools
-                    auto_tools = get_tools_for_agent(agent_type)
+                    auto_tools = get_tools_for_agent(agent_name)
                     if auto_tools:
                         config_data['tools'] = auto_tools
-                        logger.info(f"Auto-assigned tools for {agent_type}: {auto_tools}")
+                        logger.info(f"Auto-assigned tools for {agent_name}: {auto_tools}")
                     
                     # Auto-assign data sources if not provided
                     if 'capabilities' not in config_data:
                         config_data['capabilities'] = {}
                     
                     if 'data_sources' not in config_data['capabilities'] or not config_data['capabilities']['data_sources']:
-                        auto_data_sources = get_data_sources_for_agent(agent_type)
+                        auto_data_sources = get_data_sources_for_agent(agent_name)
                         if auto_data_sources:
                             config_data['capabilities']['data_sources'] = auto_data_sources
-                            logger.info(f"Auto-assigned data sources for {agent_type}: {auto_data_sources}")
+                            logger.info(f"Auto-assigned data sources for {agent_name}: {auto_data_sources}")
                     
                 except ImportError as e:
                     logger.warning(f"Could not auto-assign tools/data sources: {e}")
@@ -187,17 +187,17 @@ class AgentService:
             logger.error(f"Failed to create/update agent: {str(e)}")
             raise AgentException(f"Failed to create/update agent: {str(e)}")
     
-    def deactivate_agent(self, agent_type: str) -> bool:
+    def deactivate_agent(self, agent_name: str) -> bool:
         """Deactivate an agent configuration"""
         try:
             # Check if agent exists
-            existing_agent = self.get_agent_config(agent_type)
+            existing_agent = self.get_agent_config(agent_name)
             if not existing_agent:
-                raise AgentException(f"Agent type '{agent_type}' not found")
+                raise AgentException(f"Agent type '{agent_name}' not found")
             
             # Deactivate agent
             config_data = {
-                "agent_type": agent_type,
+                "agent_name": agent_name,
                 "is_active": False
             }
             
@@ -207,20 +207,20 @@ class AgentService:
         except AgentException:
             raise
         except Exception as e:
-            logger.error(f"Failed to deactivate agent {agent_type}: {str(e)}")
+            logger.error(f"Failed to deactivate agent {agent_name}: {str(e)}")
             raise AgentException(f"Failed to deactivate agent: {str(e)}")
     
-    def toggle_agent_status(self, agent_type: str, is_active: bool) -> bool:
+    def toggle_agent_status(self, agent_name: str, is_active: bool) -> bool:
         """Toggle agent active/inactive status"""
         try:
             # Check if agent exists (including inactive ones)
-            existing_agent = self.db_manager.get_agent_config_by_type(agent_type, include_inactive=True)
+            existing_agent = self.db_manager.get_agent_config_by_type(agent_name, include_inactive=True)
             if not existing_agent:
-                raise AgentException(f"Agent type '{agent_type}' not found")
+                raise AgentException(f"Agent type '{agent_name}' not found")
             
             # Toggle status
             config_data = {
-                "agent_type": agent_type,
+                "name": agent_name,
                 "is_active": is_active
             }
             
@@ -230,32 +230,32 @@ class AgentService:
         except AgentException:
             raise
         except Exception as e:
-            logger.error(f"Failed to toggle agent status {agent_type}: {str(e)}")
+            logger.error(f"Failed to toggle agent status {agent_name}: {str(e)}")
             raise AgentException(f"Failed to toggle agent status: {str(e)}")
     
-    def permanent_delete_agent(self, agent_type: str) -> bool:
+    def permanent_delete_agent(self, agent_name: str) -> bool:
         """Permanently delete an agent configuration from database"""
         try:
-            logger.info(f"Attempting to permanently delete agent: {agent_type}")
+            logger.info(f"Attempting to permanently delete agent: {agent_name}")
             
             # Check if agent exists (including inactive ones)
-            existing_agent = self.db_manager.get_agent_config_by_type(agent_type, include_inactive=True)
+            existing_agent = self.db_manager.get_agent_config_by_type(agent_name, include_inactive=True)
             logger.info(f"Agent lookup result: {existing_agent is not None}")
             
             if not existing_agent:
-                logger.error(f"Agent type '{agent_type}' not found in database")
-                raise AgentException(f"Agent type '{agent_type}' not found")
+                logger.error(f"Agent type '{agent_name}' not found in database")
+                raise AgentException(f"Agent type '{agent_name}' not found")
             
             logger.info(f"Found agent: {existing_agent.get('name', 'Unknown')} (ID: {existing_agent.get('id', 'Unknown')})")
             
             # Permanently delete from database
-            success = self.db_manager.delete_agent_config(agent_type)
+            success = self.db_manager.delete_agent_config(agent_name)
             logger.info(f"Delete operation result: {success}")
             
             if not success:
-                raise AgentException(f"Failed to delete agent {agent_type} from database")
+                raise AgentException(f"Failed to delete agent {agent_name} from database")
             
-            logger.info(f"Successfully deleted agent {agent_type}")
+            logger.info(f"Successfully deleted agent {agent_name}")
             return True
             
         except AgentException as e:
@@ -265,34 +265,33 @@ class AgentService:
             logger.error(f"Unexpected error in permanent_delete_agent: {str(e)}")
             raise AgentException(f"Failed to permanently delete agent: {str(e)}")
     
-    def validate_agent_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate agent configuration"""
-        errors = []
+    # def validate_agent_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    #     """Validate agent configuration"""
+    #     errors = []
         
-        # Required field validation
-        required_fields = {
-            'role': 'Role is required',
-            'goal': 'Goal is required', 
-            'backstory': 'Backstory is required',
-            'name': 'Name is required',
-            'agent_type': 'Agent type is required'
-        }
+    #     # Required field validation
+    #     required_fields = {
+    #         'role': 'Role is required',
+    #         'goal': 'Goal is required', 
+    #         'backstory': 'Backstory is required',
+    #         'name': 'Name is required',
+    #     }
         
-        for field, error_msg in required_fields.items():
-            if not config.get(field):
-                errors.append(error_msg)
+    #     for field, error_msg in required_fields.items():
+    #         if not config.get(field):
+    #             errors.append(error_msg)
         
-        # Max iterations validation
-        max_iterations = config.get('max_iterations', 3)
-        if not isinstance(max_iterations, int) or max_iterations < 1 or max_iterations > 10:
-            errors.append('Max iterations must be between 1 and 10')
+    #     # Max iterations validation
+    #     max_iterations = config.get('max_iterations', 3)
+    #     if not isinstance(max_iterations, int) or max_iterations < 1 or max_iterations > 10:
+    #         errors.append('Max iterations must be between 1 and 10')
         
-        # Agent type validation
-        valid_agent_types = ['master', 'google_analytics', 'facebook_ads', 'content_analysis']
-        if config.get('agent_type') and config['agent_type'] not in valid_agent_types:
-            errors.append(f"Agent type must be one of: {', '.join(valid_agent_types)}")
+    #     # Agent type validation
+    #     valid_agent_types = ['master', 'google_analytics', 'facebook_ads', 'content_analysis']
+    #     if config.get('name', '') not in valid_agent_types:
+    #         errors.append(f"Agent type must be one of: {', '.join(valid_agent_types)}")
         
-        return {
-            'valid': len(errors) == 0,
-            'errors': errors
-        }
+    #     return {
+    #         'valid': len(errors) == 0,
+    #         'errors': errors
+    #     }

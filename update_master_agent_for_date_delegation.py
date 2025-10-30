@@ -15,13 +15,13 @@ def update_master_agent_backstory():
         # Find master agent
         for master_type in ['seo_campaign_manager', 'master', 'seo_master', 'campaign_manager']:
             statement = select(AgentConfig).where(
-                AgentConfig.agent_type == master_type,
+                AgentConfig.name == master_type,
                 AgentConfig.is_active == True
             )
             master_agent = session.exec(statement).first()
             
             if master_agent:
-                print(f"\n✅ Found master agent: {master_agent.name} ({master_agent.agent_type})")
+                print(f"\n✅ Found master agent: {master_agent.name}")
                 print(f"\n{'='*80}")
                 print("CURRENT BACKSTORY:")
                 print(f"{'='*80}")
@@ -78,7 +78,6 @@ Examples:
                 print("✅ MASTER AGENT UPDATED SUCCESSFULLY!")
                 print(f"{'='*80}")
                 print(f"Agent ID: {master_agent.id}")
-                print(f"Agent Type: {master_agent.agent_type}")
                 print(f"Name: {master_agent.name}")
                 print(f"Allow Delegation: {master_agent.allow_delegation}")
                 print(f"Updated At: {master_agent.updated_at}")

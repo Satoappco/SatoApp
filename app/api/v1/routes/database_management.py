@@ -1190,7 +1190,7 @@ async def get_agent_configs(
             if active_only:
                 statement = statement.where(AgentConfig.is_active == True)
             
-            statement = statement.order_by(AgentConfig.agent_type, AgentConfig.name)
+            statement = statement.order_by(AgentConfig.name)
             agents = session.exec(statement).all()
             
             return {
@@ -1199,7 +1199,6 @@ async def get_agent_configs(
                 "agents": [
                     {
                         "id": agent.id,
-                        "agent_type": agent.agent_type,
                         "name": agent.name,
                         "role": agent.role,
                         "goal": agent.goal,

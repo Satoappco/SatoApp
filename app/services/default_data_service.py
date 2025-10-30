@@ -133,7 +133,6 @@ class DefaultDataService:
         """Create default agent configurations"""
         default_agents = [
             {
-                "agent_type": "seo_campaign_manager",
                 "name": "SEO Campaign Manager",
                 "role": "Expert SEO campaign manager specializing in search engine optimization and organic traffic growth",
                 "goal": "Analyze and optimize SEO campaigns to improve organic search rankings and traffic",
@@ -146,7 +145,6 @@ class DefaultDataService:
                 "capabilities": '{"data_sources": ["google_analytics", "google_search_console"], "specializations": ["seo", "organic_traffic", "keyword_optimization"]}'
             },
             {
-                "agent_type": "social_media_specialist",
                 "name": "Social Media Specialist",
                 "role": "Social media marketing expert focused on Facebook, Instagram, and other social platforms",
                 "goal": "Optimize social media campaigns to increase engagement, reach, and conversions",
@@ -159,7 +157,6 @@ class DefaultDataService:
                 "capabilities": '{"data_sources": ["facebook_ads", "instagram"], "specializations": ["social_media", "paid_social", "engagement"]}'
             },
             {
-                "agent_type": "ppc_specialist",
                 "name": "PPC Specialist",
                 "role": "Pay-per-click advertising expert specializing in Google Ads and other PPC platforms",
                 "goal": "Optimize PPC campaigns to maximize ROI and minimize cost per acquisition",
@@ -176,7 +173,7 @@ class DefaultDataService:
         for agent_data in default_agents:
             # Check if agent already exists
             existing = session.exec(
-                select(AgentConfig).where(AgentConfig.agent_type == agent_data["agent_type"])
+                select(AgentConfig).where(AgentConfig.name == agent_data["name"])
             ).first()
             
             if not existing:

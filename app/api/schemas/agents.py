@@ -10,7 +10,6 @@ from .common import BaseResponse
 class AgentConfigRequest(BaseModel):
     """Request schema for agent configuration"""
     id: Optional[int] = None
-    agent_type: str = Field(..., description="Agent type from constants", min_length=1, max_length=100)
     name: str = Field(..., description="Agent name", min_length=1, max_length=100)
     role: str = Field(..., description="Agent role", min_length=1, max_length=200)
     goal: str = Field(..., description="Agent goal", min_length=1, max_length=500)
@@ -22,18 +21,18 @@ class AgentConfigRequest(BaseModel):
     allow_delegation: bool = Field(False, description="Allow delegation to other agents")
     verbose: bool = Field(True, description="Verbose logging")
     
-    @validator('agent_type')
-    def validate_agent_type(cls, v):
-        """Validate agent type against constants"""
-        try:
-            from app.core.constants import AgentType
-            valid_types = [agent.value for agent in AgentType]
-            if v not in valid_types:
-                raise ValueError(f"Invalid agent type: {v}. Must be one of: {', '.join(valid_types)}")
-            return v
-        except ImportError:
-            # Fallback if constants not available
-            return v
+    # @validator('agent_type')
+    # def validate_agent_type(cls, v):
+    #     """Validate agent type against constants"""
+    #     try:
+    #         from app.core.constants import AgentType
+    #         valid_types = [agent.value for agent in AgentType]
+    #         if v not in valid_types:
+    #             raise ValueError(f"Invalid agent type: {v}. Must be one of: {', '.join(valid_types)}")
+    #         return v
+    #     except ImportError:
+    #         # Fallback if constants not available
+    #         return v
     
     @validator('capabilities')
     def validate_capabilities(cls, v):

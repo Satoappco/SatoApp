@@ -209,19 +209,19 @@ async def run_crewai_analysis_for_test(
         
         logger.info(f"📊 Available specialist agents: {len(specialist_agents_data)}")
         for specialist_data in specialist_agents_data:
-            logger.info(f"🔍 Checking specialist: {specialist_data['name']} (type: {specialist_data['agent_type']})")
+            logger.info(f"🔍 Checking specialist: {specialist_data['name']}")
             # Only include relevant specialists
             if not _should_include_specialist(specialist_data, data_sources, intent_name, user_question):
                 logger.info(f"Skipping specialist: {specialist_data['name']} (not relevant for this request)")
                 continue
                 
-            agent_type = specialist_data["agent_type"]
+            agent_name = specialist_data["name"]
             
             # Get tools for this agent dynamically
-            logger.info(f"🔧 Getting tools for agent type: {agent_type}")
+            logger.info(f"🔧 Getting tools for agent type: {agent_name}")
             # Use customer_id as subclient_id for database queries
-            agent_tools = get_tools_for_agent(agent_type, user_connections, campaigner_id=campaigner_id, customer_id=customer_id)
-            logger.info(f"🔧 Agent {agent_type} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
+            agent_tools = get_tools_for_agent(agent_name, user_connections, campaigner_id=campaigner_id, customer_id=customer_id)
+            logger.info(f"🔧 Agent {agent_name} received {len(agent_tools)} tools: {[tool.__class__.__name__ for tool in agent_tools]}")
             
             # Create specialist agent using ONLY database configuration with timing
             specialist_agent = timing_wrapper.create_timed_agent(

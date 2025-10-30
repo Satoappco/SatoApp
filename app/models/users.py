@@ -114,7 +114,6 @@ class Customer(BaseModel, table=True):
     # Geographic and currency information
     country: Optional[str] = Field(default=None, max_length=2, description="Country code (ISO 3166-1 alpha-2)")
     currency: Optional[str] = Field(default=None, max_length=3, description="Currency code (ISO 4217)")
-    en_meta: Optional[str] = Field(default=None, sa_column=Column(String), description="Email marketing metadata")
     
     # Active status
     is_active: bool = Field(default=True, description="Whether this customer record is active")

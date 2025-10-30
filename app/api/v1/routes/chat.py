@@ -121,7 +121,6 @@ async def stream_chat(
 
     Requires authentication via JWT token.
     """
-
     async def generate():
         try:
             # Generate thread ID if not provided

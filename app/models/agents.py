@@ -12,7 +12,6 @@ class AgentConfig(BaseModel, table=True):
     """Agent configuration model for master and specialist agents"""
     __tablename__ = "agent_configs"
     
-    agent_type: str = Field(max_length=50)  # master, google_analytics, facebook_ads, etc.
     name: str = Field(max_length=100)
     role: str = Field(description="Agent role description")
     goal: str = Field(description="Agent goal description")

@@ -20,11 +20,11 @@ router = APIRouter()
 
 
 class DeleteAgentRequest(BaseModel):
-    agent_type: str
+    agent_name: str
     permanent: bool = False
 
 class GetAgentRequest(BaseModel):
-    agent_type: str
+    agent_name: str
 
 
 def authenticate_user_or_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
@@ -72,7 +72,6 @@ async def get_agents_status(current_user: Campaigner = Depends(get_current_user)
         if master_agent:
             agents.append({
                 "id": master_agent.get("id"),
-                "type": master_agent.get("agent_type"),
                 "name": master_agent.get("name"),
                 "role": master_agent.get("role"),
                 "goal": master_agent.get("goal"),
@@ -92,7 +91,6 @@ async def get_agents_status(current_user: Campaigner = Depends(get_current_user)
         for specialist in specialist_agents:
             agents.append({
                 "id": specialist.get("id"),
-                "type": specialist.get("agent_type"),
                 "name": specialist.get("name"),
                 "role": specialist.get("role"),
                 "goal": specialist.get("goal"),
@@ -123,10 +121,10 @@ def get_agent_config(request: GetAgentRequest, _: bool = Depends(authenticate_us
     """POST /api/v1/agents/get - Get specific agent configuration by type"""
     try:
         agent_service = AgentService()
-        agent_config = agent_service.get_agent_config(request.agent_type)
+        agent_config = agent_service.get_agent_config(request.agent_name)
         
         if not agent_config:
-            raise HTTPException(status_code=404, detail=f"Agent type '{request.agent_type}' not found")
+            raise HTTPException(status_code=404, detail=f"Agent type '{request.agent_name}' not found")
         
         return AgentConfigResponse(
             status="success",
@@ -137,7 +135,7 @@ def get_agent_config(request: GetAgentRequest, _: bool = Depends(authenticate_us
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get agent {request.agent_type}: {str(e)}")
+        logger.error(f"Failed to get agent {request.agent_name}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get agent: {str(e)}")
 
 
@@ -150,11 +148,11 @@ def create_agent_config(
     try:
         # Check for existing agent type to prevent duplicates
         from app.core.database import db_manager
-        existing_agent = db_manager.get_agent_config_by_type(agent_config.agent_type, include_inactive=True)
+        existing_agent = db_manager.get_agent_config_by_type(agent_config.name, include_inactive=True)
         if existing_agent and existing_agent.get('is_active', False):
             raise HTTPException(
                 status_code=409, 
-                detail=f"Agent type '{agent_config.agent_type}' already exists. Use PUT to update existing agent."
+                detail=f"Agent type '{agent_config.name}' already exists. Use PUT to update existing agent."
             )
         
         agent_service = AgentService()
@@ -162,7 +160,7 @@ def create_agent_config(
         
         return AgentConfigResponse(
             status="success",
-            message=f"Agent '{agent_config.agent_type}' created successfully",
+            message=f"Agent '{agent_config.name}' created successfully",
             agent=created_agent,
             timestamp=datetime.utcnow().isoformat()
         )
@@ -183,25 +181,25 @@ def update_agent_config(
     try:
         agent_service = AgentService()
         
-        # Get agent_type from the request body
+        # Get agent_name from the request body
         config_data = agent_config.dict()
-        agent_type = config_data.get("agent_type")
+        agent_name = config_data.get("name")
         
-        if not agent_type:
-            raise HTTPException(status_code=400, detail="agent_type is required")
+        if not agent_name:
+            raise HTTPException(status_code=400, detail="agent_name is required")
         
         # Check if agent exists (including inactive ones for updates)
         from app.core.database import db_manager
-        existing_agent = db_manager.get_agent_config_by_type(agent_type, include_inactive=True)
+        existing_agent = db_manager.get_agent_config_by_type(agent_name, include_inactive=True)
         if not existing_agent:
-            raise HTTPException(status_code=404, detail=f"Agent type '{agent_type}' not found")
+            raise HTTPException(status_code=404, detail=f"Agent type '{agent_name}' not found")
         
         # Update agent
         updated_agent = agent_service.create_or_update_agent(config_data)
         
         return AgentConfigResponse(
             status="success",
-            message=f"Agent '{agent_type}' updated successfully",
+            message=f"Agent '{agent_name}' updated successfully",
             agent=updated_agent,
             timestamp=datetime.utcnow().isoformat()
         )
@@ -213,31 +211,29 @@ def update_agent_config(
         raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
 
 
-
-
 @router.delete("/")
 def delete_agent_config(request: DeleteAgentRequest, _: bool = Depends(authenticate_user_or_api_key)):
     """Delete agent configuration"""
     try:
-        agent_type = request.agent_type
+        agent_name = request.agent_name
         permanent = request.permanent
         
         agent_service = AgentService()
         
         # Check if agent exists (including inactive ones)
         from app.core.database import db_manager
-        existing_agent = db_manager.get_agent_config_by_type(agent_type, include_inactive=True)
+        existing_agent = db_manager.get_agent_config_by_type(agent_name, include_inactive=True)
         if not existing_agent:
-            raise HTTPException(status_code=404, detail=f"Agent type '{agent_type}' not found")
+            raise HTTPException(status_code=404, detail=f"Agent type '{agent_name}' not found")
         
         if permanent:
             # Permanently delete agent
-            success = agent_service.permanent_delete_agent(agent_type)
-            message = f"Agent '{agent_type}' permanently deleted from database"
+            success = agent_service.permanent_delete_agent(agent_name)
+            message = f"Agent '{agent_name}' permanently deleted from database"
         else:
             # Just deactivate agent
-            success = agent_service.deactivate_agent(agent_type)
-            message = f"Agent '{agent_type}' deactivated successfully"
+            success = agent_service.deactivate_agent(agent_name)
+            message = f"Agent '{agent_name}' deactivated successfully"
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete agent")

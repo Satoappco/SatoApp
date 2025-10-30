@@ -10,12 +10,12 @@ from app.core.constants import get_tools_for_agent
 logger = logging.getLogger(__name__)
 
 
-def get_tools_for_agent(agent_type: str, campaigner_connections: List[Dict], campaigner_id: int = None, agency_id: int = None, customer_id: int = None) -> List:
+def get_tools_for_agent(agent_name: str, campaigner_connections: List[Dict], campaigner_id: int = None, agency_id: int = None, customer_id: int = None) -> List:
     """
-    AUTO-DISCOVERY: Dynamically assign tools based on agent type naming conventions
+    AUTO-DISCOVERY: Dynamically assign tools based on agent name naming conventions
     
     Args:
-        agent_type: Type of agent (e.g., 'seo_campaign_manager', 'google_analytics')
+        agent_name: Name of agent (e.g., 'seo_campaign_manager', 'google_analytics')
         campaigner_connections: List of campaigner's data source connections
         campaigner_id: Campaigner ID for tool initialization
         agency_id: Agency ID (optional)
@@ -31,21 +31,21 @@ def get_tools_for_agent(agent_type: str, campaigner_connections: List[Dict], cam
     
     # Get tools using standardized constants
     from app.core.constants import get_tools_for_agent as get_standard_tools
-    tool_names = get_standard_tools(agent_type)
+    tool_names = get_standard_tools(agent_name)
     
     for tool_name in tool_names:
         try:
             tool_instance = _create_tool_instance(tool_name, campaigner_id, customer_id)
             if tool_instance:
                 tools.append(tool_instance)
-                logger.info(f"✅ Added {tool_name} for {agent_type} (customer_id={customer_id})")
+                logger.info(f"✅ Added {tool_name} for {agent_name} (customer_id={customer_id})")
                 
         except ImportError as e:
             logger.warning(f"⚠️ Could not import {tool_name}: {e}")
         except Exception as e:
             logger.error(f"❌ Error creating {tool_name}: {e}")
     
-    logger.info(f"🔧 Agent '{agent_type}' assigned {len(tools)} tools: {[tool.__class__.__name__ for tool in tools]}")
+    logger.info(f"🔧 Agent '{agent_name}' assigned {len(tools)} tools: {[tool.__class__.__name__ for tool in tools]}")
     return tools
 
 
