@@ -228,11 +228,8 @@ async def refresh_google_ads_token(
                 "reauth_url": reauth_url,
                 "message": "Refresh token expired. Please re-authorize to get fresh tokens."
             }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_msg
-            )
+        # Return a consistent JSON error payload for other failures
+        return {"success": False, "error": error_msg}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -243,6 +240,7 @@ async def refresh_google_ads_token(
 @router.get("/connections/{connection_id}")
 async def get_google_ads_connection(
     connection_id: int,
+    include_refresh_token: bool = Query(False, description="Include decrypted refresh token (dev-only)"),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -277,6 +275,16 @@ async def get_google_ads_connection(
             
             # Decrypt access token for display
             access_token = google_ads_service._decrypt_token(connection.access_token_enc)
+            refresh_token = None
+            if include_refresh_token:
+                # Dev-only safety: only expose in non-production
+                env = os.getenv("ENVIRONMENT", "development").lower()
+                if env != "production":
+                    if connection.refresh_token_enc:
+                        try:
+                            refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc)
+                        except Exception:
+                            refresh_token = None
             
             # Compute token status
             is_outdated = google_ads_service.is_token_expired(connection.expires_at) if connection.expires_at else True
@@ -290,7 +298,7 @@ async def get_google_ads_connection(
                     return dt.isoformat() + 'Z'
                 return dt.isoformat()
             
-            return {
+            response = {
                 "connection_id": connection.id,
                 "customer_id": asset.external_id,
                 "customer_name": asset.name,
@@ -301,6 +309,9 @@ async def get_google_ads_connection(
                 "is_outdated": is_outdated,
                 "access_token": access_token
             }
+            if include_refresh_token and refresh_token is not None:
+                response["refresh_token"] = refresh_token
+            return response
     
     except HTTPException:
         raise
@@ -386,6 +397,9 @@ async def revoke_google_ads_connection(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to revoke Google Ads connection: {str(e)}"
         )
+
+
+ 
 
 
 @router.post("/create-connection")
