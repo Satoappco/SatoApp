@@ -216,11 +216,8 @@ async def refresh_ga_token(
                 "reauth_url": reauth_url,
                 "message": "Refresh token expired. Please re-authorize to get fresh tokens."
             }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_msg
-            )
+        # Return a consistent JSON error payload for other failures
+        return {"success": False, "error": error_msg}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

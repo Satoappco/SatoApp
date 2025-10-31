@@ -30,6 +30,14 @@ from .connection_utils import (
     validate_connection_access
 )
 
+# Auth utilities
+from .auth_utils import (
+    build_token_data,
+    compute_expires_at,
+    create_token_pair,
+    create_campaigner_response
+)
+
 # Existing utilities
 from .async_utils import run_async_in_thread
 from .date_utils import *
@@ -55,6 +63,12 @@ __all__ = [
     "get_connection_by_id",
     "get_user_connections_summary",
     "validate_connection_access",
+    
+    # Auth utilities
+    "build_token_data",
+    "compute_expires_at",
+    "create_token_pair",
+    "create_campaigner_response",
     
     # Existing utilities
     "run_async_in_thread",

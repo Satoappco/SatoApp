@@ -267,7 +267,12 @@ class GoogleAdsService:
             connection, digital_asset = result
             
             # Decrypt refresh token
+            if not connection.refresh_token_enc:
+                # No stored refresh token -> must re-authorize
+                reauth_url = self.generate_reauth_url(connection_id, connection.account_email)
+                raise ValueError(f"Please re-authorize: {reauth_url}")
             refresh_token = self._decrypt_token(connection.refresh_token_enc)
+            prev_refresh_hash = self._generate_token_hash(refresh_token)
             
             # Create credentials and refresh using stored scopes
             stored_scopes = connection.scopes if connection.scopes else self.GOOGLE_ADS_SCOPES
@@ -284,15 +289,23 @@ class GoogleAdsService:
                 # Refresh the token
                 credentials.refresh(Request())
                 
-                # Encrypt new tokens
+                # Encrypt and update new access token
                 access_token_enc = self._encrypt_token(credentials.token)
-                refresh_token_enc = self._encrypt_token(credentials.refresh_token)
                 token_hash = self._generate_token_hash(credentials.token)
-                
-                # Update connection
                 connection.access_token_enc = access_token_enc
-                connection.refresh_token_enc = refresh_token_enc
                 connection.token_hash = token_hash
+                
+                # Only rotate refresh token if Google returned a new one
+                new_refresh_token = getattr(credentials, "refresh_token", None)
+                if new_refresh_token:
+                    connection.refresh_token_enc = self._encrypt_token(new_refresh_token)
+                    new_refresh_hash = self._generate_token_hash(new_refresh_token)
+                    refresh_rotated = new_refresh_hash != prev_refresh_hash
+                else:
+                    # Keep existing refresh token
+                    new_refresh_hash = prev_refresh_hash
+                    refresh_rotated = False
+                
                 now = datetime.now(timezone.utc)
                 connection.expires_at = now + timedelta(seconds=3600)  # 1 hour
                 connection.rotated_at = now
@@ -309,25 +322,21 @@ class GoogleAdsService:
                     "connection_id": connection_id,
                     "expires_at": connection.expires_at.isoformat(),
                     "rotated_at": connection.rotated_at.isoformat(),
-                    "scopes": stored_scopes
+                    "scopes": stored_scopes,
+                    # Debug-safe visibility for whether refresh token changed
+                    "refresh_token_rotated": refresh_rotated,
+                    "refresh_token_hash": new_refresh_hash
                 }
                 
             except Exception as e:
                 print(f"❌ Google Ads token refresh failed for connection {connection_id}: {e}")
-                
-                # Try to handle specific errors
-                if "invalid_grant" in str(e).lower():
-                    print(f"🔄 Invalid grant - attempting to renew refresh token...")
-                    try:
-                        # Try to renew the refresh token
-                        credentials.refresh(Request())
-                        print(f"✅ Refresh token renewed successfully")
-                    except Exception as renewal_error:
-                        print(f"❌ Automatic renewal failed: {renewal_error}")
-                    
-                    # If automatic renewal fails, generate re-auth URL and fail clearly
+                error_text = str(e)
+                # For invalid_grant or obviously bad refresh tokens -> force reauth
+                if "invalid_grant" in error_text.lower() or not refresh_token:
                     reauth_url = self.generate_reauth_url(connection_id, connection.account_email)
-                    raise ValueError(f"Google Ads token refresh failed. Please re-authorize your Google Ads connection: {reauth_url}")
+                    raise ValueError(f"Please re-authorize: {reauth_url}")
+                # Propagate as ValueError for route to format
+                raise ValueError(f"Refresh failed: {error_text}")
 
     def validate_refresh_token(self, refresh_token: str) -> bool:
         """
