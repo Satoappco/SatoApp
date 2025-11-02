@@ -17,6 +17,11 @@ SERVICE_NAME="sato-backend-v2"
 PROJECT_ID=$(gcloud config get-value project)
 CLOUD_SQL_INSTANCE="sato-db"  # Correct Cloud SQL instance name
 
+# Get the script directory and navigate to SatoApp root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SATOAPP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$SATOAPP_DIR"
+
 echo -e "${BLUE}📋 Fast Deployment Configuration:${NC}"
 echo "  Service: $SERVICE_NAME"
 echo "  Region: $REGION"
@@ -26,14 +31,47 @@ echo "  Memory: 8Gi (optimized for AI workloads)"
 echo "  CPU: 4 (enhanced parallel processing)"
 echo "  Timeout: 900s (15 min for AI tasks)"
 echo "  Concurrency: 2 (optimized for AI performance)"
+echo "  Working directory: $(pwd)"
 echo ""
 
 # Load environment variables from .env file
 echo -e "${BLUE}📄 Loading environment variables from .env file...${NC}"
 if [ ! -f ".env" ]; then
-    echo -e "${RED}❌ ERROR: .env file not found!${NC}"
+    echo -e "${RED}❌ ERROR: .env file not found in SatoApp directory!${NC}"
+    echo "Expected location: $SATOAPP_DIR/.env"
     echo "Please create a .env file with required environment variables."
     exit 1
+fi
+
+# Validate that we're using PRODUCTION environment
+echo -e "${BLUE}🔍 Validating environment variables for PRODUCTION...${NC}"
+if [ -L ".env" ]; then
+    CURRENT_ENV=$(readlink .env)
+    if [ "$CURRENT_ENV" != ".env.production" ]; then
+        echo -e "${RED}❌ ERROR: .env is not pointing to PRODUCTION environment!${NC}"
+        echo "   Current: $CURRENT_ENV"
+        echo "   Expected: .env.production"
+        echo ""
+        echo "Please run: ./scripts/switch-environment.sh prod"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Confirmed: .env symlink points to production environment${NC}"
+else
+    echo -e "${YELLOW}⚠️  WARNING: .env is not a symlink (it's a real file)${NC}"
+    echo "   For safety, we'll validate the database configuration..."
+fi
+
+# Additional validation: Check DATABASE_URL doesn't contain dev database
+if grep -q "DATABASE_URL" .env; then
+    if grep -q "sato_dev" .env; then
+        echo -e "${RED}❌ ERROR: Found development database (sato_dev) in DATABASE_URL!${NC}"
+        echo "   Production should use 'sato' database, not 'sato_dev'"
+        echo ""
+        echo "Please run: ./scripts/switch-environment.sh prod"
+        exit 1
+    else
+        echo -e "${GREEN}✅ Confirmed: Production database configuration found${NC}"
+    fi
 fi
 
 # Check for Google Ads Developer Token
@@ -76,19 +114,29 @@ def parse_env_line(line):
     
     return key, value
 
+# Get absolute path to .env file
+satoapp_dir = os.getcwd()
+env_file = os.path.join(satoapp_dir, '.env')
+
 # Read .env file
 try:
-    with open('.env', 'r', encoding='utf-8') as f:
+    with open(env_file, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 except FileNotFoundError:
-    print("ERROR: .env file not found!", file=sys.stderr)
+    print(f"ERROR: .env file not found at {env_file}!", file=sys.stderr)
     sys.exit(1)
 
 # Parse all environment variables - use values as-is from .env file
 env_vars = {}
+# Reserved environment variables that Cloud Run sets automatically
+RESERVED_VARS = ['PORT']
+
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
+        # Skip reserved environment variables
+        if key in RESERVED_VARS:
+            continue
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue

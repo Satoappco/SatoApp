@@ -38,3 +38,8 @@ setup-*.sh
 *GUIDE*.md
 *PLAN*.md
 facebook_token_analysis.md
+
+# Database backups
+db_backups/
+*.sql
+*.dump
