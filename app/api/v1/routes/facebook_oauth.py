@@ -167,9 +167,9 @@ async def handle_oauth_callback(
             access_token=token_data['access_token'],
             expires_in=token_data['expires_in'],
             user_name=token_data['user_name'],
-            user_email=user_email,
+            user_email=token_data.get('user_email', ''),
             state=request.state,  # Pass through the state parameter
-            user_id=user.id if user else None
+            user_id=campaigner.id if campaigner else None
         )
         
     except Exception as e:

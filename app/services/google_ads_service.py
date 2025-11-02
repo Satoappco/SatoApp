@@ -417,9 +417,11 @@ class GoogleAdsService:
         # For now, we'll just return the URL
         
         # Build OAuth URL
+        settings = get_settings()
+        frontend_url = os.getenv('FRONTEND_URL') or settings.frontend_url
         params = {
             'client_id': get_google_client_id(),
-            'redirect_uri': f"{os.getenv('FRONTEND_URL', 'https://localhost:3000')}/auth/google-ads-callback",
+            'redirect_uri': f"{frontend_url}/auth/google-ads-callback",
             'scope': ' '.join(self.GOOGLE_ADS_SCOPES),
             'response_type': 'code',
             'access_type': 'offline',

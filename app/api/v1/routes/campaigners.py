@@ -11,6 +11,7 @@ from sqlmodel import select, and_
 from app.core.auth import get_current_user
 from app.models.users import Campaigner, UserRole, UserStatus, InviteToken
 from app.config.database import get_session
+from app.config.settings import get_settings
 from app.services.invite_service import InviteService
 import os
 
@@ -470,8 +471,15 @@ async def generate_invite_link(
             print(f"  - Role: {invite.role}")
             print(f"  - Token: {invite.token}")
             
-            # Generate invite URL
-            frontend_url = os.getenv("FRONTEND_URL", "https://localhost:3000")
+            # Generate invite URL using settings
+            settings = get_settings()
+            frontend_url = os.getenv("FRONTEND_URL") or settings.frontend_url
+            # Ensure we don't use localhost in production - fail if not configured
+            if "localhost" in frontend_url.lower() and os.getenv("ENVIRONMENT", "").lower() in ["production", "prod"]:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="FRONTEND_URL must be configured for production environment"
+                )
             invite_url = f"{frontend_url}/join?token={invite.token}"
             
             print(f"✅ Invite URL generated: {invite_url}")
