@@ -177,7 +177,8 @@ echo -e "${BLUE}🚀 Building Docker image for Dor environment (clean build, no 
 IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
 
 # Build image without cache
-gcloud builds submit --tag $IMAGE_NAME --no-cache
+gcloud builds submit --tag $IMAGE_NAME 
+#--no-cache
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Docker build failed!${NC}"

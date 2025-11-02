@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
             "https://localhost:8000",   # HTTPS backend (for testing)
             "https://sato-frontend-397762748853.me-west1.run.app",  # Production frontend
             "https://sato-frontend-dev-397762748853.me-west1.run.app",  # Development frontend
+            "https://sato-frontend-dor-397762748853.me-west1.run.app",  # Dor environment frontend
         ],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
