@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import re
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import select, and_
+from sqlmodel import select, and_, Session
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.auth import get_current_user
@@ -21,7 +21,7 @@ from app.utils.composite_id import compose_id
 from app.models.users import Campaigner, Agency, Customer, UserRole
 from app.models.analytics import KpiCatalog, KpiGoal, KpiValue, KpiSettings, DefaultKpiSettings, DigitalAsset, Connection, UserPropertySelection, Audience
 from app.models.agents import AgentConfig, RoutingRule, CustomerLog, DetailedExecutionLog
-from app.config.database import get_session
+from app.config.database import get_session, engine
 from app.config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -154,12 +154,12 @@ class KpiGoalCreate(BaseModel):
     campaign_status: str = Field(max_length=50, default="ACTIVE")
     
     # Ad Group fields
-    ad_group_id: Optional[int] = None
+    ad_group_id: Optional[str] = Field(None, max_length=50)
     ad_group_name: Optional[str] = Field(None, max_length=255)
     ad_group_status: Optional[str] = Field(None, max_length=50)
     
     # Ad fields
-    ad_id: Optional[int] = None
+    ad_id: Optional[str] = Field(None, max_length=50)
     ad_name: Optional[str] = Field(None, max_length=255)
     ad_name_headline: Optional[str] = Field(None, max_length=500) #clear description for llm 
     ad_status: Optional[str] = Field(None, max_length=50)
@@ -190,12 +190,12 @@ class KpiGoalUpdate(BaseModel):
     campaign_status: Optional[str] = Field(None, max_length=50)
     
     # Ad Group fields
-    ad_group_id: Optional[int] = None
+    ad_group_id: Optional[str] = Field(None, max_length=50)
     ad_group_name: Optional[str] = Field(None, max_length=255)
     ad_group_status: Optional[str] = Field(None, max_length=50)
     
     # Ad fields
-    ad_id: Optional[int] = None
+    ad_id: Optional[str] = Field(None, max_length=50)
     ad_name: Optional[str] = Field(None, max_length=255)
     ad_name_headline: Optional[str] = Field(None, max_length=500)
     ad_status: Optional[str] = Field(None, max_length=50)
@@ -216,6 +216,57 @@ class KpiGoalUpdate(BaseModel):
     
     # Additional fields
     landing_page: Optional[str] = Field(None, max_length=500)
+
+
+class KpiGoalBulkItem(BaseModel):
+    """Schema for a single item in bulk KPI Goal operation"""
+    id: Optional[int] = 0  # 0 or None means new item
+    customer_id: Optional[int] = None
+    campaign_id: Optional[str] = Field(None, max_length=50)
+    campaign_name: Optional[str] = Field(None, max_length=255)
+    campaign_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad Group fields
+    ad_group_id: Optional[str] = Field(None, max_length=50)
+    ad_group_name: Optional[str] = Field(None, max_length=255)
+    ad_group_status: Optional[str] = Field(None, max_length=50)
+    
+    # Ad fields
+    ad_id: Optional[str] = Field(None, max_length=50)
+    ad_name: Optional[str] = Field(None, max_length=255)
+    ad_name_headline: Optional[str] = Field(None, max_length=500)
+    ad_status: Optional[str] = Field(None, max_length=50)
+    ad_score: Optional[int] = None
+    
+    # Campaign details
+    advertising_channel: Optional[str] = Field(None, max_length=100)
+    campaign_objective: Optional[str] = Field(None, max_length=100)
+    daily_budget: Optional[float] = None
+    spent: Optional[float] = None
+    target_audience: Optional[str] = Field(None, max_length=255)
+    
+    # KPI Goals
+    primary_kpi_1: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_1: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_2: Optional[str] = Field(None, max_length=255)
+    secondary_kpi_3: Optional[str] = Field(None, max_length=255)
+    
+    # Additional fields
+    landing_page: Optional[str] = Field(None, max_length=500)
+
+
+class KpiGoalBulkUpdateRequest(BaseModel):
+    """Schema for bulk KPI Goal update"""
+    items: List[KpiGoalBulkItem]
+
+
+class KpiGoalBulkUpdateResponse(BaseModel):
+    """Schema for bulk KPI Goal update response"""
+    success: bool
+    message: str
+    created_count: int
+    updated_count: int
+    errors: List[Dict[str, Any]]
 
 
 class DigitalAssetCreate(BaseModel):
@@ -498,7 +549,8 @@ async def get_kpi_goals(
     """Get all KPI goals (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(KpiGoal)
+            # Left join KpiGoal with KpiValue to get related value data
+            statement = select(KpiGoal, KpiValue).join(KpiValue, KpiGoal.id == KpiValue.kpi_goal_id, isouter=True)
             
             # Apply filters (no user filtering - this is admin tool)
             conditions = []
@@ -509,41 +561,58 @@ async def get_kpi_goals(
                 statement = statement.where(and_(*conditions))
             
             statement = statement.order_by(KpiGoal.created_at.desc()).offset(offset).limit(limit)
-            campaigns = session.exec(statement).all()
+            results = session.exec(statement).all()
+            
+            campaigns = []
+            for goal, value in results:
+                campaign_data = {
+                    "id": goal.id,
+                    "customer_id": goal.customer_id,
+                    "campaign_id": goal.campaign_id,
+                    "campaign_name": goal.campaign_name,
+                    "campaign_status": goal.campaign_status,
+                    "ad_group_id": goal.ad_group_id,
+                    "ad_group_name": goal.ad_group_name,
+                    "ad_group_status": goal.ad_group_status,
+                    "ad_id": goal.ad_id,
+                    "ad_name": goal.ad_name,
+                    "ad_name_headline": goal.ad_name_headline,
+                    "ad_status": goal.ad_status,
+                    "ad_score": goal.ad_score,
+                    "advertising_channel": goal.advertising_channel,
+                    "campaign_objective": goal.campaign_objective,
+                    "daily_budget": goal.daily_budget,
+                    "spent": goal.spent,
+                    "target_audience": goal.target_audience,
+                    "primary_kpi_1": goal.primary_kpi_1,
+                    "secondary_kpi_1": goal.secondary_kpi_1,
+                    "secondary_kpi_2": goal.secondary_kpi_2,
+                    "secondary_kpi_3": goal.secondary_kpi_3,
+                    "landing_page": goal.landing_page,
+                    "created_at": goal.created_at.isoformat(),
+                    "updated_at": goal.updated_at.isoformat()
+                }
+                
+                # Add value data if available
+                if value:
+                    campaign_data["value_data"] = {
+                        "daily_budget": value.daily_budget,
+                        "spent": value.spent,
+                        "primary_kpi_1": value.primary_kpi_1,
+                        "secondary_kpi_1": value.secondary_kpi_1,
+                        "secondary_kpi_2": value.secondary_kpi_2,
+                        "secondary_kpi_3": value.secondary_kpi_3,
+                        "ad_score": value.ad_score
+                    }
+                else:
+                    campaign_data["value_data"] = None
+                
+                campaigns.append(campaign_data)
             
             return {
                 "success": True,
                 "count": len(campaigns),
-                "campaigns": [
-                    {
-                        "id": campaign.id,
-                        "customer_id": campaign.customer_id,
-                        "campaign_id": campaign.campaign_id,
-                        "campaign_name": campaign.campaign_name,
-                        "campaign_status": campaign.campaign_status,
-                        "ad_group_id": campaign.ad_group_id,
-                        "ad_group_name": campaign.ad_group_name,
-                        "ad_group_status": campaign.ad_group_status,
-                        "ad_id": campaign.ad_id,
-                        "ad_name": campaign.ad_name,
-                        "ad_name_headline": campaign.ad_name_headline,
-                        "ad_status": campaign.ad_status,
-                        "ad_score": campaign.ad_score,
-                        "advertising_channel": campaign.advertising_channel,
-                        "campaign_objective": campaign.campaign_objective,
-                        "daily_budget": campaign.daily_budget,
-                        "spent": campaign.spent,
-                        "target_audience": campaign.target_audience,
-                        "primary_kpi_1": campaign.primary_kpi_1,
-                        "secondary_kpi_1": campaign.secondary_kpi_1,
-                        "secondary_kpi_2": campaign.secondary_kpi_2,
-                        "secondary_kpi_3": campaign.secondary_kpi_3,
-                        "landing_page": campaign.landing_page,
-                        "created_at": campaign.created_at.isoformat(),
-                        "updated_at": campaign.updated_at.isoformat()
-                    }
-                    for campaign in campaigns
-                ]
+                "campaigns": campaigns
             }
     
     except Exception as e:
@@ -788,7 +857,11 @@ async def update_kpi_goal(
             # Update fields
             update_data = campaign_data.dict(exclude_unset=True)
             for key, value in update_data.items():
-                setattr(campaign, key, value)
+                try:
+                    setattr(campaign, key, value)
+                except Exception as e:
+                    logger.error(f"Failed to set attribute {key} with value {value}: {str(e)}")
+                    raise
             
             campaign.updated_at = datetime.utcnow()
             
@@ -862,51 +935,252 @@ async def update_kpi_goal(
         )
 
 
+@router.post("/kpi-goals/bulk")
+async def bulk_update_kpi_goals(
+    bulk_data: KpiGoalBulkUpdateRequest
+):
+    """Bulk create/update KPI Goals in a single transaction"""
+    try:
+        with get_session() as session:
+            created_count = 0
+            updated_count = 0
+            errors = []
+            
+            # Separate items into creates and updates
+            items_to_create = []
+            items_to_update = {}
+            
+            for item in bulk_data.items:
+                # Items with id <= 0 or no id are new items
+                if not item.id or item.id <= 0:
+                    items_to_create.append(item)
+                else:
+                    items_to_update[item.id] = item
+            
+            # Process creates
+            for item in items_to_create:
+                try:
+                    # Required fields validation
+                    if not item.customer_id:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "customer_id is required for new items"
+                        })
+                        continue
+                    
+                    if not item.campaign_name:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "campaign_name is required"
+                        })
+                        continue
+                    
+                    if not item.advertising_channel:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "advertising_channel is required"
+                        })
+                        continue
+                    
+                    if not item.campaign_objective:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "campaign_objective is required"
+                        })
+                        continue
+                    
+                    if not item.target_audience:
+                        errors.append({
+                            "item": item.dict(),
+                            "error": "target_audience is required"
+                        })
+                        continue
+                    
+                    # Create new KPI Goal
+                    new_campaign = KpiGoal(
+                        customer_id=item.customer_id,
+                        campaign_id=item.campaign_id or f"campaign_{datetime.utcnow().timestamp()}",
+                        campaign_name=item.campaign_name,
+                        campaign_status=item.campaign_status or "ACTIVE",
+                        ad_group_id=item.ad_group_id,
+                        ad_group_name=item.ad_group_name,
+                        ad_group_status=item.ad_group_status,
+                        ad_id=item.ad_id,
+                        ad_name=item.ad_name,
+                        ad_name_headline=item.ad_name_headline,
+                        ad_status=item.ad_status,
+                        ad_score=item.ad_score,
+                        advertising_channel=item.advertising_channel,
+                        campaign_objective=item.campaign_objective,
+                        daily_budget=item.daily_budget,
+                        spent=item.spent,
+                        target_audience=item.target_audience,
+                        primary_kpi_1=item.primary_kpi_1,
+                        secondary_kpi_1=item.secondary_kpi_1,
+                        secondary_kpi_2=item.secondary_kpi_2,
+                        secondary_kpi_3=item.secondary_kpi_3,
+                        landing_page=item.landing_page,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    
+                    session.add(new_campaign)
+                    created_count += 1
+                except Exception as e:
+                    errors.append({
+                        "item": item.dict(),
+                        "error": str(e)
+                    })
+            
+            # Process updates
+            for goal_id, item in items_to_update.items():
+                try:
+                    campaign = session.get(KpiGoal, goal_id)
+                    if not campaign:
+                        errors.append({
+                            "item_id": goal_id,
+                            "error": "KPI goal not found"
+                        })
+                        continue
+                    
+                    # Update fields
+                    if item.customer_id is not None:
+                        campaign.customer_id = item.customer_id
+                    if item.campaign_id is not None:
+                        campaign.campaign_id = item.campaign_id
+                    if item.campaign_name is not None:
+                        campaign.campaign_name = item.campaign_name
+                    if item.campaign_status is not None:
+                        campaign.campaign_status = item.campaign_status
+                    if item.ad_group_id is not None:
+                        campaign.ad_group_id = item.ad_group_id
+                    if item.ad_group_name is not None:
+                        campaign.ad_group_name = item.ad_group_name
+                    if item.ad_group_status is not None:
+                        campaign.ad_group_status = item.ad_group_status
+                    if item.ad_id is not None:
+                        campaign.ad_id = item.ad_id
+                    if item.ad_name is not None:
+                        campaign.ad_name = item.ad_name
+                    if item.ad_name_headline is not None:
+                        campaign.ad_name_headline = item.ad_name_headline
+                    if item.ad_status is not None:
+                        campaign.ad_status = item.ad_status
+                    if item.ad_score is not None:
+                        campaign.ad_score = item.ad_score
+                    if item.advertising_channel is not None:
+                        campaign.advertising_channel = item.advertising_channel
+                    if item.campaign_objective is not None:
+                        campaign.campaign_objective = item.campaign_objective
+                    if item.daily_budget is not None:
+                        campaign.daily_budget = item.daily_budget
+                    if item.spent is not None:
+                        campaign.spent = item.spent
+                    if item.target_audience is not None:
+                        campaign.target_audience = item.target_audience
+                    if item.primary_kpi_1 is not None:
+                        campaign.primary_kpi_1 = item.primary_kpi_1
+                    if item.secondary_kpi_1 is not None:
+                        campaign.secondary_kpi_1 = item.secondary_kpi_1
+                    if item.secondary_kpi_2 is not None:
+                        campaign.secondary_kpi_2 = item.secondary_kpi_2
+                    if item.secondary_kpi_3 is not None:
+                        campaign.secondary_kpi_3 = item.secondary_kpi_3
+                    if item.landing_page is not None:
+                        campaign.landing_page = item.landing_page
+                    
+                    campaign.updated_at = datetime.utcnow()
+                    session.add(campaign)
+                    updated_count += 1
+                except Exception as e:
+                    errors.append({
+                        "item_id": goal_id,
+                        "error": str(e)
+                    })
+            
+            # Commit all changes in a single transaction
+            if errors and len(errors) == len(bulk_data.items):
+                # All items failed, don't commit
+                session.rollback()
+                return {
+                    "success": False,
+                    "message": "All items failed validation",
+                    "created_count": 0,
+                    "updated_count": 0,
+                    "errors": errors
+                }
+            
+            session.commit()
+            
+            return {
+                "success": len(errors) == 0,
+                "message": f"Bulk update completed: {created_count} created, {updated_count} updated, {len(errors)} errors",
+                "created_count": created_count,
+                "updated_count": updated_count,
+                "errors": errors
+            }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to bulk update KPI goals: {str(e)}"
+        )
+
+
 @router.delete("/kpi-goals/{kpi_goal_id}")
 async def delete_kpi_goal(
     kpi_goal_id: int,
 ):
     """Delete a campaign KPI entry"""
+    session = None
     try:
-        with get_session() as session:
-            campaign = session.get(KpiGoal, kpi_goal_id)
+        session = Session(engine)
+        campaign = session.get(KpiGoal, kpi_goal_id)
+        
+        if not campaign:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="KPI goal not found"
+            )
+        
+        # Delete corresponding KPI Value first (to satisfy foreign key constraint)
+        kpi_value = session.exec(
+            select(KpiValue).where(KpiValue.kpi_goal_id == kpi_goal_id)
+        ).first()
+        
+        if kpi_value:
+            session.delete(kpi_value)
+            logger.info(f"✅ Deleting KPI Value for KPI Goal {kpi_goal_id}")
+            # Flush the deletion to database before proceeding
+            session.flush()
+        
+        # Now delete the KPI Goal
+        session.delete(campaign)
+        
+        # Commit all deletions
+        session.commit()
+        logger.info(f"✅ Successfully deleted KPI Goal {kpi_goal_id}")
+        
+        return {
+            "success": True,
+            "message": "KPI goal deleted successfully"
+        }
             
-            if not campaign:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="KPI goal not found"
-                )
-            
-            # Auto-delete corresponding KPI Value
-            try:
-                # Find and delete KPI Value linked to this specific goal
-                kpi_value = session.exec(
-                    select(KpiValue).where(KpiValue.kpi_goal_id == kpi_goal_id)
-                ).first()
-                
-                if kpi_value:
-                    session.delete(kpi_value)
-                    logger.info(f"✅ Auto-deleted KPI Value for KPI Goal {kpi_goal_id}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Failed to auto-delete KPI Value for KPI Goal {kpi_goal_id}: {str(e)}")
-                # Don't fail the main operation if KPI Value deletion fails
-            
-            session.delete(campaign)
-            session.commit()
-            
-            return {
-                "success": True,
-                "message": "KPI goal deleted successfully"
-            }
-    
     except HTTPException:
+        if session:
+            session.rollback()
         raise
     except Exception as e:
+        logger.error(f"❌ Error deleting KPI goal {kpi_goal_id}: {str(e)}")
+        if session:
+            session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete campaign KPI: {str(e)}"
         )
+    finally:
+        if session:
+            session.close()
 
 
 # ===== KPI Values Routes =====
@@ -922,7 +1196,8 @@ async def get_kpi_values(
     """Get all KPI values (admin view - shows all data)"""
     try:
         with get_session() as session:
-            statement = select(KpiValue)
+            # Join KpiValue with KpiGoal to get related goal data
+            statement = select(KpiValue, KpiGoal).join(KpiGoal, KpiValue.kpi_goal_id == KpiGoal.id, isouter=True)
             
             # Apply filters
             conditions = []
@@ -935,41 +1210,58 @@ async def get_kpi_values(
                 statement = statement.where(and_(*conditions))
             
             statement = statement.order_by(KpiValue.created_at.desc()).offset(offset).limit(limit)
-            campaigns = session.exec(statement).all()
+            results = session.exec(statement).all()
+            
+            campaigns = []
+            for value, goal in results:
+                campaign_data = {
+                    "id": value.id,
+                    "customer_id": value.customer_id,
+                    "kpi_goal_id": value.kpi_goal_id,
+                    "campaign_id": value.campaign_id,
+                    "campaign_name": value.campaign_name,
+                    "campaign_status": value.campaign_status,
+                    "ad_group_id": value.ad_group_id,
+                    "ad_group_name": value.ad_group_name,
+                    "ad_group_status": value.ad_group_status,
+                    "ad_id": value.ad_id,
+                    "ad_name": value.ad_name,
+                    "ad_name_headline": value.ad_name_headline,
+                    "ad_status": value.ad_status,
+                    "ad_score": value.ad_score,
+                    "advertising_channel": value.advertising_channel,
+                    "campaign_objective": value.campaign_objective,
+                    "daily_budget": value.daily_budget,
+                    "spent": value.spent,
+                    "target_audience": value.target_audience,
+                    "primary_kpi_1": value.primary_kpi_1,
+                    "secondary_kpi_1": value.secondary_kpi_1,
+                    "secondary_kpi_2": value.secondary_kpi_2,
+                    "secondary_kpi_3": value.secondary_kpi_3,
+                    "landing_page": value.landing_page,
+                    "created_at": value.created_at.isoformat(),
+                    "updated_at": value.updated_at.isoformat()
+                }
+                
+                # Add goal data if available
+                if goal:
+                    campaign_data["goal_data"] = {
+                        "daily_budget": goal.daily_budget,
+                        "primary_kpi_1": goal.primary_kpi_1,
+                        "secondary_kpi_1": goal.secondary_kpi_1,
+                        "secondary_kpi_2": goal.secondary_kpi_2,
+                        "secondary_kpi_3": goal.secondary_kpi_3,
+                        "ad_score": goal.ad_score
+                    }
+                else:
+                    campaign_data["goal_data"] = None
+                
+                campaigns.append(campaign_data)
             
             return {
                 "success": True,
                 "count": len(campaigns),
-                "campaigns": [
-                    {
-                        "id": campaign.id,
-                        "customer_id": campaign.customer_id,
-                        "campaign_id": campaign.campaign_id,
-                        "campaign_name": campaign.campaign_name,
-                        "campaign_status": campaign.campaign_status,
-                        "ad_group_id": campaign.ad_group_id,
-                        "ad_group_name": campaign.ad_group_name,
-                        "ad_group_status": campaign.ad_group_status,
-                        "ad_id": campaign.ad_id,
-                        "ad_name": campaign.ad_name,
-                        "ad_name_headline": campaign.ad_name_headline,
-                        "ad_status": campaign.ad_status,
-                        "ad_score": campaign.ad_score,
-                        "advertising_channel": campaign.advertising_channel,
-                        "campaign_objective": campaign.campaign_objective,
-                        "daily_budget": campaign.daily_budget,
-                        "spent": campaign.spent,
-                        "target_audience": campaign.target_audience,
-                        "primary_kpi_1": campaign.primary_kpi_1,
-                        "secondary_kpi_1": campaign.secondary_kpi_1,
-                        "secondary_kpi_2": campaign.secondary_kpi_2,
-                        "secondary_kpi_3": campaign.secondary_kpi_3,
-                        "landing_page": campaign.landing_page,
-                        "created_at": campaign.created_at.isoformat(),
-                        "updated_at": campaign.updated_at.isoformat()
-                    }
-                    for campaign in campaigns
-                ]
+                "campaigns": campaigns
             }
     
     except Exception as e:
@@ -1190,16 +1482,23 @@ async def get_agent_configs(
             if active_only:
                 statement = statement.where(AgentConfig.is_active == True)
             
-            statement = statement.order_by(AgentConfig.agent_type, AgentConfig.name)
+            # Sort: master agent (name contains "master") first, then by name
             agents = session.exec(statement).all()
+            agents_list = list(agents)
+            
+            # Sort agents: master agent first, then alphabetically by name
+            def sort_key(agent):
+                name_lower = agent.name.lower()
+                return (0 if 'master' in name_lower else 1, name_lower)
+            
+            agents_list.sort(key=sort_key)
             
             return {
                 "success": True,
-                "count": len(agents),
+                "count": len(agents_list),
                 "agents": [
                     {
                         "id": agent.id,
-                        "agent_type": agent.agent_type,
                         "name": agent.name,
                         "role": agent.role,
                         "goal": agent.goal,
@@ -1310,50 +1609,6 @@ async def get_users(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch users: {str(e)}"
-        )
-
-
-@router.get("/customers")
-async def get_customers(
-    limit: int = Query(100, description="Maximum number of results"),
-    offset: int = Query(0, description="Offset for pagination"),
-    current_user: Campaigner = Depends(get_current_user)
-):
-    """Get all customers (admin view - shows all data)"""
-    try:
-        with get_session() as session:
-            statement = select(Customer)
-            statement = statement.order_by(Customer.created_at.desc()).offset(offset).limit(limit)
-            customers = session.exec(statement).all()
-            
-            return {
-                "success": True,
-                "count": len(customers),
-                "customers": [
-                    {
-                        "id": customer.id,
-                        "name": customer.name,
-                        "type": customer.type,
-                        "status": customer.status,
-                        "plan": customer.plan,
-                        "billing_currency": customer.billing_currency,
-                        "vat_id": customer.vat_id,
-                        "address": customer.address,
-                        "primary_contact_user_id": customer.primary_contact_user_id,
-                        "domains": customer.domains,
-                        "tags": customer.tags,
-                        "notes": customer.notes,
-                        "created_at": customer.created_at.isoformat(),
-                        "updated_at": customer.updated_at.isoformat()
-                    }
-                    for customer in customers
-                ]
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch customers: {str(e)}"
         )
 
 
@@ -1738,12 +1993,18 @@ async def get_user_property_selections(
 async def get_customer_logs(
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
+    customer_id: int = Query(None, description="Filter by customer ID"),
     current_user: Campaigner = Depends(get_current_user)
 ):
-    """Get all customer logs (admin view - shows all data)"""
+    """Get all customer logs (admin view - shows all data or filtered by customer_id)"""
     try:
         with get_session() as session:
             statement = select(CustomerLog)
+            
+            # Filter by customer_id if provided
+            if customer_id:
+                statement = statement.where(CustomerLog.customer_id == customer_id)
+            
             statement = statement.order_by(CustomerLog.date_time.desc()).offset(offset).limit(limit)
             logs = session.exec(statement).all()
             
@@ -1763,6 +2024,7 @@ async def get_customer_logs(
                         "total_execution_time_ms": log.total_execution_time_ms,
                         "timing_breakdown": log.timing_breakdown,
                         "campaigner_id": log.campaigner_id,
+                        "customer_id": log.customer_id,
                         "analysis_id": log.analysis_id,
                         "success": log.success,
                         "error_message": log.error_message,
@@ -2132,6 +2394,94 @@ async def delete_kpi_setting(
         )
 
 
+@router.post("/kpi-settings/reset-to-defaults/{customer_id}")
+async def reset_kpi_settings_to_defaults(
+    customer_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """Reset customer's KPI settings to match current default settings"""
+    try:
+        with get_session() as session:
+            # Verify customer belongs to user's agency
+            customer = session.get(Customer, customer_id)
+            if not customer or customer.agency_id != current_user.agency_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Customer not found or access denied"
+                )
+            
+            # Verify customer is assigned to current campaigner
+            if customer.assigned_campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied - customer not assigned to you"
+                )
+            
+            # Get all current default KPI settings
+            default_settings = session.exec(
+                select(DefaultKpiSettings).order_by(
+                    DefaultKpiSettings.display_order,
+                    DefaultKpiSettings.campaign_objective,
+                    DefaultKpiSettings.kpi_name
+                )
+            ).all()
+            
+            if not default_settings:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No default KPI settings found"
+                )
+            
+            # Use pattern matching for shared access within agency
+            pattern = f"{customer.agency_id}_%_{customer_id}"
+            
+            # Delete all existing customer KPI settings
+            existing_settings = session.exec(
+                select(KpiSettings).where(
+                    KpiSettings.composite_id.like(pattern)
+                )
+            ).all()
+            
+            deleted_count = len(existing_settings)
+            for setting in existing_settings:
+                session.delete(setting)
+            
+            # Create new customer settings from current defaults
+            composite_id = f"{customer.agency_id}_{current_user.id}_{customer_id}"
+            created_count = 0
+            
+            for default_setting in default_settings:
+                customer_kpi = KpiSettings(
+                    composite_id=composite_id,
+                    customer_id=customer_id,
+                    campaign_objective=default_setting.campaign_objective,
+                    kpi_name=default_setting.kpi_name,
+                    kpi_type=default_setting.kpi_type,
+                    direction=default_setting.direction,
+                    default_value=default_setting.default_value,
+                    unit=default_setting.unit
+                )
+                session.add(customer_kpi)
+                created_count += 1
+            
+            session.commit()
+            
+            return {
+                "success": True,
+                "message": f"KPI settings reset to defaults successfully",
+                "deleted_count": deleted_count,
+                "created_count": created_count
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset KPI settings to defaults: {str(e)}"
+        )
+
+
 # ===== Default KPI Settings Routes =====
 
 @router.get("/default-kpi-settings")
@@ -2442,8 +2792,8 @@ async def create_audience(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Create a new audience (admin only)"""
-    # Check if user is admin
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can create audiences
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create audiences"
@@ -2498,8 +2848,8 @@ async def update_audience(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Update an audience (admin only)"""
-    # Check if user is admin
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can update audiences
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can update audiences"
@@ -2562,8 +2912,8 @@ async def delete_audience(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Delete an audience (admin only)"""
-    # Check if user is admin
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER]:
+    # Check if user is admin - only ADMIN can delete audiences
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can delete audiences"

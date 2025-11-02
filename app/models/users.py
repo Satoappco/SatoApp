@@ -43,8 +43,8 @@ class CustomerStatus(str, Enum):
     CHURNED = "churned"
 
 
-class SubCustomerType(str, Enum):
-    """Type of sub-customer property"""
+class ClientType(str, Enum):
+    """Type of client property"""
     ECOMMERCE = "ecommerce"
     LEADS = "leads"
     BLOG = "blog"
@@ -114,7 +114,12 @@ class Customer(BaseModel, table=True):
     # Geographic and currency information
     country: Optional[str] = Field(default=None, max_length=2, description="Country code (ISO 3166-1 alpha-2)")
     currency: Optional[str] = Field(default=None, max_length=3, description="Currency code (ISO 4217)")
-    en_meta: Optional[str] = Field(default=None, sa_column=Column(String), description="Email marketing metadata")
+    enable_meta: Optional[bool] = Field(default=None, description="Enable Meta/Facebook marketing features")
+    enable_google: Optional[bool] = Field(default=None, description="Enable Google marketing features")
+    
+    # Denormalized fields for fast access (duplicated from agencies and campaigners)
+    agency_name: Optional[str] = Field(default=None, max_length=255, description="Denormalized agency name for fast read access")
+    campaigner_name: Optional[str] = Field(default=None, max_length=255, description="Denormalized campaigner name for fast read access")
     
     # Active status
     is_active: bool = Field(default=True, description="Whether this customer record is active")

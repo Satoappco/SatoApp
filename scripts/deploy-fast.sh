@@ -17,6 +17,11 @@ SERVICE_NAME="sato-backend-v2"
 PROJECT_ID=$(gcloud config get-value project)
 CLOUD_SQL_INSTANCE="sato-db"  # Correct Cloud SQL instance name
 
+# Get the script directory and navigate to SatoApp root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SATOAPP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$SATOAPP_DIR"
+
 echo -e "${BLUE}📋 Fast Deployment Configuration:${NC}"
 echo "  Service: $SERVICE_NAME"
 echo "  Region: $REGION"
@@ -26,14 +31,47 @@ echo "  Memory: 8Gi (optimized for AI workloads)"
 echo "  CPU: 4 (enhanced parallel processing)"
 echo "  Timeout: 900s (15 min for AI tasks)"
 echo "  Concurrency: 2 (optimized for AI performance)"
+echo "  Working directory: $(pwd)"
 echo ""
 
 # Load environment variables from .env file
 echo -e "${BLUE}📄 Loading environment variables from .env file...${NC}"
 if [ ! -f ".env" ]; then
-    echo -e "${RED}❌ ERROR: .env file not found!${NC}"
+    echo -e "${RED}❌ ERROR: .env file not found in SatoApp directory!${NC}"
+    echo "Expected location: $SATOAPP_DIR/.env"
     echo "Please create a .env file with required environment variables."
     exit 1
+fi
+
+# Validate that we're using PRODUCTION environment
+echo -e "${BLUE}🔍 Validating environment variables for PRODUCTION...${NC}"
+if [ -L ".env" ]; then
+    CURRENT_ENV=$(readlink .env)
+    if [ "$CURRENT_ENV" != ".env.production" ]; then
+        echo -e "${RED}❌ ERROR: .env is not pointing to PRODUCTION environment!${NC}"
+        echo "   Current: $CURRENT_ENV"
+        echo "   Expected: .env.production"
+        echo ""
+        echo "Please run: ./scripts/switch-environment.sh prod"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Confirmed: .env symlink points to production environment${NC}"
+else
+    echo -e "${YELLOW}⚠️  WARNING: .env is not a symlink (it's a real file)${NC}"
+    echo "   For safety, we'll validate the database configuration..."
+fi
+
+# Additional validation: Check DATABASE_URL doesn't contain dev database
+if grep -q "DATABASE_URL" .env; then
+    if grep -q "sato_dev" .env; then
+        echo -e "${RED}❌ ERROR: Found development database (sato_dev) in DATABASE_URL!${NC}"
+        echo "   Production should use 'sato' database, not 'sato_dev'"
+        echo ""
+        echo "Please run: ./scripts/switch-environment.sh prod"
+        exit 1
+    else
+        echo -e "${GREEN}✅ Confirmed: Production database configuration found${NC}"
+    fi
 fi
 
 # Check for Google Ads Developer Token
@@ -45,8 +83,8 @@ if ! grep -q "GOOGLE_ADS_DEVELOPER_TOKEN=" .env || grep -q "GOOGLE_ADS_DEVELOPER
     echo ""
 fi
 
-# Convert .env to YAML format for Cloud Run with production URLs
-echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format with production URLs...${NC}"
+# Convert .env to YAML format for Cloud Run
+echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format...${NC}"
 python3 << 'PYTHON_SCRIPT'
 import os
 import re
@@ -76,40 +114,35 @@ def parse_env_line(line):
     
     return key, value
 
+# Get absolute path to .env file
+satoapp_dir = os.getcwd()
+env_file = os.path.join(satoapp_dir, '.env')
+
 # Read .env file
 try:
-    with open('.env', 'r', encoding='utf-8') as f:
+    with open(env_file, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 except FileNotFoundError:
-    print("ERROR: .env file not found!", file=sys.stderr)
+    print(f"ERROR: .env file not found at {env_file}!", file=sys.stderr)
     sys.exit(1)
 
-# Parse all environment variables and convert localhost to production URLs
+# Parse all environment variables - use values as-is from .env file
 env_vars = {}
+# Reserved environment variables that Cloud Run sets automatically
+RESERVED_VARS = ['PORT']
+
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
+        # Skip reserved environment variables
+        if key in RESERVED_VARS:
+            continue
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue
         
-        # Convert localhost URLs to production URLs
-        # Handle wss:// protocol first
-        if value.startswith('wss://localhost:8000') or value == 'wss://localhost:8000':
-            value = value.replace('wss://localhost:8000', 'wss://sato-backend-v2-397762748853.me-west1.run.app')
-        # Handle https:// and https:// protocols
-        elif 'https://localhost:8000' in value or 'https://localhost:8000' in value:
-            value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
-            value = value.replace('https://localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
-        elif 'https://localhost:3000' in value or 'https://localhost:3000' in value:
-            value = value.replace('https://localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
-            value = value.replace('https://localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
-        # Handle bare localhost references
-        elif 'localhost:8000' in value:
-            value = value.replace('localhost:8000', 'sato-backend-v2-397762748853.me-west1.run.app')
-        elif 'localhost:3000' in value:
-            value = value.replace('localhost:3000', 'sato-frontend-397762748853.me-west1.run.app')
-        
+        # Use values as-is from .env file (no transformation needed)
+        # The .env symlink already points to the correct environment file (production)
         env_vars[key] = value
 
 # Write YAML file for Cloud Run
@@ -125,12 +158,25 @@ with open('.env.cloudrun.yaml', 'w', encoding='utf-8') as f:
             # Simple quoted value
             f.write(f'{key}: "{value}"\n')
 
-print(f"✅ Converted {len(env_vars)} environment variables to YAML format with production URLs")
+print(f"✅ Converted {len(env_vars)} environment variables to YAML format")
 PYTHON_SCRIPT
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ ERROR: Failed to convert .env to YAML format!${NC}"
     exit 1
+fi
+
+# Check for INTERNAL_AUTH_TOKEN in .env
+if ! grep -q "^INTERNAL_AUTH_TOKEN=" .env; then
+    echo -e "${RED}❌ ERROR: INTERNAL_AUTH_TOKEN not found in .env${NC}"
+    echo ""
+    echo "Please add INTERNAL_AUTH_TOKEN to your .env file:"
+    echo "  INTERNAL_AUTH_TOKEN=your-secure-random-token"
+    echo ""
+    echo "Generate one with: openssl rand -hex 32"
+    exit 1
+else
+    echo -e "${GREEN}✅ INTERNAL_AUTH_TOKEN found in .env${NC}"
 fi
 
 # Validate required environment variables
@@ -154,7 +200,7 @@ if [ ${#MISSING_VARS[@]} -ne 0 ]; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ Environment variables loaded and validated with production URLs${NC}"
+echo -e "${GREEN}✅ Environment variables loaded and validated${NC}"
 echo ""
 
 # Build image with no cache and deploy

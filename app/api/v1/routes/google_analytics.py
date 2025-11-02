@@ -20,54 +20,10 @@ router = APIRouter(prefix="/google-analytics", tags=["google-analytics"])
 ga_service = GoogleAnalyticsService()
 
 
-@router.get("/subclients")
-async def get_user_subclients(
-    current_user: Campaigner = Depends(get_current_user)
-):
-    """
-    Get all subclients for current user's customer, with default subclient first
-    """
-    
-    try:
-        with get_session() as session:
-            # Get user's customer ID
-            customer_id = current_user.agency_id
-            
-            # Get subclients for the user's customer, ordered by ID (default first)
-            statement = select(SubCustomer).where(
-                SubCustomer.customer_id == customer_id
-            ).order_by(SubCustomer.id.asc())  # First subclient = default
-            
-            subclients = session.exec(statement).all()
-            
-            result = [
-                {
-                    "id": sc.id,
-                    "name": sc.name,
-                    "customer_id": sc.customer_id,
-                    "subtype": sc.subtype,
-                    "status": sc.status,
-                    "is_default": idx == 0  # Mark first one as default
-                }
-                for idx, sc in enumerate(subclients)
-            ]
-            
-            return {
-                "subclients": result,
-                "default_subclient_id": result[0]["id"] if result else None
-            }
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get subclients: {str(e)}"
-        )
-
-
 # Request/Response Models
 class SaveGAConnectionRequest(BaseModel):
     """Request model for saving GA connection"""
-    subclient_id: int
+    customer_id: int
     access_token: str
     refresh_token: str
     expires_in: int
@@ -121,8 +77,8 @@ async def save_ga_connection(
     
     try:
         result = await ga_service.save_ga_connection(
-            user_id=current_user.id,  # Use real authenticated user ID
-            subclient_id=request.subclient_id,
+            campaigner_id=current_user.id,  # Use real authenticated campaigner ID
+            customer_id=request.customer_id,
             access_token=request.access_token,
             refresh_token=request.refresh_token,
             expires_in=request.expires_in,
@@ -144,11 +100,11 @@ async def get_ga_connections(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get GA connections for the current authenticated user, optionally filtered by customer
+    Get GA connections for the current authenticated campaigner, optionally filtered by customer
     """
     
     try:
-        # Use real authenticated user ID and optional customer filter
+        # Use real authenticated campaigner ID and optional customer filter
         connections = await ga_service.get_user_ga_connections(current_user.id, customer_id)
         return GAConnectionListResponse(connections=connections)
     
@@ -156,6 +112,69 @@ async def get_ga_connections(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get GA connections: {str(e)}"
+        )
+
+
+@router.get("/connections/{connection_id}")
+async def get_ga_connection(
+    connection_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    Get a single GA connection by ID (includes access token for debugging)
+    """
+    try:
+        # Verify campaigner owns this connection
+        with get_session() as session:
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                Connection.id == connection_id,
+                Connection.campaigner_id == current_user.id
+            )
+            result = session.exec(statement).first()
+            
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found"
+                )
+            
+            connection, asset = result
+            
+            # Decrypt access token for display
+            access_token = ga_service._decrypt_token(connection.access_token_enc)
+            
+            # Compute token status
+            is_outdated = ga_service.is_ga_token_expired(connection.expires_at) if connection.expires_at else True
+            
+            # Helper to format datetime with timezone
+            def format_datetime(dt):
+                if not dt:
+                    return None
+                # If timezone-naive, assume UTC and add Z
+                if dt.tzinfo is None:
+                    return dt.isoformat() + 'Z'
+                return dt.isoformat()
+            
+            return {
+                "connection_id": connection.id,
+                "property_id": asset.external_id,
+                "property_name": asset.name,
+                "account_email": connection.account_email,
+                "is_active": asset.is_active,
+                "expires_at": format_datetime(connection.expires_at),
+                "last_used_at": format_datetime(connection.last_used_at),
+                "is_outdated": is_outdated,
+                "access_token": access_token
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get connection: {str(e)}"
         )
 
 
@@ -169,7 +188,7 @@ async def refresh_ga_token(
     """
     
     try:
-        # Verify user owns this connection
+        # Verify campaigner owns this connection
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
@@ -197,11 +216,8 @@ async def refresh_ga_token(
                 "reauth_url": reauth_url,
                 "message": "Refresh token expired. Please re-authorize to get fresh tokens."
             }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_msg
-            )
+        # Return a consistent JSON error payload for other failures
+        return {"success": False, "error": error_msg}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -219,7 +235,7 @@ async def get_reauth_url(
     """
     
     try:
-        # Verify user owns this connection
+        # Verify campaigner owns this connection
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
@@ -261,7 +277,7 @@ async def update_connection_tokens(
     """
     
     try:
-        # Verify user owns this connection
+        # Verify campaigner owns this connection
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
@@ -308,7 +324,7 @@ async def revoke_ga_connection(
     """
     
     try:
-        # Verify user owns this connection
+        # Verify campaigner owns this connection
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == connection_id,
@@ -351,7 +367,7 @@ async def fetch_ga4_data(
     """
     
     try:
-        # Verify user owns this connection
+        # Verify campaigner owns this connection
         with get_session() as session:
             statement = select(Connection).where(
                 Connection.id == request.connection_id,
@@ -399,7 +415,7 @@ async def get_ga_properties(
     """
     
     try:
-        # Verify user owns this connection
+        # Verify campaigner owns this connection
         with get_session() as session:
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
@@ -434,9 +450,9 @@ async def get_ga_properties(
         )
 
 
-@router.get("/available-properties/{subclient_id}")
+@router.get("/available-properties/{customer_id}")
 async def get_available_ga_properties(
-    subclient_id: int,
+    customer_id: int,
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -446,12 +462,12 @@ async def get_available_ga_properties(
     
     try:
         with get_session() as session:
-            # Find any active GA connection for this user and subclient
+            # Find any active GA connection for this campaigner and customer
             statement = select(Connection, DigitalAsset).join(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
                 Connection.campaigner_id == current_user.id,
-                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.asset_type == AssetType.GA4,
                 Connection.revoked == False
             ).limit(1)
@@ -486,7 +502,7 @@ async def get_available_ga_properties(
                     # Reload connection with new token
                     session.refresh(connection)
                 except ValueError as e:
-                    # Token refresh failed - user needs to re-authenticate
+                    # Token refresh failed - campaigner needs to re-authenticate
                     error_message = str(e)
                     print(f"❌ Token refresh failed: {error_message}")
                     
@@ -557,7 +573,7 @@ async def get_available_ga_properties(
             # Mark which properties are already connected
             connected_property_ids = []
             assets_statement = select(DigitalAsset).where(
-                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.asset_type == AssetType.GA4
             )
             connected_assets = session.exec(assets_statement).all()

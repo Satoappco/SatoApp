@@ -47,6 +47,8 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str
     expires_in: int
+    expires_at: Optional[str] = None  # ISO string format
+    scopes: Optional[list[str]] = None  # OAuth scopes if available
     user: CampaignerResponse
 
 
@@ -174,37 +176,19 @@ async def authenticate_with_google(
                 # except Exception as e:
                 #     logger.warning(f"⚠️ Failed to create default data for agency {agency_id}: {str(e)}")
                 #     # Don't fail user creation if default data fails
-            # Create JWT tokens
-            token_data = {
-                "user_id": user.id,
-                "email": user.email,
-                "role": user.role,
-                "agency_id": user.agency_id
-            }
+            # Create JWT tokens using helper functions
+            from app.utils.auth_utils import create_token_pair, create_campaigner_response
             
-            access_token = create_access_token(data=token_data)
-            refresh_token = create_refresh_token(data=token_data)
+            token_pair = create_token_pair(user)
             
             return TokenResponse(
-                access_token=access_token,
-                refresh_token=refresh_token,
+                access_token=token_pair["access_token"],
+                refresh_token=token_pair["refresh_token"],
                 token_type="bearer",
-                expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert minutes to seconds
-                user=CampaignerResponse(
-                    id=user.id,
-                    email=user.email,
-                    full_name=user.full_name,
-                    role=user.role,
-                    status=user.status,
-                    agency_id=user.agency_id,
-                    phone=user.phone,
-                    google_id=user.google_id,
-                    email_verified=user.email_verified,
-                    avatar_url=user.avatar_url,
-                    locale=user.locale,
-                    timezone=user.timezone,
-                    last_login_at=user.last_login_at
-                )
+                expires_in=token_pair["expires_in"],
+                expires_at=token_pair["expires_at"],
+                scopes=None,  # Google OAuth scopes not available at this point, but can be added from account object in frontend
+                user=create_campaigner_response(user)
             )
     
     except HTTPException:
@@ -221,21 +205,8 @@ async def get_current_user_info(current_user: Campaigner = Depends(get_current_u
     """
     Get current user information
     """
-    return CampaignerResponse(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=current_user.full_name,
-        role=current_user.role,
-        status=current_user.status,
-        agency_id=current_user.agency_id,
-        phone=current_user.phone,
-        google_id=current_user.google_id,
-        email_verified=current_user.email_verified,
-        avatar_url=current_user.avatar_url,
-        locale=current_user.locale,
-        timezone=current_user.timezone,
-        last_login_at=current_user.last_login_at
-    )
+    from app.utils.auth_utils import create_campaigner_response
+    return create_campaigner_response(current_user)
 
 
 class RefreshTokenRequest(BaseModel):
@@ -279,9 +250,9 @@ async def refresh_token(request: RefreshTokenRequest):
                 detail="Refresh token has expired"
             )
         
-        # Get user ID from refresh token
-        user_id = payload.get("user_id")
-        if not user_id:
+        # Get campaigner ID from refresh token
+        campaigner_id = payload.get("campaigner_id")
+        if not campaigner_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
@@ -289,7 +260,7 @@ async def refresh_token(request: RefreshTokenRequest):
         
         # Get user from database
         with get_session() as session:
-            statement = select(Campaigner).where(Campaigner.id == user_id)
+            statement = select(Campaigner).where(Campaigner.id == campaigner_id)
             user = session.exec(statement).first()
             
             if not user:
@@ -298,22 +269,17 @@ async def refresh_token(request: RefreshTokenRequest):
                     detail="User not found"
                 )
         
-        # Create new access token
-        token_data = {
-            "user_id": user.id,
-            "email": user.email,
-            "role": user.role,
-            "agency_id": user.agency_id
-        }
+        # Create new token pair using helper function
+        from app.utils.auth_utils import create_token_pair
         
-        new_access_token = create_access_token(data=token_data)
-        new_refresh_token = create_refresh_token(data=token_data)
+        token_pair = create_token_pair(user)
         
         return {
-            "access_token": new_access_token,
-            "refresh_token": new_refresh_token,
+            "access_token": token_pair["access_token"],
+            "refresh_token": token_pair["refresh_token"],
             "token_type": "bearer",
-            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert minutes to seconds
+            "expires_in": token_pair["expires_in"],
+            "expires_at": token_pair["expires_at"]
         }
         
     except jwt.JWTError:
@@ -340,7 +306,7 @@ async def get_user_sessions(current_user: Campaigner = Depends(get_current_user)
         
         session_data = [{
             "session_id": f"session_{current_user.id}",
-            "user_id": current_user.id,
+            "campaigner_id": current_user.id,
             "email": current_user.email,
             "phone": user.phone,
             "is_current": True

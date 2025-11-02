@@ -77,15 +77,101 @@ async def clear_connections_with_invalid_scopes():
 
 
 @router.get("/oauth-url")
-async def get_oauth_url(redirect_uri: str):
+async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
     """
     Get Google Ads OAuth URL for frontend to redirect to
+    Accepts optional state parameter to preserve user context through OAuth flow
     Note: Only requests Google Ads scopes. For Analytics, use the separate Google Analytics OAuth flow.
+    Only shows consent screen if no existing connection or scopes have changed
     """
     try:
         # Get settings
         from app.config.settings import get_settings
         settings = get_settings()
+        
+        # Requested scopes for Google Ads
+        requested_scopes = [
+            'openid',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/adwords',  # Google Ads API access
+            'https://www.googleapis.com/auth/adsdatahub'  # Google Ads Data Hub access
+            # Note: Analytics scopes removed - use separate Google Analytics OAuth flow
+        ]
+        
+        # Determine if consent is needed by checking for existing connections
+        prompt_consent = True  # Default to consent
+        
+        if state:
+            try:
+                import jwt
+                from datetime import datetime
+                
+                # Decode JWT state to get campaigner_id and customer_id
+                payload = jwt.decode(
+                    state,
+                    settings.oauth_state_secret,
+                    algorithms=["HS256"]
+                )
+                
+                campaigner_id = payload.get('campaigner_id')
+                customer_id = payload.get('customer_id')
+                
+                # Check expiration
+                if datetime.utcnow().timestamp() > payload.get('exp', 0):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="OAuth state has expired"
+                    )
+                
+                # Query database for existing connections
+                if campaigner_id and customer_id:
+                    from app.config.database import get_session
+                    from app.models.analytics import Connection, DigitalAsset, AssetType
+                    from sqlmodel import select, and_
+                    
+                    with get_session() as session:
+                        # Find existing Google Ads connections
+                        statement = select(Connection, DigitalAsset).join(
+                            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                        ).where(
+                            and_(
+                                Connection.campaigner_id == campaigner_id,
+                                Connection.customer_id == customer_id,
+                                DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                                Connection.revoked == False,
+                                Connection.expires_at.isnot(None)
+                            )
+                        )
+                        
+                        results = session.exec(statement).all()
+                        
+                        # Check if any existing connection has matching scopes
+                        for conn, asset in results:
+                            if conn.scopes:
+                                # Sort and compare scope lists
+                                conn_scopes = sorted(conn.scopes)
+                                requested_scopes_sorted = sorted(requested_scopes)
+                                
+                                if conn_scopes == requested_scopes_sorted:
+                                    # Matching scopes found - no need for consent
+                                    prompt_consent = False
+                                    print(f"✅ Found existing connection with matching scopes - skipping consent")
+                                    break
+                        
+                        if not prompt_consent:
+                            print(f"✅ Existing connection found with matching Google Ads scopes - no consent needed")
+                        else:
+                            print(f"⚠️ No existing connection or scopes differ - consent required")
+                            
+            except jwt.InvalidTokenError:
+                # If state is invalid, default to consent
+                print(f"⚠️ Invalid OAuth state - defaulting to consent")
+                prompt_consent = True
+            except Exception as e:
+                # On any error, default to consent for safety
+                print(f"⚠️ Error checking existing connections: {e} - defaulting to consent")
+                prompt_consent = True
         
         # Create OAuth flow
         flow = Flow.from_client_config(
@@ -98,25 +184,24 @@ async def get_oauth_url(redirect_uri: str):
                     "redirect_uris": [redirect_uri]
                 }
             },
-            scopes=[
-                'openid',
-                'https://www.googleapis.com/auth/userinfo.profile',
-                'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/adwords',  # Google Ads API access
-                'https://www.googleapis.com/auth/adsdatahub'  # Google Ads Data Hub access
-                # Note: Analytics scopes removed - use separate Google Analytics OAuth flow
-            ]
+            scopes=requested_scopes
         )
         
         # Set redirect URI
         flow.redirect_uri = redirect_uri
         
-        # Get authorization URL
-        # Note: include_granted_scopes removed to prevent Google from adding previously granted scopes
-        auth_url, _ = flow.authorization_url(
-            access_type='offline',
-            prompt='consent'
-        )
+        # Build authorization URL parameters
+        auth_params = {
+            "access_type": "offline",
+            "state": state  # Pass through the state parameter
+        }
+        
+        # Only add prompt parameter if consent is needed
+        if prompt_consent:
+            auth_params["prompt"] = "consent"
+        
+        # Get authorization URL with state parameter
+        auth_url, _ = flow.authorization_url(**auth_params)
         
         return {"auth_url": auth_url}
         
@@ -131,6 +216,7 @@ class OAuthCallbackRequest(BaseModel):
     """Request model for OAuth callback"""
     code: str
     redirect_uri: str
+    state: Optional[str] = None  # JWT-signed state parameter
 
 
 class OAuthCallbackResponse(BaseModel):
@@ -153,7 +239,8 @@ class CreateConnectionRequest(BaseModel):
     access_token: str
     refresh_token: str
     expires_in: int = 3600
-    subclient_id: int  # Required: which subclient owns this connection
+    customer_id: int  # Required: which customer owns this connection
+    campaigner_id: int  # Required: which campaigner is creating this connection
 
 
 @router.options("/oauth-callback")
@@ -174,6 +261,56 @@ async def handle_oauth_callback(
     """
     
     print(f"DEBUG: Google Ads OAuth callback started with code: {request.code[:10]}... and redirect_uri: {request.redirect_uri}")
+    
+    # Verify and extract user context from signed state
+    campaigner_id = None
+    customer_id = None
+    
+    if request.state:
+        try:
+            from app.config.settings import get_settings
+            settings = get_settings()
+            
+            # Decode and verify the JWT
+            import jwt
+            payload = jwt.decode(
+                request.state,
+                settings.oauth_state_secret,
+                algorithms=["HS256"]
+            )
+            
+            campaigner_id = payload.get('campaigner_id')
+            customer_id = payload.get('customer_id')
+            timestamp = payload.get('timestamp')
+            
+            # Check expiration using JWT exp field
+            from datetime import datetime
+            if datetime.utcnow().timestamp() > payload.get('exp', 0):
+                raise HTTPException(
+                    status_code=400,
+                    detail="OAuth state has expired"
+                )
+            
+            print(f"DEBUG: User context extracted - Campaigner ID: {campaigner_id}, Customer ID: {customer_id}")
+            
+        except jwt.InvalidTokenError as e:
+            print(f"❌ Invalid OAuth state: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid OAuth state: {str(e)}"
+            )
+        except Exception as e:
+            print(f"❌ OAuth state verification failed: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to verify OAuth state: {str(e)}"
+            )
+    
+    if not campaigner_id or not customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No user found. Please sign in first."
+        )
     
     try:
         # Get settings
@@ -346,27 +483,25 @@ async def handle_oauth_callback(
         for i, account in enumerate(accounts):
             print(f"DEBUG: Account {i+1}: {account['account_name']} (ID: {account['account_id']})")
         
-        # Find user by email
+        # Use campaigner_id from JWT state (already validated above)
         from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
         
         with get_session() as session:
-            user = None
-            if user_info and user_info.get('email'):
-                user_email = user_info.get('email')
-                user_statement = select(User).where(User.email == user_email)
-                user = session.exec(user_statement).first()
-                print(f"DEBUG: Looking for user with email {user_email}, found: {user.id if user else 'None'}")
+            # Get the campaigner who initiated this OAuth flow
+            campaigner = session.exec(
+                select(Campaigner).where(Campaigner.id == campaigner_id)
+            ).first()
             
-            if not user:
-                print("DEBUG: No user found in database")
+            if not campaigner:
+                print(f"DEBUG: Campaigner {campaigner_id} not found in database")
                 return OAuthCallbackResponse(
                     success=False,
                     message="No user found. Please sign in first."
                 )
             
-            print(f"DEBUG: OAuth successful for user {user.id} ({user.email})")
+            print(f"DEBUG: OAuth successful for campaigner {campaigner.id} ({campaigner.email}), connecting for customer {customer_id}")
         
         return OAuthCallbackResponse(
             success=True,
@@ -398,35 +533,21 @@ async def create_google_ads_connection(request: CreateConnectionRequest):
     print(f"DEBUG: Creating Google Ads connection for account {request.account_id} ({request.account_name})")
     
     try:
-        # Find user by access token (in production, use proper session management)
+        # Use campaigner_id from request (no need to look up by email)
         from app.models.users import Campaigner
         from app.config.database import get_session
         from sqlmodel import select
-        import requests
         
-        # Get user info from Google using the access token
-        user_info_response = requests.get(
-            f"https://www.googleapis.com/oauth2/v2/userinfo?access_token={request.access_token}"
-        )
-        
-        if user_info_response.status_code != 200:
-            return {"success": False, "message": "Invalid access token"}
-        
-        user_info = user_info_response.json()
-        user_email = user_info.get('email')
-        
-        if not user_email:
-            return {"success": False, "message": "Could not get user email from token"}
-        
-        # Find user in database
+        # Validate that campaigner exists
         with get_session() as session:
-            user_statement = select(User).where(User.email == user_email)
-            user = session.exec(user_statement).first()
+            campaigner = session.exec(
+                select(Campaigner).where(Campaigner.id == request.campaigner_id)
+            ).first()
             
-            if not user:
-                return {"success": False, "message": f"User {user_email} not found in database"}
+            if not campaigner:
+                return {"success": False, "message": f"Campaigner {request.campaigner_id} not found in database"}
             
-            print(f"DEBUG: Creating Google Ads connection for user {user.id} ({user.email})")
+            print(f"DEBUG: Creating Google Ads connection for campaigner {campaigner.id} ({campaigner.email}), customer {request.customer_id}")
             
             # Create Google Ads connection using the service
             from app.services.google_ads_service import GoogleAdsService
@@ -434,14 +555,14 @@ async def create_google_ads_connection(request: CreateConnectionRequest):
             
             # Create the connection
             connection_result = await ads_service.save_google_ads_connection(
-                user_id=user.id,
-                subclient_id=request.subclient_id,
+                campaigner_id=request.campaigner_id,  # Use campaigner_id from request
+                customer_id=request.customer_id,
                 account_id=request.account_id,
                 account_name=request.account_name,
                 access_token=request.access_token,
                 refresh_token=request.refresh_token,
                 expires_in=request.expires_in,
-                account_email=user_email
+                account_email=campaigner.email  # Use campaigner's email
             )
             
             print(f"DEBUG: Google Ads connection created successfully: {connection_result}")

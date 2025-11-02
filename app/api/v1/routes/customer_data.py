@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from app.core.auth import get_current_user
 from app.models.users import Campaigner, Customer
 from app.models.customer_data import RTMTable, QuestionsTable, RTMTableResponse, QuestionsTableResponse, RTMTableUpdate, QuestionsTableUpdate
+from app.models.analytics import KpiSettings
 
 
 def create_composite_id(agency_id: int, campaigner_id: int, customer_id: int) -> str:
@@ -610,6 +611,8 @@ async def get_customer_info(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "enable_meta": customer.enable_meta,
+                    "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
@@ -672,12 +675,15 @@ async def update_customer_info(
                             detail="Invalid assigned campaigner"
                         )
             
+            # Store old currency before update to detect changes
+            old_currency = customer.currency
+            
             # Update customer fields
             update_fields = [
                 'full_name', 'contact_email', 'phone', 'address', 'opening_hours',
                 'narrative_report', 'website_url', 'facebook_page_url', 
-                'instagram_page_url', 'llm_engine_preference', 'status', 'is_active',
-                'assigned_campaigner_id', 'country', 'currency'
+                'instagram_page_url', 'llm_engine_preference', 'enable_meta', 'enable_google',
+                'status', 'is_active', 'assigned_campaigner_id', 'country', 'currency'
             ]
             
             for field in update_fields:
@@ -685,6 +691,38 @@ async def update_customer_info(
                     setattr(customer, field, request[field])
             
             session.add(customer)
+            
+            # Update KPI settings currency units if currency changed
+            if 'currency' in request and old_currency != customer.currency and customer.currency:
+                from app.core.constants import CURRENCIES
+                
+                # Get new currency symbol
+                currency_info = CURRENCIES.get(customer.currency)
+                if currency_info:
+                    new_currency_symbol = currency_info.symbol
+                    
+                    # Currency unit detection - standard symbols and Hebrew
+                    currency_units = ['₪', '$', '€', '£', '¥', 'ש"ח']
+                    
+                    # Find all KPI settings for this customer with currency units
+                    pattern = f"{customer.agency_id}_%_{customer_id}"
+                    kpi_settings = session.exec(
+                        select(KpiSettings).where(
+                            KpiSettings.composite_id.like(pattern)
+                        )
+                    ).all()
+                    
+                    updated_count = 0
+                    for kpi_setting in kpi_settings:
+                        # Check if unit is a currency symbol
+                        if kpi_setting.unit in currency_units:
+                            kpi_setting.unit = new_currency_symbol
+                            session.add(kpi_setting)
+                            updated_count += 1
+                    
+                    if updated_count > 0:
+                        logger.info(f"Updated {updated_count} KPI settings with new currency symbol {new_currency_symbol} for customer {customer_id}")
+            
             session.commit()
             session.refresh(customer)
             
@@ -705,6 +743,8 @@ async def update_customer_info(
                     "facebook_page_url": customer.facebook_page_url,
                     "instagram_page_url": customer.instagram_page_url,
                     "llm_engine_preference": customer.llm_engine_preference,
+                    "enable_meta": customer.enable_meta,
+                    "enable_google": customer.enable_google,
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,

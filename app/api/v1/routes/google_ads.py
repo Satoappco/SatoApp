@@ -54,6 +54,7 @@ class GoogleAdsConnectionResponse(BaseModel):
     is_active: bool
     expires_at: Optional[str] = None
     last_used_at: Optional[str] = None
+    is_outdated: Optional[bool] = None
 
 
 class GoogleAdsConnectionListResponse(BaseModel):
@@ -61,14 +62,14 @@ class GoogleAdsConnectionListResponse(BaseModel):
 
 
 class CreateAdsConnectionRequest(BaseModel):
-    customer_id: str
-    customer_name: str
+    account_id: str
+    account_name: str
     currency_code: str
     time_zone: str
     access_token: str
     refresh_token: str
     expires_in: int = 3600
-    subclient_id: int  # Required: which subclient owns this connection
+    customer_id: int  # Required: which customer owns this connection
 
 
 @router.post("/data", response_model=GoogleAdsDataResponse)
@@ -154,6 +155,19 @@ async def get_google_ads_connections(
             connections = []
             for connection, asset in results:
                 print(f"DEBUG: Google Ads connection: {connection.id} - {asset.name} - Active: {asset.is_active}")
+                
+                # Compute token status using backend logic
+                is_outdated = google_ads_service.is_token_expired(connection.expires_at) if connection.expires_at else True
+                
+                # Helper to format datetime with timezone
+                def format_datetime(dt):
+                    if not dt:
+                        return None
+                    # If timezone-naive, assume UTC and add Z
+                    if dt.tzinfo is None:
+                        return dt.isoformat() + 'Z'
+                    return dt.isoformat()
+                
                 connections.append(GoogleAdsConnectionResponse(
                     success=True,
                     message=f"Connected to {asset.name}",
@@ -162,8 +176,9 @@ async def get_google_ads_connections(
                     customer_name=asset.name,
                     account_email=connection.account_email,
                     is_active=asset.is_active,
-                    expires_at=connection.expires_at.isoformat() if connection.expires_at else None,
-                    last_used_at=connection.last_used_at.isoformat() if connection.last_used_at else None
+                    expires_at=format_datetime(connection.expires_at),
+                    last_used_at=format_datetime(connection.last_used_at),
+                    is_outdated=is_outdated
                 ))
             
             return GoogleAdsConnectionListResponse(connections=connections)
@@ -172,6 +187,138 @@ async def get_google_ads_connections(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get Google Ads connections: {str(e)}"
+        )
+
+
+@router.post("/connections/{connection_id}/refresh")
+async def refresh_google_ads_token(
+    connection_id: int,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    Refresh Google Ads access token - if refresh token is expired, returns re-auth URL
+    """
+    
+    try:
+        # Verify campaigner owns this connection
+        with get_session() as session:
+            statement = select(Connection).where(
+                Connection.id == connection_id,
+                Connection.campaigner_id == current_user.id
+            )
+            connection = session.exec(statement).first()
+            
+            if not connection:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found"
+                )
+        
+        result = await google_ads_service.refresh_google_ads_token(connection_id)
+        return result
+    
+    except ValueError as e:
+        error_msg = str(e)
+        # If refresh token is expired, return re-auth URL instead of error
+        if "Please re-authorize:" in error_msg:
+            reauth_url = error_msg.split("Please re-authorize: ")[1]
+            return {
+                "success": False,
+                "requires_reauth": True,
+                "reauth_url": reauth_url,
+                "message": "Refresh token expired. Please re-authorize to get fresh tokens."
+            }
+        # Return a consistent JSON error payload for other failures
+        return {"success": False, "error": error_msg}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to refresh token: {str(e)}"
+        )
+
+
+@router.get("/connections/{connection_id}")
+async def get_google_ads_connection(
+    connection_id: int,
+    include_refresh_token: bool = Query(False, description="Include decrypted refresh token (dev-only)"),
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    Get a single Google Ads connection by ID (includes access token for debugging)
+    """
+    try:
+        from app.config.database import get_session
+        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from sqlmodel import select, and_
+        
+        with get_session() as session:
+            # Verify user owns this connection
+            statement = select(Connection, DigitalAsset).join(
+                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ).where(
+                and_(
+                    Connection.id == connection_id,
+                    Connection.campaigner_id == current_user.id,
+                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                    DigitalAsset.provider == "Google"
+                )
+            )
+            
+            result = session.exec(statement).first()
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found"
+                )
+            
+            connection, asset = result
+            
+            # Decrypt access token for display
+            access_token = google_ads_service._decrypt_token(connection.access_token_enc)
+            refresh_token = None
+            if include_refresh_token:
+                # Dev-only safety: only expose in non-production
+                env = os.getenv("ENVIRONMENT", "development").lower()
+                if env != "production":
+                    if connection.refresh_token_enc:
+                        try:
+                            refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc)
+                        except Exception:
+                            refresh_token = None
+            
+            # Compute token status
+            is_outdated = google_ads_service.is_token_expired(connection.expires_at) if connection.expires_at else True
+            
+            # Helper to format datetime with timezone
+            def format_datetime(dt):
+                if not dt:
+                    return None
+                # If timezone-naive, assume UTC and add Z
+                if dt.tzinfo is None:
+                    return dt.isoformat() + 'Z'
+                return dt.isoformat()
+            
+            response = {
+                "connection_id": connection.id,
+                "customer_id": asset.external_id,
+                "customer_name": asset.name,
+                "account_email": connection.account_email,
+                "is_active": asset.is_active,
+                "expires_at": format_datetime(connection.expires_at),
+                "last_used_at": format_datetime(connection.last_used_at),
+                "is_outdated": is_outdated,
+                "access_token": access_token
+            }
+            if include_refresh_token and refresh_token is not None:
+                response["refresh_token"] = refresh_token
+            return response
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get connection: {str(e)}"
         )
 
 
@@ -252,6 +399,9 @@ async def revoke_google_ads_connection(
         )
 
 
+ 
+
+
 @router.post("/create-connection")
 async def create_ads_connection(request: CreateAdsConnectionRequest):
     """
@@ -312,7 +462,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
             with get_session() as session:
                 # Create digital asset for Google Ads account
                 digital_asset = DigitalAsset(
-                    subclient_id=request.subclient_id,  # Use the provided subclient_id
+                    customer_id=request.customer_id,  # Use the provided customer_id
                     asset_type=AssetType.GOOGLE_ADS,
                     provider="Google",
                     name=request.customer_name,
@@ -448,9 +598,9 @@ async def get_available_metrics():
     }
 
 
-@router.get("/available-accounts/{subclient_id}")
+@router.get("/available-accounts/{customer_id}")
 async def get_available_google_ads_accounts(
-    subclient_id: int,
+    customer_id: int,
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -465,7 +615,7 @@ async def get_available_google_ads_accounts(
                 DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
             ).where(
                 Connection.campaigner_id == current_user.id,
-                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
                 Connection.revoked == False
             ).limit(1)
@@ -604,7 +754,7 @@ async def get_available_google_ads_accounts(
             # Mark which accounts are already connected
             connected_account_ids = []
             assets_statement = select(DigitalAsset).where(
-                DigitalAsset.subclient_id == subclient_id,
+                DigitalAsset.customer_id == customer_id,
                 DigitalAsset.asset_type == AssetType.GOOGLE_ADS
             )
             connected_assets = session.exec(assets_statement).all()

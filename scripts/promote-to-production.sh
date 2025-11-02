@@ -19,6 +19,11 @@ PROD_SERVICE_NAME="sato-backend-v2"
 PROJECT_ID=$(gcloud config get-value project)
 CLOUD_SQL_INSTANCE="sato-db"
 
+# Get the script directory and navigate to SatoApp root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SATOAPP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$SATOAPP_DIR"
+
 echo -e "${BLUE}📋 Production Promotion Configuration:${NC}"
 echo "  Development Service: $DEV_SERVICE_NAME"
 echo "  Production Service: $PROD_SERVICE_NAME"
@@ -31,7 +36,7 @@ echo ""
 echo -e "${YELLOW}⚠️  WARNING: This will update your PRODUCTION environment!${NC}"
 echo "  - Development service: $DEV_SERVICE_NAME"
 echo "  - Production service: $PROD_SERVICE_NAME"
-echo "  - This action will affect your QA environment"
+echo "  - This action will affect your PRODUCTION environment"
 echo ""
 read -p "Are you sure you want to promote development to production? (yes/no): " -r
 if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
@@ -39,17 +44,20 @@ if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
     exit 1
 fi
 
-# Get the current development service image
-echo -e "${BLUE}🔍 Getting development service image...${NC}"
-DEV_IMAGE=$(gcloud run services describe $DEV_SERVICE_NAME --region=$REGION --format="value(spec.template.spec.template.spec.containers[0].image)")
+# Get the current development service image (optional - if dev service exists)
+echo -e "${BLUE}🔍 Checking for development service image...${NC}"
+DEV_IMAGE=$(gcloud run services describe $DEV_SERVICE_NAME --region=$REGION --format="value(spec.template.spec.template.spec.containers[0].image)" 2>/dev/null || echo "")
 
 if [ -z "$DEV_IMAGE" ]; then
-    echo -e "${RED}❌ ERROR: Could not get development service image!${NC}"
-    echo "Make sure the development service exists and is deployed."
-    exit 1
+    echo -e "${YELLOW}⚠️  Development service ($DEV_SERVICE_NAME) not found or not deployed.${NC}"
+    echo "  Will build a fresh image for production deployment."
+    USE_DEV_IMAGE=false
+else
+    echo "✅ Found development service image: $DEV_IMAGE"
+    echo "  Will reuse this image for production (faster deployment)."
+    USE_DEV_IMAGE=true
 fi
-
-echo "✅ Development image: $DEV_IMAGE"
+echo ""
 
 # Load environment variables from .env file for production
 echo -e "${BLUE}📄 Loading environment variables for production...${NC}"
@@ -61,6 +69,12 @@ fi
 
 # Convert .env to YAML format for Cloud Run with production URLs
 echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format with production URLs...${NC}"
+
+# Clean up any existing production YAML file
+if [ -f ".env.prod.cloudrun.yaml" ]; then
+    rm -f .env.prod.cloudrun.yaml
+fi
+
 python3 << 'PYTHON_SCRIPT'
 import os
 import re
@@ -100,9 +114,16 @@ except FileNotFoundError:
 
 # Parse all environment variables and convert localhost to production URLs
 env_vars = {}
+# Reserved environment variables that Cloud Run sets automatically
+RESERVED_VARS = ['PORT']
+
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
+        # Skip reserved environment variables
+        if key in RESERVED_VARS:
+            print(f'Skipping reserved variable: {key}', file=sys.stderr)
+            continue
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue
@@ -176,10 +197,36 @@ fi
 echo -e "${GREEN}✅ Environment variables loaded and validated with production URLs${NC}"
 echo ""
 
-# Deploy to production using the development image
-echo -e "${BLUE}🚀 Deploying to production with development image...${NC}"
+# Build new image if dev service doesn't exist, otherwise use dev image
+if [ "$USE_DEV_IMAGE" = "false" ]; then
+    # Build a fresh image for production
+    echo -e "${BLUE}🚀 Building Docker image for production (clean build, no cache)...${NC}"
+    IMAGE_NAME="gcr.io/$PROJECT_ID/$PROD_SERVICE_NAME"
+    
+    # We're already in SATOAPP_DIR, just build
+    # Build image without cache
+    gcloud builds submit --tag $IMAGE_NAME --no-cache
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Docker build failed!${NC}"
+        rm -f .env.prod.cloudrun.yaml
+        exit 1
+    fi
+    
+    PROD_IMAGE=$IMAGE_NAME
+    echo "✅ Production image built: $PROD_IMAGE"
+else
+    # Use development service image
+    PROD_IMAGE=$DEV_IMAGE
+    echo -e "${BLUE}🚀 Using development service image for production...${NC}"
+fi
+
+echo ""
+# Deploy to production (using YAML file from current directory)
+echo -e "${BLUE}🚀 Deploying to production...${NC}"
+YAML_FILE="$SATOAPP_DIR/.env.prod.cloudrun.yaml"
 gcloud run deploy $PROD_SERVICE_NAME \
-  --image $DEV_IMAGE \
+  --image $PROD_IMAGE \
   --region=$REGION \
   --allow-unauthenticated \
   --memory 8Gi \
@@ -191,13 +238,13 @@ gcloud run deploy $PROD_SERVICE_NAME \
   --execution-environment gen2 \
   --cpu-boost \
   --add-cloudsql-instances $PROJECT_ID:$REGION:$CLOUD_SQL_INSTANCE \
-  --env-vars-file .env.prod.cloudrun.yaml
+  --env-vars-file "$YAML_FILE"
 
 # Capture deployment result before cleanup
 DEPLOY_RESULT=$?
 
 # Clean up temporary YAML file
-rm -f .env.prod.cloudrun.yaml
+rm -f "$YAML_FILE"
 
 # Check deployment result
 if [ $DEPLOY_RESULT -eq 0 ]; then

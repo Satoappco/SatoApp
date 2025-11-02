@@ -40,14 +40,15 @@ echo ""
 
 # Load environment variables from .env file
 echo -e "${BLUE}📄 Loading environment variables from .env file...${NC}"
-if [ ! -f ".env" ]; then
-    echo -e "${RED}❌ ERROR: .env file not found!${NC}"
-    echo "Please create a .env file with required environment variables."
+if [ ! -f "../.env" ]; then
+    echo -e "${RED}❌ ERROR: .env file not found in SatoApp directory!${NC}"
+    echo "Please create a .env file in the SatoApp directory with required environment variables."
+    echo "Expected location: $(pwd)/../.env"
     exit 1
 fi
 
-# Convert .env to YAML format for Cloud Run with development URLs
-echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format with development URLs...${NC}"
+# Convert .env to YAML format for Cloud Run
+echo -e "${BLUE}🔄 Converting .env to Cloud Run YAML format...${NC}"
 python3 << 'PYTHON_SCRIPT'
 import os
 import re
@@ -79,45 +80,29 @@ def parse_env_line(line):
 
 # Read .env file
 try:
-    with open('.env', 'r', encoding='utf-8') as f:
+    with open('../.env', 'r', encoding='utf-8') as f:
         lines = f.readlines()
 except FileNotFoundError:
-    print("ERROR: .env file not found!", file=sys.stderr)
+    print("ERROR: .env file not found in SatoApp directory!", file=sys.stderr)
     sys.exit(1)
 
 # Parse all environment variables and convert to development URLs
 env_vars = {}
+# Reserved environment variables that Cloud Run sets automatically
+RESERVED_VARS = ['PORT']
+
 for line in lines:
     key, value = parse_env_line(line)
     if key and value:
+        # Skip reserved environment variables
+        if key in RESERVED_VARS:
+            continue
         # Skip placeholder values
         if value.startswith('your-') or value.startswith('your_'):
             continue
         
-        # Convert production URLs to development URLs
-        # Handle wss:// protocol first
-        if value.startswith('wss://sato-backend-v2-397762748853.me-west1.run.app'):
-            value = value.replace('wss://sato-backend-v2-397762748853.me-west1.run.app', 'wss://sato-backend-dev-397762748853.me-west1.run.app')
-        # Handle https:// and https:// protocols
-        elif 'sato-backend-v2-397762748853.me-west1.run.app' in value:
-            value = value.replace('sato-backend-v2-397762748853.me-west1.run.app', 'sato-backend-dev-397762748853.me-west1.run.app')
-        elif 'sato-frontend-397762748853.me-west1.run.app' in value:
-            value = value.replace('sato-frontend-397762748853.me-west1.run.app', 'sato-frontend-dev-397762748853.me-west1.run.app')
-        # Convert production database to development database
-        elif 'postgresql://postgres:SatoDB_92vN!fG7kAq4hRzLwYx2!PmE@34.165.111.32:5432/sato' in value:
-            value = value.replace('postgresql://postgres:SatoDB_92vN!fG7kAq4hRzLwYx2!PmE@34.165.111.32:5432/sato', 'postgresql://sato_dev_user:SatoDev_92vN!fG7kAq4hRzLwYx2!PmE@34.165.111.32:5432/sato_dev')
-        elif 'DB_NAME=sato' in value:
-            value = value.replace('DB_NAME=sato', 'DB_NAME=sato_dev')
-        elif 'DB_USER=postgres' in value:
-            value = value.replace('DB_USER=postgres', 'DB_USER=sato_dev_user')
-        # Handle localhost URLs (keep as localhost for dev)
-        elif 'localhost:8000' in value:
-            # Keep localhost for development
-            pass
-        elif 'localhost:3000' in value:
-            # Keep localhost for development
-            pass
-        
+        # Use values as-is from .env file (no transformation needed)
+        # The .env symlink already points to the correct environment file
         env_vars[key] = value
 
 # Write YAML file for Cloud Run
@@ -133,12 +118,25 @@ with open('.env.dev.cloudrun.yaml', 'w', encoding='utf-8') as f:
             # Simple quoted value
             f.write(f'{key}: "{value}"\n')
 
-print(f"✅ Converted {len(env_vars)} environment variables to YAML format with development URLs")
+print(f"✅ Converted {len(env_vars)} environment variables to YAML format")
 PYTHON_SCRIPT
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ ERROR: Failed to convert .env to YAML format!${NC}"
     exit 1
+fi
+
+# Check for INTERNAL_AUTH_TOKEN in .env
+if ! grep -q "^INTERNAL_AUTH_TOKEN=" ../.env; then
+    echo -e "${RED}❌ ERROR: INTERNAL_AUTH_TOKEN not found in .env${NC}"
+    echo ""
+    echo "Please add INTERNAL_AUTH_TOKEN to your .env file:"
+    echo "  INTERNAL_AUTH_TOKEN=your-secure-random-token"
+    echo ""
+    echo "Generate one with: openssl rand -hex 32"
+    exit 1
+else
+    echo -e "${GREEN}✅ INTERNAL_AUTH_TOKEN found in .env${NC}"
 fi
 
 # Validate required environment variables
@@ -169,8 +167,10 @@ echo ""
 echo -e "${BLUE}🚀 Building Docker image for development (clean build, no cache)...${NC}"
 IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
 
-# Build image without cache
+# Build image without cache from the parent directory (SatoApp/)
+cd ..
 gcloud builds submit --tag $IMAGE_NAME --no-cache
+cd scripts
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Docker build failed!${NC}"
