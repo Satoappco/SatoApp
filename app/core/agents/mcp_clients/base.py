@@ -1,12 +1,14 @@
 """Base MCP client implementation."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from contextlib import asynccontextmanager
 import asyncio
 import os
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
 
 
 class BaseMCPClient(ABC):
@@ -37,12 +39,19 @@ class BaseMCPClient(ABC):
         """Get the tools provided by this MCP server."""
         pass
 
+    def get_env_vars(self) -> Dict[str, str]:
+        """Get environment variables to pass to MCP server.
+
+        Override this method in subclasses to add tokens/credentials.
+        """
+        return os.environ.copy()
+
     async def connect(self):
         """Connect to the MCP server."""
         server_params = StdioServerParameters(
             command=self.get_server_command()[0],
             args=self.get_server_command()[1:],
-            env=os.environ.copy()
+            env=self.get_env_vars()
         )
 
         # Create stdio client context
@@ -98,10 +107,27 @@ class BaseMCPClient(ABC):
                 print(f"Error closing MCP client: {e}")
 
 
-class MCPTool:
+class MCPToolInput(BaseModel):
+    """Input schema for MCP tools - accepts any arguments."""
+    arguments: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arguments to pass to the MCP tool"
+    )
+
+
+class MCPTool(BaseTool):
     """Wrapper for MCP tools to make them compatible with CrewAI/LangChain."""
 
-    def __init__(self, client: BaseMCPClient, tool_name: str, tool_description: str):
+    name: str = Field(..., description="Name of the tool")
+    description: str = Field(..., description="Description of what the tool does")
+    client: Any = Field(..., description="The MCP client instance")
+    tool_name: str = Field(..., description="Name of the MCP tool to call")
+    args_schema: Type[BaseModel] = MCPToolInput
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __init__(self, client: BaseMCPClient, tool_name: str, tool_description: str, **kwargs):
         """
         Initialize MCP tool wrapper.
 
@@ -110,20 +136,20 @@ class MCPTool:
             tool_name: Name of the tool
             tool_description: Description of what the tool does
         """
-        self.client = client
-        self.tool_name = tool_name
-        self.tool_description = tool_description
-        self.name = tool_name
-        self.description = tool_description
+        super().__init__(
+            name=tool_name,
+            description=tool_description,
+            client=client,
+            tool_name=tool_name,
+            **kwargs
+        )
 
-    async def _arun(self, **kwargs) -> Any:
-        """Async execution of the tool."""
-        return await self.client.call_tool(self.tool_name, kwargs)
-
-    def _run(self, **kwargs) -> Any:
+    def _run(self, arguments: Dict[str, Any] = None, **kwargs) -> Any:
         """Sync execution of the tool."""
-        return asyncio.run(self._arun(**kwargs))
+        args = arguments or kwargs
+        return asyncio.run(self._arun(args))
 
-    def __call__(self, **kwargs) -> Any:
-        """Make the tool callable."""
-        return self._run(**kwargs)
+    async def _arun(self, arguments: Dict[str, Any] = None, **kwargs) -> Any:
+        """Async execution of the tool."""
+        args = arguments or kwargs
+        return await self.client.call_tool(self.tool_name, args)

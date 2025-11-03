@@ -79,7 +79,6 @@ class AgentConfigRequest(BaseModel):
 class AgentConfigData(BaseModel):
     """Agent configuration data schema"""
     id: Optional[int] = None
-    agent_type: str
     name: str
     role: str
     goal: str

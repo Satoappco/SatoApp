@@ -39,16 +39,66 @@ class AnalyticsCrew:
         self.facebook_client: Optional[FacebookMCPClient] = None
         self.google_client: Optional[GoogleMCPClient] = None
 
+        # Store user tokens for MCP tools
+        self.campaigner_id: Optional[int] = None
+        self.user_tokens: Dict[str, str] = {}
+
+    def _fetch_user_tokens(self, campaigner_id: int):
+        """Fetch OAuth tokens for the user from database."""
+        from app.config.database import get_session
+        from app.models.connections import FacebookConnection, GoogleAdsConnection, GoogleAnalyticsConnection
+        from sqlmodel import select
+
+        try:
+            with get_session() as session:
+                # Fetch Facebook token
+                fb_conn = session.exec(
+                    select(FacebookConnection)
+                    .where(FacebookConnection.campaigner_id == campaigner_id)
+                    .where(FacebookConnection.is_active == True)
+                ).first()
+                if fb_conn:
+                    self.user_tokens["facebook"] = fb_conn.access_token
+
+                # Fetch Google Ads token
+                google_ads_conn = session.exec(
+                    select(GoogleAdsConnection)
+                    .where(GoogleAdsConnection.campaigner_id == campaigner_id)
+                    .where(GoogleAdsConnection.is_active == True)
+                ).first()
+                if google_ads_conn:
+                    self.user_tokens["google_ads"] = google_ads_conn.access_token
+
+                # Fetch Google Analytics token
+                ga_conn = session.exec(
+                    select(GoogleAnalyticsConnection)
+                    .where(GoogleAnalyticsConnection.campaigner_id == campaigner_id)
+                    .where(GoogleAnalyticsConnection.is_active == True)
+                ).first()
+                if ga_conn:
+                    self.user_tokens["google_analytics"] = ga_conn.access_token
+
+        except Exception as e:
+            print(f"⚠️  Failed to fetch user tokens: {e}")
+
     def _initialize_mcp_clients(self, platforms: List[str]):
         """Initialize MCP clients for required platforms."""
 
         if "facebook" in platforms or "both" in platforms:
             if not self.facebook_client:
-                self.facebook_client = FacebookMCPClient()
+                # Pass Facebook token if available
+                facebook_token = self.user_tokens.get("facebook")
+                self.facebook_client = FacebookMCPClient(access_token=facebook_token)
 
         if "google" in platforms or "both" in platforms:
             if not self.google_client:
-                self.google_client = GoogleMCPClient()
+                # Pass Google tokens if available
+                google_ads_token = self.user_tokens.get("google_ads")
+                google_analytics_token = self.user_tokens.get("google_analytics")
+                self.google_client = GoogleMCPClient(
+                    google_ads_token=google_ads_token,
+                    google_analytics_token=google_analytics_token
+                )
 
     # TODO: use?
     async def refresh_user_data_connections(self, campaigner_id: int, data_sources: List[str]):
@@ -116,6 +166,11 @@ class AnalyticsCrew:
 
         platforms = task_details.get("platforms", [])
 
+        # Extract campaigner_id and fetch user tokens
+        self.campaigner_id = task_details.get("campaigner_id")
+        if self.campaigner_id:
+            self._fetch_user_tokens(self.campaigner_id)
+
         # Initialize MCP clients
         self._initialize_mcp_clients(platforms)
 
@@ -127,18 +182,18 @@ class AnalyticsCrew:
         specialist_tasks = []
 
         # Create Facebook specialist if needed
-        if "facebook" in platforms or "both" in platforms:
-            facebook_tools = self._get_facebook_tools()
-            facebook_agent = self.agents_factory.create_facebook_specialist(
-                tools=facebook_tools
-            )
-            facebook_task = self.tasks_factory.create_facebook_analysis_task(
-                agent=facebook_agent,
-                task_details=task_details
-            )
-            agents.append(facebook_agent)
-            tasks.append(facebook_task)
-            specialist_tasks.append(facebook_task)
+        # if "facebook" in platforms or "both" in platforms:
+        #     facebook_tools = self._get_facebook_tools()
+        #     facebook_agent = self.agents_factory.create_facebook_specialist(
+        #         tools=facebook_tools
+        #     )
+        #     facebook_task = self.tasks_factory.create_facebook_analysis_task(
+        #         agent=facebook_agent,
+        #         task_details=task_details
+        #     )
+        #     agents.append(facebook_agent)
+        #     tasks.append(facebook_task)
+        #     specialist_tasks.append(facebook_task)
 
         # Create Google specialist if needed
         if "google" in platforms or "both" in platforms:

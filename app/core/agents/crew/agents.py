@@ -24,8 +24,9 @@ class AnalyticsAgents:
     def create_master_agent(self) -> Agent:
         """Create the master orchestrator agent."""
 
-        master_agent_data = self.agents_service.get_agent_config("seo_campaign_manager")
-
+        master_agent_data = self.agents_service.get_agent_config("Master Agent") #seo_campaign_manager
+        if not master_agent_data:
+            raise ValueError("Master agent configuration not found.")
         return Agent(
             role=master_agent_data['role'],
             # "Analytics Master Orchestrator",
@@ -48,7 +49,9 @@ class AnalyticsAgents:
 
     def create_facebook_specialist(self, tools: List) -> Agent:
         """Create the Facebook Ads specialist agent."""
-        fb_specialist_data = self.agents_service.get_agent_config("facebook_database_analysis_expert")
+        fb_specialist_data = self.agents_service.get_agent_config("Facebook Marketing Specialist") #"facebook_database_analysis_expert"
+        if not fb_specialist_data:
+            raise ValueError("Facebook specialist configuration not found.")
         return Agent(
             role=fb_specialist_data['role'],
             # "Facebook Ads Specialist",
@@ -71,8 +74,9 @@ class AnalyticsAgents:
 
     def create_google_specialist(self, tools: List) -> Agent:
         """Create the Google Analytics specialist agent."""
-        google_specialist_data = self.agents_service.get_agent_config("google_database_analysis_expert")
-
+        google_specialist_data = self.agents_service.get_agent_config("Google Specialist") #"google_database_analysis_expert")
+        if not google_specialist_data:
+            raise ValueError("Google specialist configuration not found.")
         return Agent(
             role=google_specialist_data['role'],
             # "Google Analytics Specialist",

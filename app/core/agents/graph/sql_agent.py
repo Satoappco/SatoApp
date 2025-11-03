@@ -237,7 +237,6 @@ Database Schema:
 """ + context_str + """
 
 
-
 IMPORTANT SQL WRITING RULES:
 1. ALL queries MUST include security filtering with proper JOINs:
 
@@ -261,6 +260,7 @@ IMPORTANT SQL WRITING RULES:
 
    **For agencies or campaigners table:**
    - Filter by campaigner_id directly
+
 2. Example secure query for campaigns:
 ```sql
 SELECT DISTINCT kg.campaign_id, kg.campaign_name, kg.campaign_status,

@@ -255,7 +255,7 @@ if the user request is simple and can be answered without an agent, provide a di
 # User information:
 {campaigner_info}
 
-# Reffered customer:
+# Referred customer:
 {customer_info}
 """
 

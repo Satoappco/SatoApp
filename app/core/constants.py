@@ -187,21 +187,6 @@ def get_countries_for_currency(currency_code: str) -> List[CountryInfo]:
 
 # ===== AGENT SYSTEM CONSTANTS =====
 
-class AgentType(str, Enum):
-    """Agent types enum"""
-    SEO_CAMPAIGN_MANAGER = "seo_campaign_manager"
-    GA4_ANALYST = "ga4_analyst"
-    GOOGLE_ADS_SPECIALIST = "google_ads_specialist"
-    FACEBOOK_ADS_SPECIALIST = "facebook_ads_specialist"
-    SOCIAL_MEDIA_SPECIALIST = "social_media_specialist"
-    CONTENT_SPECIALIST = "content_specialist"
-    EMAIL_MARKETING_SPECIALIST = "email_marketing_specialist"
-    ECOMMERCE_SPECIALIST = "ecommerce_specialist"
-    CRM_SPECIALIST = "crm_specialist"
-    ANALYTICS_SPECIALIST = "analytics_specialist"
-    REPORTING_SPECIALIST = "reporting_specialist"
-
-
 class DataSource(str, Enum):
     """Data source types enum"""
     GA4 = "ga4"
