@@ -130,7 +130,7 @@ class AgentService:
         """Create or update agent configuration with automatic tool and data source assignment"""
         try:
             # Validate required fields
-            required_fields = ['name', 'role', 'goal', 'backstory']
+            required_fields = ['name', 'role', 'goal']
             for field in required_fields:
                 if not config_data.get(field):
                     raise AgentException(f"Missing required field: {field}")
