@@ -183,6 +183,13 @@ def update_agent_config(
         from app.models.agents import AgentConfig
         from app.config.database import get_session
 
+        if not agent_config.id:
+            raise HTTPException(status_code=400, detail="Agent ID is required for update")
+
+        existing_agent = db_manager.get_agent_config_by_id(agent_config.id, include_inactive=True)
+        if not existing_agent:
+            raise HTTPException(status_code=404, detail=f"Agent with ID {agent_config.id} not found")
+
         with db_manager.get_session() as session:
             existing = session.exec(
                 select(AgentConfig).where(
