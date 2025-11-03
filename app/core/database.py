@@ -40,12 +40,36 @@ class DatabaseManager:
             logger.error(f"Failed to get agent config for {agent_name}: {str(e)}")
             raise DatabaseException(f"Failed to get agent config: {str(e)}")
     
+    def get_agent_config_by_id(self, agent_id: int, include_inactive: bool = False) -> Optional[Dict[str, Any]]:
+        """Get agent configuration by ID, optionally including inactive agents"""
+        try:
+            with self.get_session() as session:
+                from app.models.agents import AgentConfig
+
+                if include_inactive:
+                    statement = select(AgentConfig).where(AgentConfig.id == agent_id)
+                else:
+                    statement = select(AgentConfig).where(
+                        AgentConfig.id == agent_id,
+                        AgentConfig.is_active == True
+                    )
+
+                agent_config = session.exec(statement).first()
+
+                if agent_config:
+                    return self._agent_config_to_dict(agent_config)
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to get agent config for ID {agent_id}: {str(e)}")
+            raise DatabaseException(f"Failed to get agent config: {str(e)}")
+
     def get_agent_config_by_type(self, agent_name: str, include_inactive: bool = False) -> Optional[Dict[str, Any]]:
         """Get agent configuration by name, optionally including inactive agents"""
         try:
             with self.get_session() as session:
                 from app.models.agents import AgentConfig
-                
+
                 if include_inactive:
                     statement = select(AgentConfig).where(AgentConfig.name == agent_name)
                 else:
@@ -53,13 +77,13 @@ class DatabaseManager:
                         AgentConfig.name == agent_name,
                         AgentConfig.is_active == True
                     )
-                
+
                 agent_config = session.exec(statement).first()
-                
+
                 if agent_config:
                     return self._agent_config_to_dict(agent_config)
                 return None
-                
+
         except Exception as e:
             logger.error(f"Failed to get agent config for {agent_name}: {str(e)}")
             raise DatabaseException(f"Failed to get agent config: {str(e)}")

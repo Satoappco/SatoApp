@@ -180,30 +180,43 @@ def update_agent_config(
     """Update existing agent configuration"""
     try:
         agent_service = AgentService()
-        
-        # Get agent_name from the request body
+
+        # Get agent data from the request body
         config_data = agent_config.dict()
+        agent_id = config_data.get("id")
         agent_name = config_data.get("name")
-        
-        if not agent_name:
-            raise HTTPException(status_code=400, detail="agent_name is required")
-        
+
+        # Require either ID or name for updates
+        if not agent_id and not agent_name:
+            raise HTTPException(status_code=400, detail="Either agent ID or name is required for updates")
+
         # Check if agent exists (including inactive ones for updates)
         from app.core.database import db_manager
-        existing_agent = db_manager.get_agent_config_by_type(agent_name, include_inactive=True)
-        if not existing_agent:
-            raise HTTPException(status_code=404, detail=f"Agent type '{agent_name}' not found")
-        
+        existing_agent = None
+
+        # Prefer ID-based lookup if provided
+        if agent_id:
+            existing_agent = db_manager.get_agent_config_by_id(agent_id, include_inactive=True)
+            if not existing_agent:
+                raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found")
+        else:
+            # Fall back to name-based lookup
+            existing_agent = db_manager.get_agent_config_by_type(agent_name, include_inactive=True)
+            if not existing_agent:
+                raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+            # Add the ID to config_data for upsert to work correctly
+            config_data['id'] = existing_agent['id']
+
         # Update agent
         updated_agent = agent_service.create_or_update_agent(config_data)
-        
+
         return AgentConfigResponse(
             status="success",
-            message=f"Agent '{agent_name}' updated successfully",
+            message=f"Agent '{updated_agent.get('name', agent_name)}' updated successfully",
             agent=updated_agent,
             timestamp=datetime.utcnow().isoformat()
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
