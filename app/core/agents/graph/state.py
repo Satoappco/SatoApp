@@ -25,3 +25,4 @@ class GraphState(MessagesState):
 
     # User context (for authorization and data filtering)
     campaigner: Campaigner # ID of the authenticated campaigner
+    customer_id: Optional[int] # ID of the selected customer (optional)

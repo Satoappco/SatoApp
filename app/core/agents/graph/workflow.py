@@ -26,13 +26,14 @@ class ConversationWorkflow:
     3. Routes tasks to specialized agents when ready
     """
 
-    def __init__(self, campaigner: Campaigner, thread_id: str = "default"):
+    def __init__(self, campaigner: Campaigner, thread_id: str = "default", customer_id: int = None):
         logger.info(f"🏗️  [Workflow] Initializing ConversationWorkflow for thread: {thread_id[:8]}...")
 
-        # Store campaigner id and thread_id for this workflow
+        # Store campaigner id, customer_id and thread_id for this workflow
         self.campaigner = campaigner
+        self.customer_id = customer_id
         self.thread_id = thread_id
-        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner.id} | Thread ID: {thread_id[:8]}...")
+        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner.id} | Customer ID: {customer_id} | Thread ID: {thread_id[:8]}...")
 
         # Initialize PostgreSQL chat message history
         try:
@@ -61,7 +62,8 @@ class ConversationWorkflow:
             "needs_clarification": False,
             "conversation_complete": False,
             "error": None,
-            "campaigner": campaigner
+            "campaigner": campaigner,
+            "customer_id": customer_id
         }
 
         # Initialize LLM

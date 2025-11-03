@@ -29,7 +29,7 @@ class ChatbotNode:
         """Load chatbot system prompt from database or use fallback."""
         try:
             # Try to get chatbot orchestrator config from database
-            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator") if os.getenv("USE_DATABASE_CONFIG", "false") == "true" else None
+            chatbot_config = self.agent_service.get_agent_config("Sato main chatbot") if os.getenv("USE_DATABASE_CONFIG", "false") == "true" else None
 
             if chatbot_config:
                 logger.info("✅ Loaded chatbot orchestrator config from database")
@@ -128,6 +128,58 @@ class ChatbotNode:
 
         return "\n".join(lines) if lines else "No detailed information available"
 
+    def _format_customer_info(self, customer_id: int, campaigner_id: int) -> str:
+        """Format customer information for system prompt.
+
+        Args:
+            customer_id: Customer ID to get information for
+            campaigner_id: Campaigner ID for authorization
+
+        Returns:
+            Formatted string with customer information
+        """
+        if not customer_id:
+            return "No specific customer selected. Information shown is for all customers under your management."
+
+        try:
+            db_tool = DatabaseTool(campaigner_id)
+
+            # Get customer details
+            customer = db_tool.get_customer_info(customer_id)
+            if not customer:
+                return f"Customer ID {customer_id} not found or not accessible."
+
+            # Get campaign summary
+            campaigns = db_tool.get_campaigns_summary(customer_id)
+
+            lines = [
+                f"Selected Customer: {customer.get('full_name', 'N/A')} (ID: {customer_id})",
+                f"- Status: {customer.get('status', 'N/A')}",
+                f"- Contact: {customer.get('contact_email', 'N/A')}",
+            ]
+
+            # Add campaign statistics
+            if campaigns:
+                lines.append(f"- Active Campaigns: {campaigns.get('active_campaigns', 0)}")
+                lines.append(f"- Total Campaigns: {campaigns.get('total_campaigns', 0)}")
+                lines.append(f"- Paused Campaigns: {campaigns.get('paused_campaigns', 0)}")
+
+                total_budget = campaigns.get('total_daily_budget', 0)
+                if total_budget:
+                    lines.append(f"- Total Daily Budget: {total_budget:.2f}")
+
+            # Add website and social info if available
+            if customer.get('website_url'):
+                lines.append(f"- Website: {customer.get('website_url')}")
+            if customer.get('facebook_page_url'):
+                lines.append(f"- Facebook: {customer.get('facebook_page_url')}")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to fetch customer info: {str(e)}")
+            return f"Unable to retrieve information for customer ID {customer_id}"
+
     def _get_fallback_prompt(self) -> str:
         """Fallback system prompt if database config is not available."""
         return """
@@ -202,6 +254,9 @@ if the user request is simple and can be answered without an agent, provide a di
 
 # User information:
 {campaigner_info}
+
+# Reffered customer:
+{customer_info}
 """
 
     def process(self, state: GraphState) -> Dict[str, Any]:
@@ -215,9 +270,10 @@ if the user request is simple and can be answered without an agent, provide a di
         """
         logger.info(f"🤖 [ChatbotNode] Processing conversation. current_state: {state}")
 
-        # Get campaigner_id from state
+        # Get campaigner_id and customer_id from state
         campaigner = state.get("campaigner")
-        logger.debug(f"👤 [ChatbotNode] Processing for campaigner: {campaigner}")
+        customer_id = state.get("customer_id")
+        logger.debug(f"👤 [ChatbotNode] Processing for campaigner: {campaigner} | Customer: {customer_id}")
 
         # Fetch and format comprehensive campaigner info
         campaigner_info_str = "User information not available"
@@ -225,12 +281,18 @@ if the user request is simple and can be answered without an agent, provide a di
             db_tool = DatabaseTool(campaigner.id)
             comprehensive_info = db_tool.get_comprehensive_campaigner_info()
             campaigner_info_str = self._format_campaigner_info(comprehensive_info)
-            logger.debug(f"📋 [ChatbotNode] Formatted system prompt:\n{self.system_prompt.format(campaigner_info=campaigner_info_str)}...")
         except Exception as e:
             logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
 
-        # Format system prompt with campaigner info
-        formatted_system_prompt = self.system_prompt.format(campaigner_info=campaigner_info_str)
+        # Fetch and format customer info
+        customer_info_str = self._format_customer_info(customer_id, campaigner.id)
+        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str[:100]}...")
+
+        # Format system prompt with campaigner and customer info
+        formatted_system_prompt = self.system_prompt.format(
+            campaigner_info=campaigner_info_str,
+            customer_info=customer_info_str
+        )
 
         messages = [
             SystemMessage(content=formatted_system_prompt),
