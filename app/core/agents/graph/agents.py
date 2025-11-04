@@ -40,6 +40,8 @@ class AnalyticsCrewPlaceholder:
         # Build task details for AnalyticsCrew
         task_details = {
             "query": query,
+            "context": task.get("context"),  # Pass through the context (agency, campaigner, language)
+            "campaigner_id": task.get("campaigner_id"),  # Pass through campaigner_id for token fetching
             "platforms": task.get("platforms", ["facebook", "google"]),
             "metrics": task.get("metrics", ["impressions", "clicks", "conversions", "spend"]),
             "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
