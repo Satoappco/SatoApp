@@ -264,6 +264,45 @@ DEFAULT_SETTINGS = [
         "requires_restart": False
     },
     {
+        "key": "langfuse_enabled",
+        "value": "false",
+        "value_type": "boolean",
+        "category": "monitoring",
+        "description": "Enable Langfuse observability and tracing",
+        "is_editable": True,
+        "requires_restart": True
+    },
+    {
+        "key": "langfuse_public_key",
+        "value": "",
+        "value_type": "string",
+        "category": "monitoring",
+        "description": "Langfuse Public Key",
+        "is_secret": False,
+        "is_editable": True,
+        "requires_restart": True
+    },
+    {
+        "key": "langfuse_secret_key",
+        "value": "",
+        "value_type": "string",
+        "category": "monitoring",
+        "description": "Langfuse Secret Key",
+        "is_secret": True,
+        "is_editable": True,
+        "requires_restart": True
+    },
+    {
+        "key": "langfuse_host",
+        "value": "https://cloud.langfuse.com",
+        "value_type": "string",
+        "category": "monitoring",
+        "description": "Langfuse Host URL (cloud or self-hosted)",
+        "is_secret": False,
+        "is_editable": True,
+        "requires_restart": True
+    },
+    {
         "key": "sentry_dsn",
         "value": "",
         "value_type": "string",

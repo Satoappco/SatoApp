@@ -7,8 +7,13 @@ from mcp.client.stdio import stdio_client
 from contextlib import asynccontextmanager
 import asyncio
 import os
+import logging
+import time
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
+from app.core.observability import get_current_trace
+
+logger = logging.getLogger(__name__)
 
 
 class BaseMCPClient(ABC):
@@ -87,8 +92,61 @@ class BaseMCPClient(ABC):
         if not self.session:
             raise RuntimeError("Not connected to MCP server. Call connect() first.")
 
-        result = await self.session.call_tool(tool_name, arguments)
-        return result
+        # Get current trace for tracking
+        current_trace = get_current_trace()
+        tool_span = None
+
+        if current_trace:
+            # Sanitize arguments for logging
+            sanitized_args = self._sanitize_arguments(arguments)
+            tool_span = current_trace.span(
+                name=f"mcp_tool_{tool_name}",
+                input={"tool": tool_name, "arguments": sanitized_args},
+                metadata={"mcp_client": self.__class__.__name__}
+            )
+
+        start_time = time.time()
+        try:
+            result = await self.session.call_tool(tool_name, arguments)
+            duration_ms = (time.time() - start_time) * 1000
+
+            logger.debug(f"✅ MCP tool {tool_name} completed in {duration_ms:.2f}ms")
+
+            if tool_span:
+                tool_span.end(
+                    output={"success": True, "duration_ms": duration_ms},
+                    metadata={"duration_ms": duration_ms}
+                )
+
+            return result
+
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.error(f"❌ MCP tool {tool_name} failed after {duration_ms:.2f}ms: {e}")
+
+            if tool_span:
+                tool_span.end(
+                    level="ERROR",
+                    status_message=str(e),
+                    metadata={"duration_ms": duration_ms, "error": str(e)}
+                )
+
+            raise
+
+    def _sanitize_arguments(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Sanitize arguments for logging (redact sensitive data)."""
+        sanitized = {}
+        sensitive_keys = {"token", "password", "secret", "key", "api_key", "access_token"}
+
+        for k, v in arguments.items():
+            if isinstance(k, str) and any(sens in k.lower() for sens in sensitive_keys):
+                sanitized[k] = "***REDACTED***"
+            elif isinstance(v, str) and len(v) > 200:
+                sanitized[k] = v[:200] + "..."
+            else:
+                sanitized[k] = v
+
+        return sanitized
 
     async def list_tools(self) -> List[Dict[str, Any]]:
         """List available tools from the MCP server."""

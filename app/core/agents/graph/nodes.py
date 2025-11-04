@@ -11,9 +11,19 @@ from .state import GraphState
 from .agents import get_agent
 from ..database.tools import DatabaseTool
 from app.services.agent_service import AgentService
+from app.config.langfuse_config import LangfuseConfig
+from app.core.observability import trace_context
 import os
 
 logger = logging.getLogger(__name__)
+
+
+class DummyContext:
+    """Dummy context manager for when tracing is disabled."""
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        pass
 
 
 class ChatbotNode:
@@ -270,6 +280,22 @@ if the user request is simple and can be answered without an agent, provide a di
         """
         logger.info(f"🤖 [ChatbotNode] Processing conversation. current_state: {state}")
 
+        # Create Langfuse trace for this conversation turn
+        langfuse = LangfuseConfig.get_client()
+        if langfuse:
+            # Get session_id from state or generate one
+            session_id = state.get("session_id", "unknown")
+            trace = langfuse.trace(
+                name="chatbot_conversation_turn",
+                session_id=session_id,
+                user_id=str(state.get("campaigner", {}).get("id", "unknown")),
+                metadata={
+                    "customer_id": state.get("customer_id"),
+                }
+            )
+        else:
+            trace = None
+
         # Get campaigner_id and customer_id from state
         campaigner = state.get("campaigner")
         customer_id = state.get("customer_id")
@@ -299,8 +325,20 @@ if the user request is simple and can be answered without an agent, provide a di
             *state["messages"]
         ]
         logger.debug(f"📤 [ChatbotNode] Sending {len(messages)} messages to LLM")
-        response = self.llm.invoke(messages)
-        logger.debug(f"📥 [ChatbotNode] Received response: {response.content[:100]}...")
+
+        # Track LLM call with Langfuse
+        with trace_context(trace) if trace else DummyContext():
+            if trace:
+                llm_span = trace.span(
+                    name="llm_routing_decision",
+                    input={"messages": [{"role": m.type, "content": m.content[:200]} for m in messages[-3:]]}  # Last 3 messages
+                )
+
+            response = self.llm.invoke(messages)
+            logger.debug(f"📥 [ChatbotNode] Received response: {response.content[:100]}...")
+
+            if trace:
+                llm_span.end(output={"response": response.content[:500]})
 
         try:
             # Try to parse JSON response
@@ -341,6 +379,20 @@ if the user request is simple and can be answered without an agent, provide a di
                 logger.info(f"✅ [ChatbotNode] Intent ready! Routing to agent: {agent_name}")
                 logger.debug(f"📋 [ChatbotNode] Task: {task}")
 
+                # Track routing decision
+                if trace:
+                    trace.end(
+                        output={
+                            "agent": agent_name,
+                            "query": task.get("query", "")[:200],
+                            "routed": True
+                        },
+                        metadata={
+                            "agent_name": agent_name,
+                            "language": user_language
+                        }
+                    )
+
                 return {
                     "next_agent": agent_name,
                     "agent_task": task,
@@ -356,6 +408,13 @@ if the user request is simple and can be answered without an agent, provide a di
                 else:
                     logger.debug(f"❓ [ChatbotNode] Answered the user: '{clarification_msg[:100]}...'")
 
+                # Track clarification/direct answer
+                if trace:
+                    trace.end(
+                        output={"message": clarification_msg[:500], "complete": complete},
+                        metadata={"needs_clarification": True, "complete": complete}
+                    )
+
                 return {
                     "messages": state["messages"] + [AIMessage(content=clarification_msg)],
                     "needs_clarification": True,
@@ -366,6 +425,15 @@ if the user request is simple and can be answered without an agent, provide a di
         except (json.JSONDecodeError, KeyError) as e:
             # If not JSON, treat as clarification message
             logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}. content: {content}")
+
+            # Track error
+            if trace:
+                trace.end(
+                    level="WARNING",
+                    status_message=f"JSON parse error: {str(e)}",
+                    output={"raw_response": response.content[:500]}
+                )
+
             return {
                 "messages": state["messages"] + [AIMessage(content=response.content)],
                 "needs_clarification": True,
