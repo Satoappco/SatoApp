@@ -2,7 +2,7 @@
 
 from crewai import Crew, Process
 from crewai_tools import MCPServerAdapter
-from mcp import StdioServerParameters # Needed for Stdio example
+from mcp import StdioServerParameters  # For future MCP server configuration
 
 from typing import Dict, Any, List, Optional
 # from langchain_openai import ChatOpenAI
@@ -100,21 +100,25 @@ class AnalyticsCrew:
 
     def _initialize_mcp_clients(self, platforms: List[str]):
         """Initialize MCP clients for required platforms."""
-        self.mcp_param_list.append(    
-            StdioServerParameters(
-                command="pipx",
-                args=[
-                    "run",
-                    "analytics-mcp"
-                ],
-                env={
-                    "UV_PYTHON": "3.12", 
-                    **os.environ,
-#         "GOOGLE_APPLICATION_CREDENTIALS": "PATH_TO_CREDENTIALS_JSON",
-#         "GOOGLE_PROJECT_ID": "YOUR_PROJECT_ID"
-                },
-            )
-        )
+        # Initialize Google Analytics MCP server
+        if "google" in platforms or "both" in platforms:
+            # Get Google service account credentials path from environment
+            google_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "NONE")
+
+            if google_creds:
+                self.mcp_param_list.append(
+                    StdioServerParameters(
+                        command="ga4-mcp-server",
+                        args=[],
+                        env={
+                            "GOOGLE_APPLICATION_CREDENTIALS": google_creds,
+                            **os.environ,
+                        },
+                    )
+                )
+                logger.info(f"✅ Configured Google Analytics MCP server with credentials: {google_creds}")
+            else:
+                logger.warning("⚠️  GOOGLE_APPLICATION_CREDENTIALS not set, GA4 MCP server disabled")
         
         # if "facebook" in platforms or "both" in platforms:
         #     if not self.facebook_client:
@@ -240,7 +244,7 @@ class AnalyticsCrew:
             if current_trace:
                 token_span = current_trace.span(name="fetch_user_tokens")
 
-            self._fetch_user_tokens(self.campaigner_id)
+            #TODO: fix: self._fetch_user_tokens(self.campaigner_id)
 
             if current_trace:
                 token_span.end()
@@ -255,8 +259,22 @@ class AnalyticsCrew:
         if current_trace:
             init_span.end()
 
-        with MCPServerAdapter(self.mcp_param_list) as aggregated_tools:
-            logger.debug(f"🔧 Aggregated MCP tools: {[tool.name for tool in aggregated_tools]}")
+        # Check if MCP server is configured
+        use_mcp_adapter = bool(self.mcp_param_list)
+
+        if use_mcp_adapter:
+            # Use MCPServerAdapter with analytics-mcp server
+            mcp_params = self.mcp_param_list[0]
+            context_manager = MCPServerAdapter(mcp_params)
+        else:
+            # Fallback: Use custom MCP clients or no tools
+            logger.warning("⚠️  MCP server not configured, using custom MCP clients")
+            from contextlib import nullcontext
+            context_manager = nullcontext(enter_result=[])
+
+        with context_manager as aggregated_tools:
+            logger.debug(f"🔧 Available tools: {[tool.name for tool in aggregated_tools] if aggregated_tools else 'None'}")
+
             # Create agents
             master_agent = self.agents_factory.create_master_agent()
 
@@ -280,9 +298,10 @@ class AnalyticsCrew:
 
             # Create Google specialist if needed
             if "google" in platforms or "both" in platforms:
-                google_tools = self._get_google_tools()
+                # Use aggregated_tools if available, otherwise use custom Google tools
+                tools = aggregated_tools if use_mcp_adapter else self._get_google_tools()
                 google_agent = self.agents_factory.create_google_specialist(
-                    tools=aggregated_tools #google_tools
+                    tools=tools
                 )
                 google_task = self.tasks_factory.create_google_analysis_task(
                     agent=google_agent,

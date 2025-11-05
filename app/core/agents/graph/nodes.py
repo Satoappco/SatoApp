@@ -288,7 +288,7 @@ if the user request is simple and can be answered without an agent, provide a di
             trace = langfuse.trace(
                 name="chatbot_conversation_turn",
                 session_id=session_id,
-                user_id=str(state.get("campaigner", {}).get("id", "unknown")),
+                user_id=str(state.get("campaigner").id),
                 metadata={
                     "customer_id": state.get("customer_id"),
                 }
@@ -381,7 +381,7 @@ if the user request is simple and can be answered without an agent, provide a di
 
                 # Track routing decision
                 if trace:
-                    trace.end(
+                    trace.update(
                         output={
                             "agent": agent_name,
                             "query": task.get("query", "")[:200],
@@ -410,7 +410,7 @@ if the user request is simple and can be answered without an agent, provide a di
 
                 # Track clarification/direct answer
                 if trace:
-                    trace.end(
+                    trace.update(
                         output={"message": clarification_msg[:500], "complete": complete},
                         metadata={"needs_clarification": True, "complete": complete}
                     )
@@ -428,10 +428,9 @@ if the user request is simple and can be answered without an agent, provide a di
 
             # Track error
             if trace:
-                trace.end(
-                    level="WARNING",
-                    status_message=f"JSON parse error: {str(e)}",
-                    output={"raw_response": response.content[:500]}
+                trace.update(
+                    output={"raw_response": response.content[:500], "error": f"JSON parse error: {str(e)}"},
+                    metadata={"level": "WARNING", "error_type": "json_parse_error"}
                 )
 
             return {
