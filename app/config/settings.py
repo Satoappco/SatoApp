@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = None
     ga4_service_account_key: Optional[str] = None
     facebook_app_secret: Optional[str] = None
+
+    # Chat Configuration
+    chat_provider: str = "backend"  # backend, dialogflow, or other
     
     # Authentication
     api_token: Optional[str] = None  # Primary API token

@@ -39,6 +39,9 @@ setup-*.sh
 *PLAN*.md
 facebook_token_analysis.md
 
+# Debug routes (development only - DO NOT COMMIT)
+app/api/v1/routes/debug_*.py
+
 # Database backups
 db_backups/
 *.sql

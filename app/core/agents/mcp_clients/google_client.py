@@ -8,13 +8,20 @@ from .base import BaseMCPClient, MCPTool
 class GoogleMCPClient(BaseMCPClient):
     """MCP client for Google Analytics data."""
 
-    def __init__(self):
-        """Initialize Google Analytics MCP client."""
+    def __init__(self, google_ads_token: str = None, google_analytics_token: str = None):
+        """Initialize Google Analytics MCP client.
+
+        Args:
+            google_ads_token: Google Ads OAuth token for the user
+            google_analytics_token: Google Analytics OAuth token for the user
+        """
         server_path = os.getenv(
             "GOOGLE_MCP_SERVER_PATH",
             "npx"  # Default to npx if server path not specified
         )
         super().__init__(server_path)
+        self.google_ads_token = google_ads_token
+        self.google_analytics_token = google_analytics_token
 
     def get_server_command(self) -> List[str]:
         """Get the command to start the Google Analytics MCP server."""
@@ -26,6 +33,15 @@ class GoogleMCPClient(BaseMCPClient):
             return ["npx", "-y", "@modelcontextprotocol/server-google-analytics"]
         else:
             return ["node", self.server_path]
+
+    def get_env_vars(self) -> dict:
+        """Get environment variables including Google access tokens."""
+        env = os.environ.copy()
+        if self.google_ads_token:
+            env["GOOGLE_ADS_ACCESS_TOKEN"] = self.google_ads_token
+        if self.google_analytics_token:
+            env["GOOGLE_ANALYTICS_ACCESS_TOKEN"] = self.google_analytics_token
+        return env
 
     def get_tools(self) -> List[Any]:
         """Get CrewAI-compatible tools for Google Analytics."""

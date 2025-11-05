@@ -187,21 +187,6 @@ def get_countries_for_currency(currency_code: str) -> List[CountryInfo]:
 
 # ===== AGENT SYSTEM CONSTANTS =====
 
-class AgentType(str, Enum):
-    """Agent types enum"""
-    SEO_CAMPAIGN_MANAGER = "seo_campaign_manager"
-    GA4_ANALYST = "ga4_analyst"
-    GOOGLE_ADS_SPECIALIST = "google_ads_specialist"
-    FACEBOOK_ADS_SPECIALIST = "facebook_ads_specialist"
-    SOCIAL_MEDIA_SPECIALIST = "social_media_specialist"
-    CONTENT_SPECIALIST = "content_specialist"
-    EMAIL_MARKETING_SPECIALIST = "email_marketing_specialist"
-    ECOMMERCE_SPECIALIST = "ecommerce_specialist"
-    CRM_SPECIALIST = "crm_specialist"
-    ANALYTICS_SPECIALIST = "analytics_specialist"
-    REPORTING_SPECIALIST = "reporting_specialist"
-
-
 class DataSource(str, Enum):
     """Data source types enum"""
     GA4 = "ga4"
@@ -239,157 +224,162 @@ VALID_DATA_SOURCES = [source.value for source in DataSource]
 
 
 # ===== AGENT TOOL MAPPING =====
+#TODO: Fix agent name/type confusion in below function
+# def get_tools_for_agent(agent_name: str) -> List[str]:
+#     """Get tools for a specific agent type"""
+#     tool_mapping = {
+#         AgentType.SEO_CAMPAIGN_MANAGER: [
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.GOOGLE_ADS_TOOL,
+#             ToolName.SEARCH_CONSOLE_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.GA4_ANALYST: [
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.GOOGLE_ADS_SPECIALIST: [
+#             ToolName.GOOGLE_ADS_TOOL,
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.FACEBOOK_ADS_SPECIALIST: [
+#             ToolName.FACEBOOK_TOOL,
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.SOCIAL_MEDIA_SPECIALIST: [
+#             ToolName.SOCIAL_MEDIA_TOOL,
+#             ToolName.FACEBOOK_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.CONTENT_SPECIALIST: [
+#             ToolName.CONTENT_TOOL,
+#             ToolName.SOCIAL_MEDIA_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.EMAIL_MARKETING_SPECIALIST: [
+#             ToolName.EMAIL_MARKETING_TOOL,
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.ECOMMERCE_SPECIALIST: [
+#             ToolName.ECOMMERCE_TOOL,
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.CRM_SPECIALIST: [
+#             ToolName.CRM_TOOL,
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.ANALYTICS_SPECIALIST: [
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ],
+#         AgentType.REPORTING_SPECIALIST: [
+#             ToolName.REPORTING_TOOL,
+#             ToolName.GA4_ANALYTICS_TOOL
+#         ]
+#     }
+    
+#     return tool_mapping.get(agent_name, [
+#             ToolName.GA4_ANALYTICS_TOOL,
+#             ToolName.GOOGLE_ADS_TOOL,
+#             ToolName.SEARCH_CONSOLE_TOOL,
+#             ToolName.REPORTING_TOOL
+#         ])
 
-def get_tools_for_agent(agent_type: str) -> List[str]:
-    """Get tools for a specific agent type"""
-    tool_mapping = {
-        AgentType.SEO_CAMPAIGN_MANAGER: [
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.GOOGLE_ADS_TOOL,
-            ToolName.SEARCH_CONSOLE_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.GA4_ANALYST: [
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.GOOGLE_ADS_SPECIALIST: [
-            ToolName.GOOGLE_ADS_TOOL,
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.FACEBOOK_ADS_SPECIALIST: [
-            ToolName.FACEBOOK_TOOL,
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.SOCIAL_MEDIA_SPECIALIST: [
-            ToolName.SOCIAL_MEDIA_TOOL,
-            ToolName.FACEBOOK_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.CONTENT_SPECIALIST: [
-            ToolName.CONTENT_TOOL,
-            ToolName.SOCIAL_MEDIA_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.EMAIL_MARKETING_SPECIALIST: [
-            ToolName.EMAIL_MARKETING_TOOL,
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.ECOMMERCE_SPECIALIST: [
-            ToolName.ECOMMERCE_TOOL,
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.CRM_SPECIALIST: [
-            ToolName.CRM_TOOL,
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.ANALYTICS_SPECIALIST: [
-            ToolName.GA4_ANALYTICS_TOOL,
-            ToolName.REPORTING_TOOL
-        ],
-        AgentType.REPORTING_SPECIALIST: [
-            ToolName.REPORTING_TOOL,
-            ToolName.GA4_ANALYTICS_TOOL
-        ]
-    }
+#TODO: Fix agent name/type confusion in below function
+# def get_data_sources_for_agent(agent_name: str) -> List[str]:
+#     """Get data sources for a specific agent type"""
+#     data_source_mapping = {
+#         AgentType.SEO_CAMPAIGN_MANAGER: [
+#             DataSource.GA4,
+#             DataSource.GOOGLE_ADS,
+#             DataSource.GOOGLE_SEARCH_CONSOLE
+#         ],
+#         AgentType.GA4_ANALYST: [
+#             DataSource.GA4
+#         ],
+#         AgentType.GOOGLE_ADS_SPECIALIST: [
+#             DataSource.GOOGLE_ADS,
+#             DataSource.GA4
+#         ],
+#         AgentType.FACEBOOK_ADS_SPECIALIST: [
+#             DataSource.FACEBOOK_ADS,
+#             DataSource.FACEBOOK,
+#             DataSource.GA4
+#         ],
+#         AgentType.SOCIAL_MEDIA_SPECIALIST: [
+#             DataSource.FACEBOOK,
+#             DataSource.INSTAGRAM,
+#             DataSource.LINKEDIN,
+#             DataSource.TWITTER,
+#             DataSource.YOUTUBE,
+#             DataSource.TIKTOK
+#         ],
+#         AgentType.CONTENT_SPECIALIST: [
+#             DataSource.FACEBOOK,
+#             DataSource.INSTAGRAM,
+#             DataSource.LINKEDIN,
+#             DataSource.TWITTER,
+#             DataSource.YOUTUBE
+#         ],
+#         AgentType.EMAIL_MARKETING_SPECIALIST: [
+#             DataSource.EMAIL_MARKETING,
+#             DataSource.GA4
+#         ],
+#         AgentType.ECOMMERCE_SPECIALIST: [
+#             DataSource.ECOMMERCE,
+#             DataSource.GA4,
+#             DataSource.GOOGLE_ADS
+#         ],
+#         AgentType.CRM_SPECIALIST: [
+#             DataSource.CRM,
+#             DataSource.GA4
+#         ],
+#         AgentType.ANALYTICS_SPECIALIST: [
+#             DataSource.GA4,
+#             DataSource.GOOGLE_SEARCH_CONSOLE
+#         ],
+#         AgentType.REPORTING_SPECIALIST: [
+#             DataSource.GA4,
+#             DataSource.GOOGLE_ADS,
+#             DataSource.FACEBOOK_ADS
+#         ]
+#     }
     
-    return tool_mapping.get(agent_type, [])
+#     return data_source_mapping.get(agent_name, [])
 
-
-def get_data_sources_for_agent(agent_type: str) -> List[str]:
-    """Get data sources for a specific agent type"""
-    data_source_mapping = {
-        AgentType.SEO_CAMPAIGN_MANAGER: [
-            DataSource.GA4,
-            DataSource.GOOGLE_ADS,
-            DataSource.GOOGLE_SEARCH_CONSOLE
-        ],
-        AgentType.GA4_ANALYST: [
-            DataSource.GA4
-        ],
-        AgentType.GOOGLE_ADS_SPECIALIST: [
-            DataSource.GOOGLE_ADS,
-            DataSource.GA4
-        ],
-        AgentType.FACEBOOK_ADS_SPECIALIST: [
-            DataSource.FACEBOOK_ADS,
-            DataSource.FACEBOOK,
-            DataSource.GA4
-        ],
-        AgentType.SOCIAL_MEDIA_SPECIALIST: [
-            DataSource.FACEBOOK,
-            DataSource.INSTAGRAM,
-            DataSource.LINKEDIN,
-            DataSource.TWITTER,
-            DataSource.YOUTUBE,
-            DataSource.TIKTOK
-        ],
-        AgentType.CONTENT_SPECIALIST: [
-            DataSource.FACEBOOK,
-            DataSource.INSTAGRAM,
-            DataSource.LINKEDIN,
-            DataSource.TWITTER,
-            DataSource.YOUTUBE
-        ],
-        AgentType.EMAIL_MARKETING_SPECIALIST: [
-            DataSource.EMAIL_MARKETING,
-            DataSource.GA4
-        ],
-        AgentType.ECOMMERCE_SPECIALIST: [
-            DataSource.ECOMMERCE,
-            DataSource.GA4,
-            DataSource.GOOGLE_ADS
-        ],
-        AgentType.CRM_SPECIALIST: [
-            DataSource.CRM,
-            DataSource.GA4
-        ],
-        AgentType.ANALYTICS_SPECIALIST: [
-            DataSource.GA4,
-            DataSource.GOOGLE_SEARCH_CONSOLE
-        ],
-        AgentType.REPORTING_SPECIALIST: [
-            DataSource.GA4,
-            DataSource.GOOGLE_ADS,
-            DataSource.FACEBOOK_ADS
-        ]
-    }
+#TODO: Fix agent name/type confusion in below function
+# def should_include_agent(agent_name: str, data_sources: List[str], user_question: str) -> bool:
+#     """Determine if an agent should be included based on context"""
+#     # Get expected data sources for this agent
+#     expected_sources = get_data_sources_for_agent(agent_name)
     
-    return data_source_mapping.get(agent_type, [])
-
-
-def should_include_agent(agent_type: str, data_sources: List[str], user_question: str) -> bool:
-    """Determine if an agent should be included based on context"""
-    # Get expected data sources for this agent
-    expected_sources = get_data_sources_for_agent(agent_type)
+#     # Check if any expected data sources are present
+#     has_relevant_sources = any(source in data_sources for source in expected_sources)
     
-    # Check if any expected data sources are present
-    has_relevant_sources = any(source in data_sources for source in expected_sources)
+#     # Check if user question contains relevant keywords
+#     question_lower = user_question.lower()
     
-    # Check if user question contains relevant keywords
-    question_lower = user_question.lower()
+#     keyword_mapping = {
+#         AgentType.GA4_ANALYST: ["analytics", "ga4", "google analytics", "traffic", "visitors", "sessions"],
+#         AgentType.GOOGLE_ADS_SPECIALIST: ["google ads", "adwords", "ads", "campaign", "keywords", "bidding"],
+#         AgentType.FACEBOOK_ADS_SPECIALIST: ["facebook", "facebook ads", "meta", "social ads", "targeting"],
+#         AgentType.SOCIAL_MEDIA_SPECIALIST: ["social media", "facebook", "instagram", "linkedin", "twitter", "social"],
+#         AgentType.CONTENT_SPECIALIST: ["content", "blog", "article", "copy", "writing", "seo content"],
+#         AgentType.EMAIL_MARKETING_SPECIALIST: ["email", "newsletter", "campaign", "mailing", "subscribers"],
+#         AgentType.ECOMMERCE_SPECIALIST: ["ecommerce", "shop", "store", "products", "sales", "conversion"],
+#         AgentType.CRM_SPECIALIST: ["crm", "customers", "leads", "contacts", "database"],
+#         AgentType.ANALYTICS_SPECIALIST: ["analytics", "data", "metrics", "kpi", "reporting"],
+#         AgentType.REPORTING_SPECIALIST: ["report", "dashboard", "summary", "analysis", "insights"]
+#     }
     
-    keyword_mapping = {
-        AgentType.GA4_ANALYST: ["analytics", "ga4", "google analytics", "traffic", "visitors", "sessions"],
-        AgentType.GOOGLE_ADS_SPECIALIST: ["google ads", "adwords", "ads", "campaign", "keywords", "bidding"],
-        AgentType.FACEBOOK_ADS_SPECIALIST: ["facebook", "facebook ads", "meta", "social ads", "targeting"],
-        AgentType.SOCIAL_MEDIA_SPECIALIST: ["social media", "facebook", "instagram", "linkedin", "twitter", "social"],
-        AgentType.CONTENT_SPECIALIST: ["content", "blog", "article", "copy", "writing", "seo content"],
-        AgentType.EMAIL_MARKETING_SPECIALIST: ["email", "newsletter", "campaign", "mailing", "subscribers"],
-        AgentType.ECOMMERCE_SPECIALIST: ["ecommerce", "shop", "store", "products", "sales", "conversion"],
-        AgentType.CRM_SPECIALIST: ["crm", "customers", "leads", "contacts", "database"],
-        AgentType.ANALYTICS_SPECIALIST: ["analytics", "data", "metrics", "kpi", "reporting"],
-        AgentType.REPORTING_SPECIALIST: ["report", "dashboard", "summary", "analysis", "insights"]
-    }
+#     has_relevant_keywords = any(keyword in question_lower for keyword in keyword_mapping.get(agent_name, []))
     
-    has_relevant_keywords = any(keyword in question_lower for keyword in keyword_mapping.get(agent_type, []))
-    
-    return has_relevant_sources or has_relevant_keywords
+#     return has_relevant_sources or has_relevant_keywords
 
 
 # ===== DATA SOURCE VALIDATION =====

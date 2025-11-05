@@ -10,12 +10,11 @@ from .common import BaseResponse
 class AgentConfigRequest(BaseModel):
     """Request schema for agent configuration"""
     id: Optional[int] = None
-    # agent_type removed - using name as unique identifier
-    name: str = Field(..., description="Agent name (unique identifier)", min_length=1)
-    role: str = Field(..., description="Agent role", min_length=1)
-    goal: str = Field(..., description="Agent goal", min_length=1)
-    backstory: str = Field(..., description="Agent backstory", min_length=1)
-    task: Optional[str] = Field("", description="Task template")
+    name: str = Field(..., description="Agent name", min_length=1, max_length=10000)
+    role: str = Field(..., description="Agent role", min_length=1, max_length=20000)
+    goal: str = Field(..., description="Agent goal", min_length=1, max_length=50000)
+    backstory: Optional[str] = Field("", description="Agent backstory", max_length=10000)
+    task: Optional[str] = Field("", description="Task template", max_length=200000)
     capabilities: Dict[str, Any] = Field(default_factory=dict, description="Agent capabilities")
     tools: List[str] = Field(default_factory=list, description="Assigned tools")
     max_iterations: int = Field(1, ge=1, le=50, description="Maximum iterations")
@@ -99,11 +98,10 @@ class AgentConfigRequest(BaseModel):
 class AgentConfigData(BaseModel):
     """Agent configuration data schema"""
     id: Optional[int] = None
-    # agent_type removed
     name: str
     role: str
     goal: str
-    backstory: str
+    backstory: Optional[str] = ""
     task: Optional[str] = ""
     capabilities: Dict[str, Any] = Field(default_factory=dict)
     tools: List[str] = Field(default_factory=list)

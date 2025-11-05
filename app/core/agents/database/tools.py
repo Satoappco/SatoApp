@@ -344,6 +344,104 @@ class DatabaseTool:
 
         return results[0] if results else {}
 
+    def get_comprehensive_campaigner_info(self, customer_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Get comprehensive campaigner information including agency and customers with campaign statistics.
+
+        Args:
+            customer_id: Optional customer ID to filter for specific customer
+
+        Returns:
+            Dictionary containing:
+            - campaigner: User profile information (without ID)
+            - agency: Agency information (without ID)
+            - total_customers: Total number of customers
+            - customers: List of first 30 customers with campaign statistics
+        """
+        # Base query for campaigner and agency
+        base_query = """
+        SELECT
+            c.full_name as campaigner_name,
+            c.email as campaigner_email,
+            c.role as campaigner_role,
+            a.name as agency_name
+        FROM campaigners c
+        JOIN agencies a ON c.agency_id = a.id
+        WHERE c.id = :campaigner_id
+        """
+
+        logger.info(f"📋 [DatabaseTool] Getting comprehensive info for campaigner: {self.campaigner_id}")
+        base_results = self._execute_query(base_query, {"campaigner_id": self.campaigner_id})
+
+        if not base_results:
+            return {}
+
+        base_info = base_results[0]
+
+        # Get total number of customers
+        customer_filter = ""
+        params = {"campaigner_id": self.campaigner_id}
+
+        if customer_id:
+            customer_filter = "AND cu.id = :customer_id"
+            params["customer_id"] = customer_id
+
+        total_customers_query = f"""
+        SELECT COUNT(DISTINCT cu.id) as total_customers
+        FROM campaigners c
+        JOIN agencies a ON c.agency_id = a.id
+        LEFT JOIN customers cu ON a.id = cu.agency_id
+        WHERE c.id = :campaigner_id
+          AND cu.is_active = true
+          {customer_filter}
+        """
+
+        total_results = self._execute_query(total_customers_query, params)
+        total_customers = total_results[0]['total_customers'] if total_results else 0
+
+        # Query for customers with campaign statistics (first 30)
+        customers_query = f"""
+        SELECT
+            cu.id as customer_id,
+            cu.full_name as customer_name,
+            COUNT(DISTINCT kg.campaign_id) as total_campaigns,
+            COUNT(DISTINCT CASE WHEN kg.campaign_status = 'ACTIVE' THEN kg.campaign_id END) as active_campaigns
+        FROM campaigners c
+        JOIN agencies a ON c.agency_id = a.id
+        LEFT JOIN customers cu ON a.id = cu.agency_id
+        LEFT JOIN kpi_goals kg ON cu.id = kg.customer_id
+        WHERE c.id = :campaigner_id
+          AND cu.is_active = true
+          {customer_filter}
+        GROUP BY cu.id, cu.full_name
+        ORDER BY cu.full_name
+        LIMIT 30
+        """
+
+        customer_results = self._execute_query(customers_query, params)
+
+        # Build customers list
+        customers_list = []
+        for row in customer_results:
+            customers_list.append({
+                'name': row.get('customer_name'),
+                'total_campaigns': row.get('total_campaigns', 0),
+                'active_campaigns': row.get('active_campaigns', 0)
+            })
+
+        return {
+            'campaigner': {
+                'name': base_info['campaigner_name'],
+                'email': base_info['campaigner_email'],
+                'role': base_info['campaigner_role']
+            },
+            'agency': {
+                'name': base_info['agency_name']
+            },
+            'total_customers': total_customers,
+            'customers': customers_list
+        }
+
 
 # Convenience functions for backward compatibility
 def get_agency_info(campaigner_id: int) -> Optional[Dict[str, Any]]:

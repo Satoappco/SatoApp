@@ -8,13 +8,18 @@ from .base import BaseMCPClient, MCPTool
 class FacebookMCPClient(BaseMCPClient):
     """MCP client for Facebook Ads data."""
 
-    def __init__(self):
-        """Initialize Facebook Ads MCP client."""
+    def __init__(self, access_token: str = None):
+        """Initialize Facebook Ads MCP client.
+
+        Args:
+            access_token: Facebook access token for the user
+        """
         server_path = os.getenv(
             "FACEBOOK_MCP_SERVER_PATH",
             "npx"  # Default to npx if server path not specified
         )
         super().__init__(server_path)
+        self.access_token = access_token
 
     def get_server_command(self) -> List[str]:
         """Get the command to start the Facebook Ads MCP server."""
@@ -26,6 +31,13 @@ class FacebookMCPClient(BaseMCPClient):
             return ["npx", "-y", "@modelcontextprotocol/server-facebook-ads"]
         else:
             return ["node", self.server_path]
+
+    def get_env_vars(self) -> dict:
+        """Get environment variables including Facebook access token."""
+        env = os.environ.copy()
+        if self.access_token:
+            env["FACEBOOK_ACCESS_TOKEN"] = self.access_token
+        return env
 
     def get_tools(self) -> List[Any]:
         """Get CrewAI-compatible tools for Facebook Ads."""

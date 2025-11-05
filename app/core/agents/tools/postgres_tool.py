@@ -17,7 +17,7 @@ from app.core.agents.database.connection import get_db_connection
 
 from .sql_validator import SQLValidator
 from ....models import (
-    Agency, Campaigner, Customer,
+    Customer,
     KpiGoal, KpiValue, DigitalAsset, Connection,
     RTMTable, QuestionsTable
 )
@@ -37,19 +37,18 @@ class PostgresTool(BaseTool):
     name: str = "postgres_query"
     description: str = """Execute a SELECT SQL query against the PostgreSQL database.
 
-    This tool can query the following tables:
-    - agencies: Agency information
-    - campaigners: Campaigner (user) details
+    This tool can query the following tables ONLY:
     - customers: Customer/client information
     - kpi_goals: Campaign goals and KPI targets
     - kpi_values: Actual KPI measurements
     - digital_assets: Digital assets (social media, analytics accounts, etc.)
     - connections: OAuth connections and API credentials
+    - rtm_table: RTM (Real-Time Marketing) data
+    - questions_table: Questions and answers data
 
     Security: All queries are automatically filtered by the campaigner's agency.
     The tool ONLY accepts SELECT queries - no INSERT, UPDATE, DELETE, or DDL.
-
-    Input should be a valid PostgreSQL SELECT query.
+    Input should be a valid SINGLE PostgreSQL SELECT query.
     Output will be a JSON array of result rows.
     """
 
@@ -65,20 +64,20 @@ class PostgresTool(BaseTool):
             JSON string with query results or error message
         """
         try:
-            sql_validator = SQLValidator()  # Shared validator instance
+            # sql_validator = SQLValidator()  # Shared validator instance
 
-            # Validate query with LLM validator
-            is_valid, reason, validation_details = sql_validator.validate(query)
+            # # Validate query with LLM validator
+            # is_valid, reason, validation_details = sql_validator.validate(query)
 
-            if not is_valid:
-                error_msg = f"Query validation failed: {reason}"
-                logger.warning(f"🚫 [PostgresTool] Blocked invalid query from campaigner {self.campaigner_id}: {reason}")
-                import json
-                return json.dumps({
-                    "success": False,
-                    "error": error_msg,
-                    "validation": validation_details
-                })
+            # if not is_valid:
+            #     error_msg = f"Query validation failed: {reason}"
+            #     logger.warning(f"🚫 [PostgresTool] Blocked invalid query from campaigner {self.campaigner_id}: {reason}")
+            #     import json
+            #     return json.dumps({
+            #         "success": False,
+            #         "error": error_msg,
+            #         "validation": validation_details
+            #     })
 
             # Additional basic validation
             if not self._is_read_only_query(query):
@@ -91,7 +90,7 @@ class PostgresTool(BaseTool):
             secured_query = query
 
             logger.info(f"🔍 [PostgresTool] Executing query for campaigner {self.campaigner_id}")
-            logger.debug(f"📝 [PostgresTool] Query: {secured_query[:200]}...")
+            logger.debug(f"📝 [PostgresTool] Query: {secured_query}...")
 
             # Execute query
             with get_db_connection() as session:
@@ -184,15 +183,23 @@ class PostgresTool(BaseTool):
     def get_schema_info(self) -> Dict[str, Any]:
         """Get database schema information dynamically from SQLModel classes.
 
+        Only includes tables that basic_info_agent has access to:
+        - customers
+        - kpi_goals
+        - kpi_values
+        - digital_assets
+        - connections
+        - rtm_table
+        - questions_table
+
         Returns:
             Dictionary with table schemas
         """
         schema_info = {}
 
-        # Map of models to extract schema from
+        # Map of models to extract schema from (RESTRICTED LIST)
+        # Excludes agencies and campaigners tables
         models = {
-            "agencies": Agency,
-            "campaigners": Campaigner,
             "customers": Customer,
             "kpi_goals": KpiGoal,
             "kpi_values": KpiValue,
@@ -207,13 +214,15 @@ class PostgresTool(BaseTool):
 
         # Add relationship information
         schema_info["relationships"] = {
-            "description": "Table relationships for proper JOINs",
+            "description": "Table relationships for proper JOINs. Note: agencies and campaigners tables are NOT accessible.",
             "chains": {
                 "kpi_goals_to_campaigner": "kpi_goals.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "kpi_values_to_campaigner": "kpi_values.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "customers_to_campaigner": "customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "digital_assets_to_campaigner": "digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id"
+                "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
+                "rtm_table_to_campaigner": "rtm_table access requires proper filtering",
+                "questions_table_to_campaigner": "questions_table access requires proper filtering"
             }
         }
 

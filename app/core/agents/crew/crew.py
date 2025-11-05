@@ -1,15 +1,31 @@
 """Main CrewAI crew orchestration."""
 
 from crewai import Crew, Process
+from crewai_tools import MCPServerAdapter
+from mcp import StdioServerParameters  # For future MCP server configuration
+
 from typing import Dict, Any, List, Optional
 # from langchain_openai import ChatOpenAI
 from crewai.llm import LLM
 import os
+import logging
 
 from .agents import AnalyticsAgents
 from .tasks import AnalyticsTasks
 from ..mcp_clients.facebook_client import FacebookMCPClient
 from ..mcp_clients.google_client import GoogleMCPClient
+from app.config.langfuse_config import LangfuseConfig
+from app.core.observability import trace_context, get_current_trace
+
+logger = logging.getLogger(__name__)
+
+
+class DummyContext:
+    """Dummy context manager for when tracing is disabled."""
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        pass
 
 
 class AnalyticsCrew:
@@ -39,16 +55,86 @@ class AnalyticsCrew:
         self.facebook_client: Optional[FacebookMCPClient] = None
         self.google_client: Optional[GoogleMCPClient] = None
 
+        # Store user tokens for MCP tools
+        self.campaigner_id: Optional[int] = None
+        self.user_tokens: Dict[str, str] = {}
+        self.mcp_param_list = []
+
+    def _fetch_user_tokens(self, campaigner_id: int):
+        """Fetch OAuth tokens for the user from database."""
+        from app.config.database import get_session
+        from app.models.connections import FacebookConnection, GoogleAdsConnection, GoogleAnalyticsConnection
+        from sqlmodel import select
+
+        try:
+            with get_session() as session:
+                # Fetch Facebook token
+                fb_conn = session.exec(
+                    select(FacebookConnection)
+                    .where(FacebookConnection.campaigner_id == campaigner_id)
+                    .where(FacebookConnection.is_active == True)
+                ).first()
+                if fb_conn:
+                    self.user_tokens["facebook"] = fb_conn.access_token
+
+                # Fetch Google Ads token
+                google_ads_conn = session.exec(
+                    select(GoogleAdsConnection)
+                    .where(GoogleAdsConnection.campaigner_id == campaigner_id)
+                    .where(GoogleAdsConnection.is_active == True)
+                ).first()
+                if google_ads_conn:
+                    self.user_tokens["google_ads"] = google_ads_conn.access_token
+
+                # Fetch Google Analytics token
+                ga_conn = session.exec(
+                    select(GoogleAnalyticsConnection)
+                    .where(GoogleAnalyticsConnection.campaigner_id == campaigner_id)
+                    .where(GoogleAnalyticsConnection.is_active == True)
+                ).first()
+                if ga_conn:
+                    self.user_tokens["google_analytics"] = ga_conn.access_token
+
+        except Exception as e:
+            print(f"⚠️  Failed to fetch user tokens: {e}")
+
     def _initialize_mcp_clients(self, platforms: List[str]):
         """Initialize MCP clients for required platforms."""
-
-        if "facebook" in platforms or "both" in platforms:
-            if not self.facebook_client:
-                self.facebook_client = FacebookMCPClient()
-
+        # Initialize Google Analytics MCP server
         if "google" in platforms or "both" in platforms:
-            if not self.google_client:
-                self.google_client = GoogleMCPClient()
+            # Get Google service account credentials path from environment
+            google_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "NONE")
+
+            if google_creds:
+                self.mcp_param_list.append(
+                    StdioServerParameters(
+                        command="ga4-mcp-server",
+                        args=[],
+                        env={
+                            "GOOGLE_APPLICATION_CREDENTIALS": google_creds,
+                            **os.environ,
+                        },
+                    )
+                )
+                logger.info(f"✅ Configured Google Analytics MCP server with credentials: {google_creds}")
+            else:
+                logger.warning("⚠️  GOOGLE_APPLICATION_CREDENTIALS not set, GA4 MCP server disabled")
+        
+        # if "facebook" in platforms or "both" in platforms:
+        #     if not self.facebook_client:
+        #         # Pass Facebook token if available
+        #         facebook_token = self.user_tokens.get("facebook")
+        #         self.facebook_client = FacebookMCPClient(access_token=facebook_token)
+
+        # if "google" in platforms or "both" in platforms:
+        #     if not self.google_client:
+        #         # Pass Google tokens if available
+        #         google_ads_token = self.user_tokens.get("google_ads")
+        #         google_analytics_token = self.user_tokens.get("google_analytics")
+        #         self.google_client = GoogleMCPClient(
+        #             google_ads_token=google_ads_token,
+        #             google_analytics_token=google_analytics_token
+        #         )
 
     # TODO: use?
     async def refresh_user_data_connections(self, campaigner_id: int, data_sources: List[str]):
@@ -113,85 +199,177 @@ class AnalyticsCrew:
 
     def execute(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the analytics crew with the given task details."""
+        logger.debug(f"🧑‍💼 [AnalyticsCrew] Received task: {task_details}...")
+        # Get Langfuse client
+        langfuse = LangfuseConfig.get_client()
+        parent_trace = get_current_trace()
+
+        # Create trace for crew execution if Langfuse is enabled
+        if langfuse and parent_trace:
+            trace = parent_trace.span(
+                name="analytics_crew_execution",
+                input={
+                    "query": task_details.get("query"),
+                    "platforms": task_details.get("platforms"),
+                    "campaigner_id": task_details.get("campaigner_id"),
+                },
+                metadata={
+                    "crew_type": "analytics",
+                    "language": task_details.get("context", {}).get("language"),
+                }
+            )
+        else:
+            trace = None
+
+        try:
+            with trace_context(trace) if trace else DummyContext():
+                return self._execute_internal(task_details)
+        except Exception as e:
+            if trace:
+                trace.end(level="ERROR", status_message=str(e))
+            raise
+        finally:
+            if trace:
+                trace.end()
+
+    def _execute_internal(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
+        """Internal execution logic with tracing context."""
 
         platforms = task_details.get("platforms", [])
 
+        # Extract campaigner_id and fetch user tokens
+        self.campaigner_id = task_details.get("campaigner_id")
+        if self.campaigner_id:
+            current_trace = get_current_trace()
+            if current_trace:
+                token_span = current_trace.span(name="fetch_user_tokens")
+
+            #TODO: fix: self._fetch_user_tokens(self.campaigner_id)
+
+            if current_trace:
+                token_span.end()
+
         # Initialize MCP clients
+        current_trace = get_current_trace()
+        if current_trace:
+            init_span = current_trace.span(name="initialize_mcp_clients", metadata={"platforms": platforms})
+
         self._initialize_mcp_clients(platforms)
 
-        # Create agents
-        master_agent = self.agents_factory.create_master_agent()
+        if current_trace:
+            init_span.end()
 
-        agents = []
-        tasks = []
-        specialist_tasks = []
+        # Check if MCP server is configured
+        use_mcp_adapter = bool(self.mcp_param_list)
 
-        # Create Facebook specialist if needed
-        if "facebook" in platforms or "both" in platforms:
-            facebook_tools = self._get_facebook_tools()
-            facebook_agent = self.agents_factory.create_facebook_specialist(
-                tools=facebook_tools
+        if use_mcp_adapter:
+            # Use MCPServerAdapter with analytics-mcp server
+            mcp_params = self.mcp_param_list[0]
+            context_manager = MCPServerAdapter(mcp_params)
+        else:
+            # Fallback: Use custom MCP clients or no tools
+            logger.warning("⚠️  MCP server not configured, using custom MCP clients")
+            from contextlib import nullcontext
+            context_manager = nullcontext(enter_result=[])
+
+        with context_manager as aggregated_tools:
+            logger.debug(f"🔧 Available tools: {[tool.name for tool in aggregated_tools] if aggregated_tools else 'None'}")
+
+            # Create agents
+            master_agent = self.agents_factory.create_master_agent()
+
+            agents = []
+            tasks = []
+            specialist_tasks = []
+
+            # Create Facebook specialist if needed
+            # if "facebook" in platforms or "both" in platforms:
+            #     facebook_tools = self._get_facebook_tools()
+            #     facebook_agent = self.agents_factory.create_facebook_specialist(
+            #         tools=facebook_tools
+            #     )
+            #     facebook_task = self.tasks_factory.create_facebook_analysis_task(
+            #         agent=facebook_agent,
+            #         task_details=task_details
+            #     )
+            #     agents.append(facebook_agent)
+            #     tasks.append(facebook_task)
+            #     specialist_tasks.append(facebook_task)
+
+            # Create Google specialist if needed
+            if "google" in platforms or "both" in platforms:
+                # Use aggregated_tools if available, otherwise use custom Google tools
+                tools = aggregated_tools if use_mcp_adapter else self._get_google_tools()
+                google_agent = self.agents_factory.create_google_specialist(
+                    tools=tools
+                )
+                google_task = self.tasks_factory.create_google_analysis_task(
+                    agent=google_agent,
+                    task_details=task_details
+                )
+                agents.append(google_agent)
+                tasks.append(google_task)
+                specialist_tasks.append(google_task)
+
+            # Create synthesis task for master agent
+            synthesis_task = self.tasks_factory.create_synthesis_task(
+                agent=master_agent,
+                task_details=task_details,
+                context=specialist_tasks  # Master agent gets specialist outputs
             )
-            facebook_task = self.tasks_factory.create_facebook_analysis_task(
-                agent=facebook_agent,
-                task_details=task_details
+            tasks.append(synthesis_task)
+
+            # Create and run crew
+            crew = Crew(
+                agents=agents,
+                tasks=tasks,
+                process=Process.hierarchical,
+                manager_agent=master_agent,
+                verbose=True
             )
-            agents.append(facebook_agent)
-            tasks.append(facebook_task)
-            specialist_tasks.append(facebook_task)
 
-        # Create Google specialist if needed
-        if "google" in platforms or "both" in platforms:
-            google_tools = self._get_google_tools()
-            google_agent = self.agents_factory.create_google_specialist(
-                tools=google_tools
-            )
-            google_task = self.tasks_factory.create_google_analysis_task(
-                agent=google_agent,
-                task_details=task_details
-            )
-            agents.append(google_agent)
-            tasks.append(google_task)
-            specialist_tasks.append(google_task)
+            # Track crew kickoff
+            current_trace = get_current_trace()
+            if current_trace:
+                kickoff_span = current_trace.span(
+                    name="crew_kickoff",
+                    metadata={
+                        "num_agents": len(agents),
+                        "num_tasks": len(tasks),
+                        "platforms": platforms
+                    }
+                )
 
-        # Create synthesis task for master agent
-        synthesis_task = self.tasks_factory.create_synthesis_task(
-            agent=master_agent,
-            task_details=task_details,
-            context=specialist_tasks  # Master agent gets specialist outputs
-        )
-        tasks.append(synthesis_task)
+            try:
+                logger.info(f"🚀 Starting crew execution with {len(agents)} agents and {len(tasks)} tasks")
+                result = crew.kickoff()
+                logger.info("✅ Crew execution completed successfully")
 
-        # Create and run crew
-        crew = Crew(
-            agents=agents,
-            tasks=tasks,
-            process=Process.hierarchical,
-            manager_agent=master_agent,
-            verbose=True
-        )
+                if current_trace:
+                    kickoff_span.end(output={"success": True, "result_length": len(str(result))})
 
-        try:
-            result = crew.kickoff()
+                return {
+                    "success": True,
+                    "result": result,
+                    "platforms": platforms,
+                    "task_details": task_details
+                }
 
-            return {
-                "success": True,
-                "result": result,
-                "platforms": platforms,
-                "task_details": task_details
-            }
+            except Exception as e:
+                logger.error(f"❌ Crew execution failed: {e}")
+                if current_trace:
+                    kickoff_span.end(level="ERROR", status_message=str(e))
 
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "platforms": platforms,
-                "task_details": task_details
-            }
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "platforms": platforms,
+                    "task_details": task_details
+                }
 
-        finally:
-            # Cleanup MCP clients
-            if self.facebook_client:
-                self.facebook_client.close()
-            if self.google_client:
-                self.google_client.close()
+            finally:
+                # Cleanup MCP clients
+                if self.facebook_client:
+                    self.facebook_client.close()
+                if self.google_client:
+                    self.google_client.close()

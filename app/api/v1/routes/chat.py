@@ -1,6 +1,7 @@
 """Chat/conversation endpoints."""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from typing import List
 from datetime import datetime
@@ -21,6 +22,27 @@ from app.core.auth import get_current_user
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
+# @router.api_route("", methods=["POST"])
+# async def debug_request(request: Request):
+#     data = {
+#         "method": request.method,
+#         "url": str(request.url),
+#         "query_params": dict(request.query_params),  # URL parameters (?a=1&b=2)
+#         "headers": dict(request.headers),
+#         "cookies": request.cookies,
+#         "client": request.client.host,
+#     }
+
+#     # Body can be JSON, form, or raw data
+#     body = await request.body()  # Raw bytes
+#     try:
+#         data["json"] = await request.json()  # Parsed JSON (if valid)
+#     except:
+#         data["json"] = None
+
+#     data["body_raw"] = body.decode("utf-8", errors="ignore")
+#     logger.debug(f"🔍 [Debug Request] Data: {data}")
+#     return JSONResponse(data)
 
 @router.post("", response_model=ChatResponse)
 async def chat(
@@ -40,10 +62,18 @@ async def chat(
         # Generate thread ID if not provided
         thread_id = request.thread_id or str(uuid.uuid4())
         logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
-
         # Get conversation workflow for this thread (with campaigner_id)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campainer: {current_user.full_name} (ID: {current_user.id})")
-        workflow = app_state.get_conversation_workflow(current_user.id, thread_id)
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campainer: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
+
+        # Parse customer_id if provided
+        customer_id = None
+        if request.customer_id:
+            try:
+                customer_id = int(request.customer_id)
+            except (ValueError, TypeError):
+                logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
+
+        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
         
         # Most likely never come here because of get_current_user requires msg len >= 1
         if not request.message.strip():
@@ -121,15 +151,22 @@ async def stream_chat(
 
     Requires authentication via JWT token.
     """
-
     async def generate():
         try:
             # Generate thread ID if not provided
             thread_id = request.thread_id or str(uuid.uuid4())
             logger.info(f"📡 [Stream] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
 
-            # Get conversation workflow for this thread (with campaigner_id)
-            workflow = app_state.get_conversation_workflow(current_user.id, thread_id)
+            # Parse customer_id if provided
+            customer_id = None
+            if request.customer_id:
+                try:
+                    customer_id = int(request.customer_id)
+                except (ValueError, TypeError):
+                    logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
+
+            # Get conversation workflow for this thread (with campaigner_id and customer_id)
+            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
 
             # Process message
             logger.debug(f"🔄 [Stream] Processing message...")
