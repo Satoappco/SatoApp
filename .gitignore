@@ -46,4 +46,3 @@ app/api/v1/routes/debug_*.py
 db_backups/
 *.sql
 *.dump
-app/api/v1/routes/debug_campaigners.py

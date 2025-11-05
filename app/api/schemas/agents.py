@@ -21,18 +21,12 @@ class AgentConfigRequest(BaseModel):
     allow_delegation: bool = Field(False, description="Allow delegation to other agents")
     verbose: bool = Field(True, description="Verbose logging")
     
-    # @validator('agent_type')
-    # def validate_agent_type(cls, v):
-    #     """Validate agent type against constants"""
-    #     try:
-    #         from app.core.constants import AgentType
-    #         valid_types = [agent.value for agent in AgentType]
-    #         if v not in valid_types:
-    #             raise ValueError(f"Invalid agent type: {v}. Must be one of: {', '.join(valid_types)}")
-    #         return v
-    #     except ImportError:
-    #         # Fallback if constants not available
-    #         return v
+    @validator('name')
+    def validate_name(cls, v):
+        """Validate name is not empty"""
+        if not v or not v.strip():
+            raise ValueError("Name is required")
+        return v.strip()
     
     @validator('capabilities')
     def validate_capabilities(cls, v):

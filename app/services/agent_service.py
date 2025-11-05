@@ -156,32 +156,7 @@ class AgentService:
             # No longer auto-assigning tools/data sources based on agent_type
             # Tools and data sources should be manually configured per agent
             # This gives users more flexibility in agent configuration
-            # Auto-assign tools based on agent type
-            """
-            agent_name = config_data.get('name')
-            if agent_name:
-                try:
-                    from app.core.constants import get_tools_for_agent, get_data_sources_for_agent
-                    
-                    # Auto-assign tools
-                    auto_tools = get_tools_for_agent(agent_name)
-                    if auto_tools:
-                        config_data['tools'] = auto_tools
-                        logger.info(f"Auto-assigned tools for {agent_name}: {auto_tools}")
-                    
-                    # Auto-assign data sources if not provided
-                    if 'capabilities' not in config_data:
-                        config_data['capabilities'] = {}
-                    
-                    if 'data_sources' not in config_data['capabilities'] or not config_data['capabilities']['data_sources']:
-                        auto_data_sources = get_data_sources_for_agent(agent_name)
-                        if auto_data_sources:
-                            config_data['capabilities']['data_sources'] = auto_data_sources
-                            logger.info(f"Auto-assigned data sources for {agent_name}: {auto_data_sources}")
-                    
-                except ImportError as e:
-                    logger.warning(f"Could not auto-assign tools/data sources: {e}")
-            """
+            
             # Set default values
             config_data.setdefault('capabilities', {})
             config_data.setdefault('tools', [])
