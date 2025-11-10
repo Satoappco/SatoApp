@@ -75,3 +75,6 @@ def create_campaigner_response(user: Campaigner) -> 'CampaignerResponse':
         last_login_at=user.last_login_at
     )
 
+
+
+
