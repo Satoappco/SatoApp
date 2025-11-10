@@ -17,7 +17,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # Copy application code
 COPY app/ ./app/
 COPY alembic.ini ./
-COPY google.json ./
+# COPY google.json ./
 COPY app/db/migrations/ ./alembic/
 
 # Set environment variables

@@ -7,7 +7,6 @@ from typing import List
 from datetime import datetime
 import uuid
 import json
-import asyncio
 import logging
 
 from app.api.schemas.chat import (
@@ -241,45 +240,31 @@ async def stream_chat(
             # Get conversation workflow for this thread (with campaigner_id and customer_id)
             workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
 
-            # Process message
-            logger.debug(f"🔄 [Stream] Processing message...")
-            result = workflow.process_message(request.message)
+            # Stream message through workflow
+            logger.debug(f"📡 [Stream] Starting real-time streaming...")
 
-            # Extract response message
-            messages = result.get("messages", [])
-            assistant_message = ""
-            if messages:
-                last_message = messages[-1]
-                if hasattr(last_message, "content"):
-                    assistant_message = last_message.content
+            async for chunk in workflow.stream_message(request.message):
+                if chunk.get("type") == "content":
+                    # Stream content chunk (character)
+                    char = chunk.get("chunk", "")
+                    yield f"data: {json.dumps({'chunk': char})}\n\n"
 
-            # If clarification question exists, use that
-            if result.get("clarification_question"):
-                assistant_message = result["clarification_question"]
+                elif chunk.get("type") == "metadata":
+                    # Final metadata with state
+                    metadata = {
+                        "thread_id": thread_id,
+                        "needs_clarification": chunk.get("needs_clarification", False),
+                        "ready_for_analysis": chunk.get("ready_for_crew", False),
+                        "intent": {
+                            "platforms": chunk.get("platforms", []),
+                            "metrics": chunk.get("metrics", []),
+                            "date_range_start": chunk.get("date_range_start"),
+                            "date_range_end": chunk.get("date_range_end"),
+                        }
+                    }
+                    logger.info(f"✅ [Stream] Completed. Ready: {metadata['ready_for_analysis']}")
+                    yield f"data: {json.dumps({'metadata': metadata})}\n\n"
 
-            logger.info(f"📤 [Stream] Streaming {len(assistant_message.split())} words")
-
-            # Stream the message word by word
-            words = assistant_message.split()
-            for i, word in enumerate(words):
-                chunk = word + (" " if i < len(words) - 1 else "")
-                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-                await asyncio.sleep(0.05)  # Simulate streaming
-
-            # Send metadata at the end
-            metadata = {
-                "thread_id": thread_id,
-                "needs_clarification": result.get("clarification_needed", False),
-                "ready_for_analysis": result.get("ready_for_crew", False),
-                "intent": {
-                    "platforms": result.get("platforms", []),
-                    "metrics": result.get("metrics", []),
-                    "date_range_start": result.get("date_range_start"),
-                    "date_range_end": result.get("date_range_end"),
-                }
-            }
-            logger.info(f"✅ [Stream] Completed. Ready: {metadata['ready_for_analysis']}")
-            yield f"data: {json.dumps({'metadata': metadata})}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:
