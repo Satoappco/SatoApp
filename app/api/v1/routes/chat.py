@@ -58,22 +58,49 @@ async def chat(
 
     Requires authentication via JWT token.
     """
+    from app.config.langfuse_config import LangfuseConfig
+
+    # Generate thread ID if not provided
+    thread_id = request.thread_id or str(uuid.uuid4())
+    logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
+
+    # Parse customer_id if provided
+    customer_id = None
+    if request.customer_id:
+        try:
+            customer_id = int(request.customer_id)
+        except (ValueError, TypeError):
+            logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
+
+    # Create session-level LangFuse trace
+    langfuse = LangfuseConfig.get_client()
+    trace = None
+
+    if langfuse and LangfuseConfig.is_enabled():
+        try:
+            trace = langfuse.trace(
+                name="conversation_session",
+                session_id=thread_id,
+                user_id=str(current_user.id),
+                input={"message": request.message, "customer_id": customer_id},
+                metadata={
+                    "thread_id": thread_id,
+                    "campaigner_id": current_user.id,
+                    "campaigner_name": current_user.full_name,
+                    "customer_id": customer_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            logger.debug(f"✅ [Chat] Created LangFuse trace for thread: {thread_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"⚠️  [Chat] Failed to create LangFuse trace: {e}")
+            trace = None
+
     try:
-        # Generate thread ID if not provided
-        thread_id = request.thread_id or str(uuid.uuid4())
-        logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
-        # Get conversation workflow for this thread (with campaigner_id)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campainer: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
+        # Get conversation workflow for this thread (with campaigner_id and trace)
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
 
-        # Parse customer_id if provided
-        customer_id = None
-        if request.customer_id:
-            try:
-                customer_id = int(request.customer_id)
-            except (ValueError, TypeError):
-                logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
-
-        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
+        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
         
         # Most likely never come here because of get_current_user requires msg len >= 1
         if not request.message.strip():
@@ -125,7 +152,7 @@ async def chat(
             f"platforms={intent.get('platforms', [])}"
         )
 
-        return ChatResponse(
+        response = ChatResponse(
             message=assistant_message or "I'm processing your request...",
             thread_id=thread_id,
             needs_clarification=needs_clarification,
@@ -133,8 +160,54 @@ async def chat(
             intent=intent if any(intent.values()) else None
         )
 
+        # Update trace with output
+        if trace:
+            try:
+                trace.update(
+                    output={
+                        "message": assistant_message,
+                        "needs_clarification": needs_clarification,
+                        "ready_for_analysis": ready_for_analysis,
+                        "intent": intent
+                    },
+                    metadata={
+                        "platforms": intent.get("platforms", []),
+                        "conversation_state": "clarification" if needs_clarification else ("ready" if ready_for_analysis else "processing")
+                    }
+                )
+            except Exception as trace_error:
+                logger.warning(f"⚠️  [Chat] Failed to update trace: {trace_error}")
+
+        # Flush trace
+        if langfuse:
+            try:
+                langfuse.flush()
+            except Exception as flush_error:
+                logger.warning(f"⚠️  [Chat] Failed to flush LangFuse: {flush_error}")
+
+        return response
+
     except Exception as e:
         logger.error(f"❌ [Chat] Error processing chat: {str(e)}", exc_info=True)
+
+        # Update trace with error
+        if trace:
+            try:
+                trace.update(
+                    output={"error": str(e)},
+                    level="ERROR",
+                    status_message=str(e)
+                )
+            except Exception as trace_error:
+                logger.warning(f"⚠️  [Chat] Failed to update trace with error: {trace_error}")
+
+        # Flush trace
+        if langfuse:
+            try:
+                langfuse.flush()
+            except Exception as flush_error:
+                logger.warning(f"⚠️  [Chat] Failed to flush LangFuse: {flush_error}")
+
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
 

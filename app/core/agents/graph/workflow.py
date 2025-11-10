@@ -26,14 +26,15 @@ class ConversationWorkflow:
     3. Routes tasks to specialized agents when ready
     """
 
-    def __init__(self, campaigner: Campaigner, thread_id: str = "default", customer_id: int = None):
+    def __init__(self, campaigner: Campaigner, thread_id: str = "default", customer_id: int = None, trace=None):
         logger.info(f"🏗️  [Workflow] Initializing ConversationWorkflow for thread: {thread_id[:8]}...")
 
-        # Store campaigner id, customer_id and thread_id for this workflow
+        # Store campaigner id, customer_id, thread_id, and trace for this workflow
         self.campaigner = campaigner
         self.customer_id = customer_id
         self.thread_id = thread_id
-        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner.id} | Customer ID: {customer_id} | Thread ID: {thread_id[:8]}...")
+        self.trace = trace  # LangFuse trace for the entire session
+        logger.debug(f"👤 [Workflow] Campaigner ID: {campaigner.id} | Customer ID: {customer_id} | Thread ID: {thread_id[:8]}... | Trace: {trace is not None}")
 
         # Initialize PostgreSQL chat message history
         try:
@@ -63,7 +64,8 @@ class ConversationWorkflow:
             "conversation_complete": False,
             "error": None,
             "campaigner": campaigner,
-            "customer_id": customer_id
+            "customer_id": customer_id,
+            "trace": trace  # Pass trace through state for nodes to use
         }
 
         # Initialize LLM

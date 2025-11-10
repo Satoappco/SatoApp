@@ -75,7 +75,8 @@ Deliver a structured analysis with:
         return Task(
             description=description,
             expected_output=expected_output,
-            agent=agent
+            agent=agent,
+            async_execution=True # Will be executed asynchronously
         )
 
     @staticmethod
@@ -143,7 +144,8 @@ Deliver a structured analysis with:
         return Task(
             description=description,
             expected_output=expected_output,
-            agent=agent
+            agent=agent,
+            async_execution=True # Will be executed asynchronously
         )
 
     @staticmethod
@@ -212,6 +214,6 @@ IMPORTANT: Make sure your response is in {task_context.get("language", "english"
             description=description,
             expected_output=expected_output,
             agent=agent,
-            async_execution=True,
+            async_execution=False,  # Synthesis task must be synchronous (final task)
             context=context  # This task depends on specialist tasks
         )

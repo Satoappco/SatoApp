@@ -36,13 +36,16 @@ python-dotenv==1.2.1
 fastapi==0.115.6
 uvicorn==0.34.0
 gunicorn
+uv==0.9.4
 
 # Utilities
 httpx==0.28.1
 tenacity==9.0.0
 
 # Observability
-langfuse==2.57.1
+langfuse==3.9.1
+openinference-instrumentation-crewai
+openinference-instrumentation-litellm
 
 # Testing
 pytest==8.3.4

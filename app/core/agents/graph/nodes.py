@@ -285,16 +285,16 @@ if the user request is simple and can be answered without an agent, provide a di
         if langfuse:
             # Get session_id from state or generate one
             session_id = state.get("session_id", "unknown")
-            trace = langfuse.trace(
+            trace_context_manager = langfuse.start_as_current_span(
                 name="chatbot_conversation_turn",
-                session_id=session_id,
-                user_id=str(state.get("campaigner").id),
-                metadata={
+                input={
+                    "session_id": session_id,
+                    "user_id": str(state.get("campaigner").id),
                     "customer_id": state.get("customer_id"),
                 }
             )
         else:
-            trace = None
+            trace_context_manager = DummyContext()
 
         # Get campaigner_id and customer_id from state
         campaigner = state.get("campaigner")
@@ -327,9 +327,9 @@ if the user request is simple and can be answered without an agent, provide a di
         logger.debug(f"📤 [ChatbotNode] Sending {len(messages)} messages to LLM")
 
         # Track LLM call with Langfuse
-        with trace_context(trace) if trace else DummyContext():
-            if trace:
-                llm_span = trace.span(
+        with trace_context_manager:
+            if langfuse:
+                llm_span = langfuse.start_span(
                     name="llm_routing_decision",
                     input={"messages": [{"role": m.type, "content": m.content[:200]} for m in messages[-3:]]}  # Last 3 messages
                 )
@@ -337,8 +337,11 @@ if the user request is simple and can be answered without an agent, provide a di
             response = self.llm.invoke(messages)
             logger.debug(f"📥 [ChatbotNode] Received response: {response.content[:100]}...")
 
-            if trace:
-                llm_span.end(output={"response": response.content[:500]})
+            if langfuse:
+                try:
+                    langfuse.update_current_span(output={"response": response.content[:500]})
+                except Exception:
+                    pass  # Span update is optional
 
         try:
             # Try to parse JSON response
@@ -360,6 +363,10 @@ if the user request is simple and can be answered without an agent, provide a di
                 # Detect user's language from their messages
                 user_language = self._detect_user_language(state["messages"])
 
+                # Add customer_id and campaigner_id to task (hardcoded, not LLM-controlled)
+                task["customer_id"] = state.get("customer_id")
+                task["campaigner_id"] = campaigner.id
+
                 # Gather agency and campaigner context for agents
                 try:
                     db_tool = DatabaseTool(campaigner.id)
@@ -377,21 +384,25 @@ if the user request is simple and can be answered without an agent, provide a di
                     task["context"] = {"language": user_language}
 
                 logger.info(f"✅ [ChatbotNode] Intent ready! Routing to agent: {agent_name}")
-                logger.debug(f"📋 [ChatbotNode] Task: {task}")
+                logger.debug(f"📋 [ChatbotNode] Task: customer_id={task.get('customer_id')}, campaigner_id={task.get('campaigner_id')}")
+                logger.debug(f"📋 [ChatbotNode] Full task: {task}")
 
                 # Track routing decision
-                if trace:
-                    trace.update(
-                        output={
-                            "agent": agent_name,
-                            "query": task.get("query", "")[:200],
-                            "routed": True
-                        },
-                        metadata={
-                            "agent_name": agent_name,
-                            "language": user_language
-                        }
-                    )
+                if langfuse:
+                    try:
+                        langfuse.update_current_trace(
+                            output={
+                                "agent": agent_name,
+                                "query": task.get("query", "")[:200],
+                                "routed": True
+                            },
+                            metadata={
+                                "agent_name": agent_name,
+                                "language": user_language
+                            }
+                        )
+                    except Exception:
+                        pass  # Trace update is optional
 
                 return {
                     "next_agent": agent_name,
@@ -409,11 +420,14 @@ if the user request is simple and can be answered without an agent, provide a di
                     logger.debug(f"❓ [ChatbotNode] Answered the user: '{clarification_msg[:100]}...'")
 
                 # Track clarification/direct answer
-                if trace:
-                    trace.update(
-                        output={"message": clarification_msg[:500], "complete": complete},
-                        metadata={"needs_clarification": True, "complete": complete}
-                    )
+                if langfuse:
+                    try:
+                        langfuse.update_current_trace(
+                            output={"message": clarification_msg[:500], "complete": complete},
+                            metadata={"needs_clarification": True, "complete": complete}
+                        )
+                    except Exception:
+                        pass  # Trace update is optional
 
                 return {
                     "messages": state["messages"] + [AIMessage(content=clarification_msg)],
@@ -427,11 +441,14 @@ if the user request is simple and can be answered without an agent, provide a di
             logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}. content: {content}")
 
             # Track error
-            if trace:
-                trace.update(
-                    output={"raw_response": response.content[:500], "error": f"JSON parse error: {str(e)}"},
-                    metadata={"level": "WARNING", "error_type": "json_parse_error"}
-                )
+            if langfuse:
+                try:
+                    langfuse.update_current_trace(
+                        output={"raw_response": response.content[:500], "error": f"JSON parse error: {str(e)}"},
+                        metadata={"level": "WARNING", "error_type": "json_parse_error"}
+                    )
+                except Exception:
+                    pass  # Trace update is optional
 
             return {
                 "messages": state["messages"] + [AIMessage(content=response.content)],
@@ -458,6 +475,7 @@ class AgentExecutorNode:
         """
         agent_name = state.get("next_agent")
         task = state.get("agent_task", {})
+        trace = state.get("trace")  # Get session trace from state
 
         logger.info(f"⚙️  [AgentExecutor] Executing agent: {agent_name}")
 
@@ -469,9 +487,28 @@ class AgentExecutorNode:
             }
 
         try:
+            # Get LangFuse client for creating generation within trace
+            langfuse = LangfuseConfig.get_client()
+
+            # Create a generation span within the session trace
+            generation = None
+            if langfuse and trace:
+                generation = trace.generation(
+                    name=f"agent_execution_{agent_name}",
+                    input=task,
+                    metadata={
+                        "agent_name": agent_name,
+                        "task_type": task.get("type", "unknown")
+                    }
+                )
+
             # Get and execute the agent
             logger.debug(f"🔍 [AgentExecutor] Getting agent instance: {agent_name}")
             agent = get_agent(agent_name, self.llm)
+
+            # Pass the trace/generation to the agent if it supports it
+            if hasattr(agent, 'set_trace'):
+                agent.set_trace(trace)
 
             logger.info(f"🚀 [AgentExecutor] Executing {agent_name} with task...")
             logger.debug(f"📋 [AgentExecutor] Task details: {task}")
@@ -480,17 +517,38 @@ class AgentExecutorNode:
 
             # Format response message
             response_message = self._format_agent_response(result)
-            logger.debug(f"💬 [AgentExecutor] Response: '{response_message[:100]}...'")
+
+            # Safe preview of response (handle both string and CrewOutput)
+            try:
+                preview = str(response_message)[:100] if response_message else "No response"
+                logger.debug(f"💬 [AgentExecutor] Response: '{preview}...'")
+            except Exception:
+                logger.debug(f"💬 [AgentExecutor] Response: (non-string type: {type(response_message)})")
+
+            # Update generation with output
+            if generation:
+                generation.update(
+                    output={"response": str(response_message)[:1000], "status": result.get("status")},
+                    metadata={"agent_completed": True}
+                )
 
             return {
                 "agent_result": result,
-                "messages": state["messages"] + [AIMessage(content=response_message)],
+                "messages": state["messages"] + [AIMessage(content=str(response_message))],
                 "conversation_complete": True,
                 "error": None
             }
 
         except Exception as e:
             logger.error(f"❌ [AgentExecutor] Agent execution failed: {str(e)}", exc_info=True)
+
+            # Update generation with error
+            if generation:
+                generation.update(
+                    output={"error": str(e)},
+                    level="ERROR",
+                    status_message=str(e)
+                )
 
             # Create user-friendly error message
             error_message = f"I encountered an error while processing your request: {str(e)}"
@@ -514,7 +572,20 @@ class AgentExecutorNode:
         agent = result.get("agent", "Unknown agent")
 
         if status == "completed":
-            return result.get("result", "Task completed successfully.")
+            crew_result = result.get("result", "Task completed successfully.")
+
+            # Handle CrewOutput object from CrewAI
+            # CrewOutput has multiple attributes: raw, pydantic, json_dict, tasks_output, token_usage
+            if hasattr(crew_result, "raw"):
+                # Use the raw string output from CrewAI
+                return str(crew_result.raw)
+            elif hasattr(crew_result, "__str__"):
+                # Fallback to string representation
+                return str(crew_result)
+            else:
+                # Already a string
+                return crew_result
+
         elif status == "placeholder":
             message = result.get("message", "")
             return f"{message}\n\nThis feature is coming soon!"

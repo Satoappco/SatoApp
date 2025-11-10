@@ -5,10 +5,7 @@ Follows single responsibility principle and DRY principles
 
 from typing import List, Dict, Any, Optional
 import logging
-from app.core.constants import get_tools_for_agent
-
 logger = logging.getLogger(__name__)
-
 
 def get_tools_for_agent(agent_name: str, campaigner_connections: List[Dict], campaigner_id: int = None, agency_id: int = None, customer_id: int = None) -> List:
     """

@@ -125,33 +125,52 @@ def verify_google_token(token: str) -> Dict[str, Any]:
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Campaigner:
     """Get current authenticated user from JWT token"""
-    
+
     try:
         print(f"DEBUG: Validating token: {credentials.credentials[:20]}...")
         # Verify the access token
         payload = verify_token(credentials.credentials, "access")
-        campaigner_id = payload.get("campaigner_id")
-        
-        print(f"DEBUG: Token payload campaigner_id: {campaigner_id}")
-        
+
+        # Support both old and new token formats
+        # Old format: {"user_id": 123, "sub": "email@example.com"}
+        # New format: {"campaigner_id": 123, "sub": "email@example.com"}
+        campaigner_id = payload.get("campaigner_id") or payload.get("user_id") or payload.get("sub")
+
+        print(f"DEBUG: Token payload: {list(payload.keys())}")
+        print(f"DEBUG: Extracted campaigner_id: {campaigner_id}")
+
         if campaigner_id is None:
-            print("DEBUG: No campaigner_id in token payload")
+            print("DEBUG: No campaigner_id/user_id/sub in token payload")
+            print(f"DEBUG: Full payload: {payload}")
             raise AuthenticationError("Invalid token payload")
-        
-        # Get user from database
-        with get_session() as session:
-            user = session.get(Campaigner, campaigner_id)
-            if user is None:
-                print(f"DEBUG: Campaigner {campaigner_id} not found in database")
-                raise AuthenticationError("Campaigner not found")
-            
-            print(f"DEBUG: Campaigner found: {user.id}, status: {user.status}")
-            
-            if user.status != "active":
-                print(f"DEBUG: Campaigner {campaigner_id} status is not active: {user.status}")
-                raise AuthenticationError("Campaigner account is not active")
-            
-            return user
+
+        # If campaigner_id is an email (from sub field), look up by email
+        if isinstance(campaigner_id, str) and "@" in campaigner_id:
+            print(f"DEBUG: Token contains email, looking up by email: {campaigner_id}")
+            with get_session() as session:
+                from sqlmodel import select
+                user = session.exec(
+                    select(Campaigner).where(Campaigner.email == campaigner_id)
+                ).first()
+
+                if user is None:
+                    print(f"DEBUG: Campaigner with email {campaigner_id} not found")
+                    raise AuthenticationError("Campaigner not found")
+        else:
+            # Get user from database by ID
+            with get_session() as session:
+                user = session.get(Campaigner, int(campaigner_id))
+                if user is None:
+                    print(f"DEBUG: Campaigner {campaigner_id} not found in database")
+                    raise AuthenticationError("Campaigner not found")
+
+        print(f"DEBUG: Campaigner found: {user.id}, status: {user.status}")
+
+        if user.status != "active":
+            print(f"DEBUG: Campaigner {campaigner_id} status is not active: {user.status}")
+            raise AuthenticationError("Campaigner account is not active")
+
+        return user
     
     except JWTError as e:
         print(f"DEBUG: JWT error: {str(e)}")

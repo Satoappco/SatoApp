@@ -1,0 +1,279 @@
+"""MCP Server Registry and Selection System.
+
+This module maintains a registry of all available MCP servers and provides
+a configuration system to select which servers to load.
+"""
+
+import os
+from typing import List, Dict, Any, Optional
+from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class MCPServer(str, Enum):
+    """Available MCP servers."""
+    # Google Analytics
+    GOOGLE_ANALYTICS_OFFICIAL = "google-analytics-mcp"  # Official from Google
+    GOOGLE_ANALYTICS_SURENDRANB = "surendranb-google-analytics-mcp"  # Alternative with optimizations
+    GOOGLE_ANALYTICS_OLD = "mcp_google_analytics-0.0.3"  # Older version
+
+    # Google Ads
+    GOOGLE_ADS_OFFICIAL = "google-ads-mcp"  # Official from Google
+    GOOGLE_ADS_COHNEN = "mcp-google-ads"  # Alternative by cohnen
+    GOOGLE_ADS_ALT = "google_ads_mcp"  # Another alternative
+    GOOGLE_ADS_SERVER = "google-ads-mcp-server"  # Server variant
+
+    # Facebook/Meta Ads
+    META_ADS = "meta-ads-mcp"  # Pipeboard Meta Ads MCP
+    FACEBOOK_ADS_SERVER = "facebook-ads-mcp-server"  # Alternative
+    FACEBOOK_ADS_LIBRARY = "facebook-ads-library-mcp"  # Ads Library API
+
+
+class MCPServerConfig:
+    """Configuration for individual MCP servers."""
+
+    # Registry of all MCP servers with their configurations
+    REGISTRY: Dict[MCPServer, Dict[str, Any]] = {
+        # === GOOGLE ANALYTICS SERVERS ===
+        MCPServer.GOOGLE_ANALYTICS_OFFICIAL: {
+            "name": "Google Analytics (Official)",
+            "description": "Official Google Analytics MCP server",
+            "command": "uvx",
+            "args": ["mcp-google-analytics"],  # Uses 'analytics-mcp' or 'google-analytics-mcp' entry point
+            "service": "google_analytics",
+            "requires_credentials": ["refresh_token", "property_id", "client_id", "client_secret"],
+            "env_mapping": {
+                "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
+                "property_id": "GOOGLE_ANALYTICS_PROPERTY_ID",
+                "client_id": "GOOGLE_ANALYTICS_CLIENT_ID",
+                "client_secret": "GOOGLE_ANALYTICS_CLIENT_SECRET",
+            }
+        },
+
+        MCPServer.GOOGLE_ANALYTICS_SURENDRANB: {
+            "name": "Google Analytics (Optimized)",
+            "description": "GA4 MCP with smart optimizations by Surendran B",
+            "command": "uvx",
+            "args": ["ga4-mcp-server"],
+            "service": "google_analytics",
+            "requires_credentials": ["refresh_token", "property_id"],
+            "env_mapping": {
+                "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
+                "property_id": "GOOGLE_ANALYTICS_PROPERTY_ID",
+            }
+        },
+
+        # === GOOGLE ADS SERVERS ===
+        MCPServer.GOOGLE_ADS_OFFICIAL: {
+            "name": "Google Ads (Official)",
+            "description": "Official Google Ads MCP server",
+            "command": "uvx",
+            "args": ["run-mcp-server"],  # From google_ads_mcp package
+            "service": "google_ads",
+            "requires_credentials": ["refresh_token", "developer_token", "client_id", "client_secret"],
+            "env_mapping": {
+                "refresh_token": "GOOGLE_ADS_REFRESH_TOKEN",
+                "developer_token": "GOOGLE_ADS_DEVELOPER_TOKEN",
+                "client_id": "GOOGLE_ADS_CLIENT_ID",
+                "client_secret": "GOOGLE_ADS_CLIENT_SECRET",
+                "customer_id": "GOOGLE_ADS_CUSTOMER_ID",
+                "login_customer_id": "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
+            }
+        },
+
+        MCPServer.GOOGLE_ADS_COHNEN: {
+            "name": "Google Ads (Cohnen)",
+            "description": "Alternative Google Ads MCP by Ernesto Cohnen",
+            "command": "uvx",
+            "args": ["mcp-google-ads"],
+            "service": "google_ads",
+            "requires_credentials": ["refresh_token", "developer_token"],
+            "env_mapping": {
+                "refresh_token": "GOOGLE_ADS_REFRESH_TOKEN",
+                "developer_token": "GOOGLE_ADS_DEVELOPER_TOKEN",
+            }
+        },
+
+        # === META/FACEBOOK ADS SERVERS ===
+        MCPServer.META_ADS: {
+            "name": "Meta Ads (Pipeboard)",
+            "description": "Meta/Facebook Ads MCP by Pipeboard",
+            "command": "uvx",
+            "args": ["meta-ads-mcp"],
+            "service": "meta_ads",
+            "requires_credentials": ["access_token"],
+            "env_mapping": {
+                "access_token": "FACEBOOK_ACCESS_TOKEN",
+                "app_id": "FACEBOOK_APP_ID",
+                "app_secret": "FACEBOOK_APP_SECRET",
+                "ad_account_id": "FACEBOOK_AD_ACCOUNT_ID",
+            }
+        },
+    }
+
+    # Default MCP selection (which servers to load by default)
+    DEFAULT_SELECTION = {
+        "google_analytics": MCPServer.GOOGLE_ANALYTICS_OFFICIAL,
+        "google_ads": MCPServer.GOOGLE_ADS_OFFICIAL,
+        "meta_ads": MCPServer.META_ADS,
+    }
+
+
+class MCPSelector:
+    """Selects and configures MCP servers based on user preferences."""
+
+    @staticmethod
+    def get_selected_servers(
+        services: List[str],
+        custom_selection: Optional[Dict[str, MCPServer]] = None
+    ) -> List[MCPServer]:
+        """Get list of MCP servers to load based on services and preferences.
+
+        Args:
+            services: List of services needed (e.g., ["google_analytics", "google_ads"])
+            custom_selection: Custom server selection per service (overrides defaults)
+
+        Returns:
+            List of MCPServer enums to load
+        """
+        selection = custom_selection or MCPServerConfig.DEFAULT_SELECTION
+        servers_to_load = []
+
+        for service in services:
+            if service in selection:
+                servers_to_load.append(selection[service])
+                logger.info(f"📋 Selected {selection[service].value} for {service}")
+            else:
+                logger.warning(f"⚠️  No MCP server configured for service: {service}")
+
+        return servers_to_load
+
+    @staticmethod
+    def build_server_params(
+        server: MCPServer,
+        credentials: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Build server parameters for MCPServerAdapter.
+
+        Args:
+            server: MCP server to configure
+            credentials: Credentials for the service
+
+        Returns:
+            Dictionary with server parameters for MCPServerAdapter
+        """
+        config = MCPServerConfig.REGISTRY.get(server)
+        if not config:
+            raise ValueError(f"Unknown MCP server: {server}")
+
+        # Build environment variables from credentials
+        env_vars = {}
+        for cred_key, env_key in config["env_mapping"].items():
+            if cred_key in credentials and credentials[cred_key]:
+                env_vars[env_key] = str(credentials[cred_key])
+
+        # Check if required credentials are present
+        missing_creds = []
+        for required_cred in config["requires_credentials"]:
+            env_key = config["env_mapping"].get(required_cred)
+            if env_key and env_key not in env_vars:
+                # Check if it's in environment variables as fallback
+                if not os.getenv(env_key):
+                    missing_creds.append(required_cred)
+
+        if missing_creds:
+            logger.warning(f"⚠️  {server.value} missing credentials: {missing_creds}")
+
+        # Build server parameters
+        server_params = {
+            "command": config["command"],
+            "args": config["args"],
+            "env": env_vars,
+            "transport": "stdio"  # All our MCPs use stdio transport
+        }
+
+        return server_params
+
+    @staticmethod
+    def build_all_server_params(
+        platforms: List[str],
+        google_analytics_credentials: Optional[Dict[str, str]] = None,
+        google_ads_credentials: Optional[Dict[str, str]] = None,
+        meta_ads_credentials: Optional[Dict[str, str]] = None,
+        custom_selection: Optional[Dict[str, MCPServer]] = None
+    ) -> List[Dict[str, Any]]:
+        """Build server parameters for all selected MCP servers.
+
+        Args:
+            platforms: List of platforms (e.g., ["google", "facebook"])
+            google_analytics_credentials: GA credentials
+            google_ads_credentials: Google Ads credentials
+            meta_ads_credentials: Meta Ads credentials
+            custom_selection: Custom MCP server selection
+
+        Returns:
+            List of server parameter dictionaries for MCPServerAdapter
+        """
+        # Map platforms to services
+        services = []
+        if "google" in platforms or "both" in platforms:
+            if google_analytics_credentials:
+                services.append("google_analytics")
+            if google_ads_credentials:
+                services.append("google_ads")
+
+        if "facebook" in platforms or "both" in platforms:
+            if meta_ads_credentials:
+                services.append("meta_ads")
+
+        # Get selected servers
+        selected_servers = MCPSelector.get_selected_servers(services, custom_selection)
+
+        # Build parameters for each server
+        server_params_list = []
+        for server in selected_servers:
+            config = MCPServerConfig.REGISTRY[server]
+            service = config["service"]
+
+            # Get credentials for this service
+            credentials = {}
+            if service == "google_analytics":
+                credentials = google_analytics_credentials or {}
+            elif service == "google_ads":
+                credentials = google_ads_credentials or {}
+            elif service == "meta_ads":
+                credentials = meta_ads_credentials or {}
+
+            try:
+                params = MCPSelector.build_server_params(server, credentials)
+                server_params_list.append(params)
+                logger.info(f"✅ Configured {server.value}")
+            except Exception as e:
+                logger.error(f"❌ Failed to configure {server.value}: {e}")
+                continue
+
+        logger.info(f"✅ Configured {len(server_params_list)} MCP server(s)")
+        return server_params_list
+
+
+# Convenience function for backwards compatibility
+def configure_all_mcps(
+    platforms: List[str],
+    google_analytics_credentials: Optional[Dict[str, str]] = None,
+    google_ads_credentials: Optional[Dict[str, str]] = None,
+    meta_ads_credentials: Optional[Dict[str, str]] = None,
+    custom_selection: Optional[Dict[str, MCPServer]] = None
+) -> List[Dict[str, Any]]:
+    """Configure all MCP servers (backwards compatible API).
+
+    This is a wrapper around MCPSelector.build_all_server_params()
+    """
+    return MCPSelector.build_all_server_params(
+        platforms,
+        google_analytics_credentials,
+        google_ads_credentials,
+        meta_ads_credentials,
+        custom_selection
+    )
