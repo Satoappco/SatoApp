@@ -5,12 +5,18 @@ a configuration system to select which servers to load.
 """
 
 import os
+import sys
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from enum import Enum
 import logging
 from mcp import StdioServerParameters
 
 logger = logging.getLogger(__name__)
+
+# Get the absolute path to the local MCPs directory
+# This allows us to use local MCP servers instead of external packages
+MCPS_DIR = Path(__file__).parent.parent.parent.parent / "mcps"
 
 
 class MCPServer(str, Enum):
@@ -40,10 +46,11 @@ class MCPServerConfig:
         # === GOOGLE ANALYTICS SERVERS ===
         MCPServer.GOOGLE_ANALYTICS_OFFICIAL: {
             "name": "Google Analytics (Official)",
-            "description": "Official Google Analytics MCP server",
-            "command": "ga4-mcp-server",  # Use installed script instead of uvx
-            "args": [],  # No args needed, script is already installed
+            "description": "Official Google Analytics MCP server from local mcps directory",
+            "command": sys.executable,  # Use current Python interpreter
+            "args": ["-m", "analytics_mcp.server"],  # Run the module
             "service": "google_analytics",
+            "working_directory": str(MCPS_DIR / "google-analytics-mcp"),
             "requires_credentials": ["refresh_token", "property_id", "client_id", "client_secret"],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
@@ -55,9 +62,9 @@ class MCPServerConfig:
 
         MCPServer.GOOGLE_ANALYTICS_SURENDRANB: {
             "name": "Google Analytics (Optimized)",
-            "description": "GA4 MCP with smart optimizations by Surendran B",
-            "command": "ga4-mcp-server",  # Use installed script instead of uvx
-            "args": [],  # No args needed, script is already installed
+            "description": "GA4 MCP with smart optimizations by Surendran B from local mcps directory",
+            "command": sys.executable,  # Use current Python interpreter
+            "args": [str(MCPS_DIR / "surendranb-google-analytics-mcp" / "ga4_mcp_server.py")],
             "service": "google_analytics",
             "requires_credentials": ["refresh_token", "property_id"],
             "env_mapping": {
@@ -69,10 +76,11 @@ class MCPServerConfig:
         # === GOOGLE ADS SERVERS ===
         MCPServer.GOOGLE_ADS_OFFICIAL: {
             "name": "Google Ads (Official)",
-            "description": "Official Google Ads MCP server",
-            "command": "uvx",  # Keep uvx for now, can install package later if needed
-            "args": ["run-mcp-server"],  # From google_ads_mcp package
+            "description": "Official Google Ads MCP server from local mcps directory",
+            "command": sys.executable,  # Use current Python interpreter
+            "args": ["-m", "ads_mcp.server"],  # Run the module
             "service": "google_ads",
+            "working_directory": str(MCPS_DIR / "google_ads_mcp"),
             "requires_credentials": ["refresh_token", "developer_token", "client_id", "client_secret"],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ADS_REFRESH_TOKEN",
@@ -86,10 +94,11 @@ class MCPServerConfig:
 
         MCPServer.GOOGLE_ADS_COHNEN: {
             "name": "Google Ads (Cohnen)",
-            "description": "Alternative Google Ads MCP by Ernesto Cohnen",
-            "command": "uvx",  # Keep uvx for now, can install package later if needed
-            "args": ["mcp-google-ads"],
+            "description": "Alternative Google Ads MCP by Ernesto Cohnen from local mcps directory",
+            "command": sys.executable,  # Use current Python interpreter
+            "args": ["-m", "mcp_google_ads.server"],  # Run the module
             "service": "google_ads",
+            "working_directory": str(MCPS_DIR / "mcp-google-ads"),
             "requires_credentials": ["refresh_token", "developer_token"],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ADS_REFRESH_TOKEN",
@@ -100,10 +109,11 @@ class MCPServerConfig:
         # === META/FACEBOOK ADS SERVERS ===
         MCPServer.META_ADS: {
             "name": "Meta Ads (Pipeboard)",
-            "description": "Meta/Facebook Ads MCP by Pipeboard",
-            "command": "uvx",  # Keep uvx for now, can install package later if needed
-            "args": ["meta-ads-mcp"],
+            "description": "Meta/Facebook Ads MCP by Pipeboard from local mcps directory",
+            "command": sys.executable,  # Use current Python interpreter
+            "args": ["-m", "meta_ads_mcp"],  # Run the module
             "service": "meta_ads",
+            "working_directory": str(MCPS_DIR / "meta-ads-mcp"),
             "requires_credentials": ["access_token"],
             "env_mapping": {
                 "access_token": "FACEBOOK_ACCESS_TOKEN",
@@ -175,6 +185,16 @@ class MCPSelector:
             if cred_key in credentials and credentials[cred_key]:
                 env_vars[env_key] = str(credentials[cred_key])
 
+        # Add working directory to PYTHONPATH if specified
+        # This allows Python modules to be imported from the local MCP directory
+        if "working_directory" in config:
+            working_dir = config["working_directory"]
+            current_pythonpath = os.environ.get("PYTHONPATH", "")
+            if current_pythonpath:
+                env_vars["PYTHONPATH"] = f"{working_dir}:{current_pythonpath}"
+            else:
+                env_vars["PYTHONPATH"] = working_dir
+
         # Check if required credentials are present
         missing_creds = []
         for required_cred in config["requires_credentials"]:
@@ -192,7 +212,8 @@ class MCPSelector:
         server_params = StdioServerParameters(
             command=config["command"],
             args=config["args"],
-            env=env_vars
+            env=env_vars,
+            cwd=config.get("working_directory")  # Set working directory if specified
         )
 
         return server_params
