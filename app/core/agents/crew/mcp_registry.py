@@ -8,6 +8,7 @@ import os
 from typing import List, Dict, Any, Optional
 from enum import Enum
 import logging
+from mcp import StdioServerParameters
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,7 @@ class MCPSelector:
     def build_server_params(
         server: MCPServer,
         credentials: Dict[str, str]
-    ) -> Dict[str, Any]:
+    ) -> StdioServerParameters:
         """Build server parameters for MCPServerAdapter.
 
         Args:
@@ -162,7 +163,7 @@ class MCPSelector:
             credentials: Credentials for the service
 
         Returns:
-            Dictionary with server parameters for MCPServerAdapter
+            StdioServerParameters object for MCPServerAdapter
         """
         config = MCPServerConfig.REGISTRY.get(server)
         if not config:
@@ -186,13 +187,13 @@ class MCPSelector:
         if missing_creds:
             logger.warning(f"⚠️  {server.value} missing credentials: {missing_creds}")
 
-        # Build server parameters
-        server_params = {
-            "command": config["command"],
-            "args": config["args"],
-            "env": env_vars,
-            "transport": "stdio"  # All our MCPs use stdio transport
-        }
+        # Build server parameters using StdioServerParameters
+        # This is the correct format for mcpadapt library when using stdio transport
+        server_params = StdioServerParameters(
+            command=config["command"],
+            args=config["args"],
+            env=env_vars
+        )
 
         return server_params
 
@@ -203,7 +204,7 @@ class MCPSelector:
         google_ads_credentials: Optional[Dict[str, str]] = None,
         meta_ads_credentials: Optional[Dict[str, str]] = None,
         custom_selection: Optional[Dict[str, MCPServer]] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[StdioServerParameters]:
         """Build server parameters for all selected MCP servers.
 
         Args:
@@ -214,7 +215,7 @@ class MCPSelector:
             custom_selection: Custom MCP server selection
 
         Returns:
-            List of server parameter dictionaries for MCPServerAdapter
+            List of StdioServerParameters objects for MCPServerAdapter
         """
         # Map platforms to services
         services = []
@@ -265,7 +266,7 @@ def configure_all_mcps(
     google_ads_credentials: Optional[Dict[str, str]] = None,
     meta_ads_credentials: Optional[Dict[str, str]] = None,
     custom_selection: Optional[Dict[str, MCPServer]] = None
-) -> List[Dict[str, Any]]:
+) -> List[StdioServerParameters]:
     """Configure all MCP servers (backwards compatible API).
 
     This is a wrapper around MCPSelector.build_all_server_params()
