@@ -22,7 +22,8 @@ MCPS_DIR = Path(__file__).parent.parent.parent.parent / "mcps"
 class MCPServer(str, Enum):
     """Available MCP servers."""
     # Google Analytics
-    GOOGLE_ANALYTICS_OFFICIAL = "google-analytics-mcp"  # Official from Google
+    GOOGLE_ANALYTICS_OAUTH = "google-analytics-oauth"  # OAuth2-compatible wrapper (RECOMMENDED)
+    GOOGLE_ANALYTICS_OFFICIAL = "google-analytics-mcp"  # Official from Google (requires service account)
     GOOGLE_ANALYTICS_SURENDRANB = "surendranb-google-analytics-mcp"  # Alternative with optimizations
     GOOGLE_ANALYTICS_OLD = "mcp_google_analytics-0.0.3"  # Older version
 
@@ -44,13 +45,13 @@ class MCPServerConfig:
     # Registry of all MCP servers with their configurations
     REGISTRY: Dict[MCPServer, Dict[str, Any]] = {
         # === GOOGLE ANALYTICS SERVERS ===
-        MCPServer.GOOGLE_ANALYTICS_OFFICIAL: {
-            "name": "Google Analytics (Official)",
-            "description": "Official Google Analytics MCP server from local mcps directory",
+        MCPServer.GOOGLE_ANALYTICS_OAUTH: {
+            "name": "Google Analytics (OAuth2)",
+            "description": "OAuth2-compatible Google Analytics MCP server (uses refresh tokens)",
             "command": sys.executable,  # Use current Python interpreter
-            "args": ["-m", "analytics_mcp.server"],  # Run the module
+            "args": [str(MCPS_DIR / "google-analytics-oauth" / "ga4_oauth_server.py")],
             "service": "google_analytics",
-            "working_directory": str(MCPS_DIR / "google-analytics-mcp"),
+            "working_directory": str(MCPS_DIR / "google-analytics-oauth"),
             "requires_credentials": ["refresh_token", "property_id", "client_id", "client_secret"],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
@@ -58,6 +59,17 @@ class MCPServerConfig:
                 "client_id": "GOOGLE_ANALYTICS_CLIENT_ID",
                 "client_secret": "GOOGLE_ANALYTICS_CLIENT_SECRET",
             }
+        },
+
+        MCPServer.GOOGLE_ANALYTICS_OFFICIAL: {
+            "name": "Google Analytics (Official - Service Account)",
+            "description": "Official Google Analytics MCP server (requires service account ADC)",
+            "command": sys.executable,  # Use current Python interpreter
+            "args": ["-m", "analytics_mcp.server"],  # Run the module
+            "service": "google_analytics",
+            "working_directory": str(MCPS_DIR / "google-analytics-mcp"),
+            "requires_credentials": [],  # Uses ADC, not our credentials
+            "env_mapping": {}
         },
 
         MCPServer.GOOGLE_ANALYTICS_SURENDRANB: {
@@ -126,7 +138,7 @@ class MCPServerConfig:
 
     # Default MCP selection (which servers to load by default)
     DEFAULT_SELECTION = {
-        "google_analytics": MCPServer.GOOGLE_ANALYTICS_OFFICIAL,
+        "google_analytics": MCPServer.GOOGLE_ANALYTICS_OAUTH,  # Use OAuth2 version by default
         "google_ads": MCPServer.GOOGLE_ADS_OFFICIAL,
         "meta_ads": MCPServer.META_ADS,
     }
