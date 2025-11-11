@@ -112,10 +112,10 @@ class AnalyticsCrewPlaceholder:
                     return None
 
                 # Decrypt the tokens
-                refresh_token = connection.refresh_token_enc # encryption_service.decrypt_token(connection.refresh_token_enc)
+                refresh_token = encryption_service.decrypt_token(connection.refresh_token_enc)
                 access_token = None
                 if connection.access_token_enc:
-                    access_token = connection.access_token_enc # encryption_service.decrypt_token(connection.access_token_enc)
+                    access_token = encryption_service.decrypt_token(connection.access_token_enc)
 
                 # Extract property_id from digital asset meta field
                 property_id = ga_asset.meta.get("property_id") if ga_asset.meta else None
