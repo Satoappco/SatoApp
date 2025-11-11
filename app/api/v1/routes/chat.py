@@ -18,6 +18,11 @@ from app.api.schemas.chat import (
 from app.api.dependencies import get_app_state, ApplicationState
 from app.core.auth import get_current_user
 
+try:
+    from langfuse import propagate_attributes
+except ImportError:
+    propagate_attributes = None
+
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
@@ -71,129 +76,140 @@ async def chat(
         except (ValueError, TypeError):
             logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
 
-    # Create session-level LangFuse trace
+    # Setup LangFuse session tracking using modern API
     langfuse = LangfuseConfig.get_client()
-    trace = None
+    use_langfuse = langfuse and LangfuseConfig.is_enabled()
 
-    if langfuse and LangfuseConfig.is_enabled():
+    # Create trace context manager
+    if use_langfuse:
         try:
-            # Langfuse SDK v2+ uses a different API
-            if hasattr(langfuse, 'trace'):
-                # v2+ API
-                trace = langfuse.trace(
-                    name="conversation_session",
+            trace_context = langfuse.start_as_current_span(
+                name="chat_message",
+                input={"message": request.message, "customer_id": customer_id}
+            )
+        except Exception as e:
+            logger.warning(f"⚠️  [Chat] Failed to create LangFuse span: {e}")
+            trace_context = None
+            use_langfuse = False
+    else:
+        trace_context = None
+
+    # Dummy context manager for when LangFuse is disabled
+    class DummyContext:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def update_trace(self, **kwargs):
+            pass
+
+    trace_mgr = trace_context if trace_context else DummyContext()
+
+    try:
+        with trace_mgr as trace:
+            # Update trace with session and user info
+            if trace and hasattr(trace, 'update_trace'):
+                trace.update_trace(
                     session_id=thread_id,
                     user_id=str(current_user.id),
-                    input={"message": request.message, "customer_id": customer_id},
                     metadata={
-                        "thread_id": thread_id,
                         "campaigner_id": current_user.id,
                         "campaigner_name": current_user.full_name,
                         "customer_id": customer_id,
                         "timestamp": datetime.now().isoformat()
                     }
                 )
-            else:
-                # Legacy API or instrumentation-only mode
-                logger.debug("⚠️  [Chat] Langfuse client doesn't support .trace(), using instrumentation only")
-                trace = None
+                logger.debug(f"✅ [Chat] Session tracking enabled for: {thread_id[:8]}...")
 
-            if trace:
-                logger.debug(f"✅ [Chat] Created LangFuse trace for thread: {thread_id[:8]}...")
-        except Exception as e:
-            logger.warning(f"⚠️  [Chat] Failed to create LangFuse trace: {e}")
-            trace = None
+            # Get conversation workflow for this thread (with campaigner_id and trace)
+            logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
 
-    try:
-        # Get conversation workflow for this thread (with campaigner_id and trace)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
+            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
 
-        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
-        
-        # Most likely never come here because of get_current_user requires msg len >= 1
-        if not request.message.strip():
-            # Return chat intialization response without processing
-            logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
-            return ChatResponse(
-                message="",
-                thread_id=thread_id,
-                needs_clarification=False,
-                ready_for_analysis=False,
-                intent=None
-            )
-        
-        # Process message
-        logger.debug(f"🔄 [Chat] Processing message through workflow...")
-        result = workflow.process_message(request.message)
-        logger.debug(f"✅ [Chat] Workflow processed. Result keys: {list(result.keys())}")
-
-        # Extract response message
-        messages = result.get("messages", [])
-        assistant_message = ""
-        if messages:
-            last_message = messages[-1]
-            if hasattr(last_message, "content"):
-                assistant_message = last_message.content
-                logger.debug(f"💭 [Chat] Assistant message: '{assistant_message[:100]}...'")
-
-        # If clarification question exists, use that
-        if result.get("clarification_question"):
-            assistant_message = result["clarification_question"]
-            logger.info(f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'")
-
-        # Build intent dict
-        intent = {
-            "platforms": result.get("platforms", []),
-            "metrics": result.get("metrics", []),
-            "date_range_start": result.get("date_range_start"),
-            "date_range_end": result.get("date_range_end"),
-            "comparison_period": result.get("comparison_period", False),
-            "specific_campaigns": result.get("specific_campaigns"),
-        }
-
-        needs_clarification = result.get("clarification_needed", False)
-        ready_for_analysis = result.get("ready_for_crew", False)
-
-        logger.info(
-            f"📊 [Chat] State: clarification={needs_clarification}, "
-            f"ready={ready_for_analysis}, "
-            f"platforms={intent.get('platforms', [])}"
-        )
-
-        response = ChatResponse(
-            message=assistant_message or "I'm processing your request...",
-            thread_id=thread_id,
-            needs_clarification=needs_clarification,
-            ready_for_analysis=ready_for_analysis,
-            intent=intent if any(intent.values()) else None
-        )
-
-        # Update trace with output
-        if trace:
-            try:
-                trace.update(
-                    output={
-                        "message": assistant_message,
-                        "needs_clarification": needs_clarification,
-                        "ready_for_analysis": ready_for_analysis,
-                        "intent": intent
-                    },
-                    metadata={
-                        "platforms": intent.get("platforms", []),
-                        "conversation_state": "clarification" if needs_clarification else ("ready" if ready_for_analysis else "processing")
-                    }
+            # Most likely never come here because of get_current_user requires msg len >= 1
+            if not request.message.strip():
+                # Return chat intialization response without processing
+                logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
+                return ChatResponse(
+                    message="",
+                    thread_id=thread_id,
+                    needs_clarification=False,
+                    ready_for_analysis=False,
+                    intent=None
                 )
-            except Exception as trace_error:
-                logger.warning(f"⚠️  [Chat] Failed to update trace: {trace_error}")
 
-        # Flush trace
-        if langfuse:
-            try:
-                langfuse.flush()
-            except Exception as flush_error:
-                logger.warning(f"⚠️  [Chat] Failed to flush LangFuse: {flush_error}")
+            # Process message
+            logger.debug(f"🔄 [Chat] Processing message through workflow...")
+            result = workflow.process_message(request.message)
+            logger.debug(f"✅ [Chat] Workflow processed. Result keys: {list(result.keys())}")
 
-        return response
+            # Extract response message
+            messages = result.get("messages", [])
+            assistant_message = ""
+            if messages:
+                last_message = messages[-1]
+                if hasattr(last_message, "content"):
+                    assistant_message = last_message.content
+                    logger.debug(f"💭 [Chat] Assistant message: '{assistant_message[:100]}...'")
+
+            # If clarification question exists, use that
+            if result.get("clarification_question"):
+                assistant_message = result["clarification_question"]
+                logger.info(f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'")
+
+            # Build intent dict
+            intent = {
+                "platforms": result.get("platforms", []),
+                "metrics": result.get("metrics", []),
+                "date_range_start": result.get("date_range_start"),
+                "date_range_end": result.get("date_range_end"),
+                "comparison_period": result.get("comparison_period", False),
+                "specific_campaigns": result.get("specific_campaigns"),
+            }
+
+            needs_clarification = result.get("clarification_needed", False)
+            ready_for_analysis = result.get("ready_for_crew", False)
+
+            logger.info(
+                f"📊 [Chat] State: clarification={needs_clarification}, "
+                f"ready={ready_for_analysis}, "
+                f"platforms={intent.get('platforms', [])}"
+            )
+
+            response = ChatResponse(
+                message=assistant_message or "I'm processing your request...",
+                thread_id=thread_id,
+                needs_clarification=needs_clarification,
+                ready_for_analysis=ready_for_analysis,
+                intent=intent if any(intent.values()) else None
+            )
+
+            # Update trace with output
+            if trace and hasattr(trace, 'update'):
+                try:
+                    trace.update(
+                        output={
+                            "message": assistant_message,
+                            "needs_clarification": needs_clarification,
+                            "ready_for_analysis": ready_for_analysis,
+                            "intent": intent
+                        },
+                        metadata={
+                            "platforms": intent.get("platforms", []),
+                            "conversation_state": "clarification" if needs_clarification else ("ready" if ready_for_analysis else "processing")
+                        }
+                    )
+                except Exception as trace_error:
+                    logger.warning(f"⚠️  [Chat] Failed to update trace: {trace_error}")
+
+            # Flush trace at the end
+            if langfuse:
+                try:
+                    langfuse.flush()
+                except Exception as flush_error:
+                    logger.warning(f"⚠️  [Chat] Failed to flush LangFuse: {flush_error}")
+
+            return response
 
     except Exception as e:
         logger.error(f"❌ [Chat] Error processing chat: {str(e)}", exc_info=True)
