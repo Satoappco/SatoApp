@@ -2,7 +2,7 @@
 
 import logging
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.language_models import BaseChatModel
@@ -46,6 +46,7 @@ class SQLBasicInfoAgent:
         query = task.get("query", "")
         campaigner_id = task.get("campaigner_id")
         context = task.get("context", {})
+        customer_id = task.get("customer_id")
 
         logger.info(f"🤖 [SQLBasicInfoAgent] Processing query for campaigner: {campaigner_id}")
         logger.debug(f"📝 [SQLBasicInfoAgent] Query: '{query[:100]}...'")
@@ -67,7 +68,7 @@ class SQLBasicInfoAgent:
             schema_info = postgres_tool.get_schema_info()
 
             # Create the agent with tools
-            agent = self._create_agent(postgres_tool, schema_info, context)
+            agent = self._create_agent(postgres_tool, schema_info, context, customer_id)
 
             # Execute the agent
             logger.info(f"🚀 [SQLBasicInfoAgent] Executing agent")
@@ -97,7 +98,8 @@ class SQLBasicInfoAgent:
         self,
         postgres_tool: PostgresTool,
         schema_info: Dict[str, Any],
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        customer_id : Optional[int]
     ) -> AgentExecutor:
         """Create a LangChain agent with PostgresTool.
 
@@ -120,6 +122,7 @@ class SQLBasicInfoAgent:
         if context.get("campaigner"):
             camp = context["campaigner"]
             context_parts.append(f"User: {camp.get('full_name')} ({camp.get('email')}), Role: {camp.get('role')}")
+        context_parts.append(f"If not specified otherwise, assume user is subjecting to Customer ID: {customer_id if customer_id else 'ANY'}")
 
         # Add language instruction
         user_language = context.get("language", "hebrew")
