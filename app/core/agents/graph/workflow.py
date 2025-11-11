@@ -211,62 +211,93 @@ class ConversationWorkflow:
         Yields:
             Chunks of the assistant's response as they are generated
         """
-        logger.info(f"📡 [Workflow] Streaming message: '{message[:50]}...'")
-        logger.debug(f"♻️  [Workflow] Continuing with {len(self.conversation_state.get('messages', []))} existing messages")
 
-        # Add user message to PostgreSQL history
-        try:
-            self.message_history.add_user_message(message)
-            logger.debug(f"💾 [Workflow] User message saved to PostgreSQL")
-        except Exception as e:
-            logger.error(f"❌ [Workflow] Failed to save user message to PostgreSQL: {e}")
+        #TODO: fix
+        result = self.process_message(message)
 
-        # Add user message to state for processing
-        self.conversation_state["messages"].append(HumanMessage(content=message))
+        # Extract response message
+        messages = result.get("messages", [])
+        assistant_message = ""
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "content"):
+                assistant_message = last_message.content
 
-        # Reset flags for this turn
-        self.conversation_state["next_agent"] = None
-        self.conversation_state["agent_task"] = None
-        self.conversation_state["agent_result"] = None
-        self.conversation_state["needs_clarification"] = False
-        self.conversation_state["error"] = None
+        # If clarification question exists, use that
+        if result.get("clarification_question"):
+            assistant_message = result["clarification_question"]
 
-        # Stream through chatbot node directly
-        logger.debug("⚙️  [Workflow] Streaming through chatbot node...")
+        logger.info(f"📤 [Stream] Streaming {len(assistant_message.split())} words")
+        #TODO: Why is that needed?
+        yield {
+            "type": "metadata",
+            # "state": final_state,
+            "needs_clarification": self.conversation_state.get("needs_clarification", False),
+            "ready_for_crew": self.conversation_state.get("ready_for_crew", False),
+            "platforms": self.conversation_state.get("platforms", []),
+            "metrics": self.conversation_state.get("metrics", []),
+            "date_range_start": self.conversation_state.get("date_range_start"),
+            "date_range_end": self.conversation_state.get("date_range_end"),
+        }
+        yield {"type": "content", "chunk": assistant_message}
 
-        full_response = ""
-        async for chunk in self.chatbot_node.stream_process(self.conversation_state):
-            if isinstance(chunk, dict) and "content" in chunk:
-                # Stream content chunk
-                content = chunk["content"]
-                full_response += content
-                yield {"type": "content", "chunk": content}
-            elif isinstance(chunk, dict) and "state" in chunk:
-                # Final state update
-                final_state = chunk["state"]
-                self.conversation_state.update(final_state)
 
-                # Save AI response to PostgreSQL
-                try:
-                    if full_response:
-                        self.message_history.add_ai_message(full_response)
-                        logger.debug(f"💾 [Workflow] AI message saved to PostgreSQL")
-                except Exception as e:
-                    logger.error(f"❌ [Workflow] Failed to save AI message to PostgreSQL: {e}")
+        # logger.info(f"📡 [Workflow] Streaming message: '{message[:50]}...'")
+        # logger.debug(f"♻️  [Workflow] Continuing with {len(self.conversation_state.get('messages', []))} existing messages")
 
-                # Yield metadata
-                yield {
-                    "type": "metadata",
-                    "state": final_state,
-                    "needs_clarification": final_state.get("needs_clarification", False),
-                    "ready_for_crew": final_state.get("ready_for_crew", False),
-                    "platforms": final_state.get("platforms", []),
-                    "metrics": final_state.get("metrics", []),
-                    "date_range_start": final_state.get("date_range_start"),
-                    "date_range_end": final_state.get("date_range_end"),
-                }
+        # # Add user message to PostgreSQL history
+        # try:
+        #     self.message_history.add_user_message(message)
+        #     logger.debug(f"💾 [Workflow] User message saved to PostgreSQL")
+        # except Exception as e:
+        #     logger.error(f"❌ [Workflow] Failed to save user message to PostgreSQL: {e}")
 
-        logger.info(f"✅ [Workflow] Streaming completed | Total messages: {len(self.conversation_state['messages'])}")
+        # # Add user message to state for processing
+        # self.conversation_state["messages"].append(HumanMessage(content=message))
+
+        # # Reset flags for this turn
+        # self.conversation_state["next_agent"] = None
+        # self.conversation_state["agent_task"] = None
+        # self.conversation_state["agent_result"] = None
+        # self.conversation_state["needs_clarification"] = False
+        # self.conversation_state["error"] = None
+
+        # # Stream through chatbot node directly
+        # logger.debug("⚙️  [Workflow] Streaming through chatbot node...")
+
+        # full_response = ""
+        # async for chunk in self.chatbot_node.stream_process(self.conversation_state):
+        #     if isinstance(chunk, dict) and "content" in chunk:
+        #         # Stream content chunk
+        #         content = chunk["content"]
+        #         full_response += content
+        #         yield {"type": "content", "chunk": content}
+        #     elif isinstance(chunk, dict) and "state" in chunk:
+        #         # Final state update
+        #         final_state = chunk["state"]
+        #         self.conversation_state.update(final_state)
+
+        #         # Save AI response to PostgreSQL
+        #         try:
+        #             if full_response:
+        #                 self.message_history.add_ai_message(full_response)
+        #                 logger.debug(f"💾 [Workflow] AI message saved to PostgreSQL")
+        #         except Exception as e:
+        #             logger.error(f"❌ [Workflow] Failed to save AI message to PostgreSQL: {e}")
+
+        #         # Yield metadata
+        #         yield {
+        #             "type": "metadata",
+        #             "state": final_state,
+        #             "needs_clarification": final_state.get("needs_clarification", False),
+        #             "ready_for_crew": final_state.get("ready_for_crew", False),
+        #             "platforms": final_state.get("platforms", []),
+        #             "metrics": final_state.get("metrics", []),
+        #             "date_range_start": final_state.get("date_range_start"),
+        #             "date_range_end": final_state.get("date_range_end"),
+        #         }
+
+        # logger.info(f"✅ [Workflow] Streaming completed | Total messages: {len(self.conversation_state['messages'])}")
 
 
 # Module-level function to build and return the compiled graph

@@ -77,20 +77,29 @@ async def chat(
 
     if langfuse and LangfuseConfig.is_enabled():
         try:
-            trace = langfuse.trace(
-                name="conversation_session",
-                session_id=thread_id,
-                user_id=str(current_user.id),
-                input={"message": request.message, "customer_id": customer_id},
-                metadata={
-                    "thread_id": thread_id,
-                    "campaigner_id": current_user.id,
-                    "campaigner_name": current_user.full_name,
-                    "customer_id": customer_id,
-                    "timestamp": datetime.now().isoformat()
-                }
-            )
-            logger.debug(f"✅ [Chat] Created LangFuse trace for thread: {thread_id[:8]}...")
+            # Langfuse SDK v2+ uses a different API
+            if hasattr(langfuse, 'trace'):
+                # v2+ API
+                trace = langfuse.trace(
+                    name="conversation_session",
+                    session_id=thread_id,
+                    user_id=str(current_user.id),
+                    input={"message": request.message, "customer_id": customer_id},
+                    metadata={
+                        "thread_id": thread_id,
+                        "campaigner_id": current_user.id,
+                        "campaigner_name": current_user.full_name,
+                        "customer_id": customer_id,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            else:
+                # Legacy API or instrumentation-only mode
+                logger.debug("⚠️  [Chat] Langfuse client doesn't support .trace(), using instrumentation only")
+                trace = None
+
+            if trace:
+                logger.debug(f"✅ [Chat] Created LangFuse trace for thread: {thread_id[:8]}...")
         except Exception as e:
             logger.warning(f"⚠️  [Chat] Failed to create LangFuse trace: {e}")
             trace = None
@@ -249,6 +258,7 @@ async def stream_chat(
                     char = chunk.get("chunk", "")
                     yield f"data: {json.dumps({'chunk': char})}\n\n"
 
+                #TODO: Why is that?
                 elif chunk.get("type") == "metadata":
                     # Final metadata with state
                     metadata = {
