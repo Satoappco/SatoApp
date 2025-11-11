@@ -41,8 +41,8 @@ class MCPServerConfig:
         MCPServer.GOOGLE_ANALYTICS_OFFICIAL: {
             "name": "Google Analytics (Official)",
             "description": "Official Google Analytics MCP server",
-            "command": "uvx",
-            "args": ["mcp-google-analytics"],  # Uses 'analytics-mcp' or 'google-analytics-mcp' entry point
+            "command": "ga4-mcp-server",  # Use installed script instead of uvx
+            "args": [],  # No args needed, script is already installed
             "service": "google_analytics",
             "requires_credentials": ["refresh_token", "property_id", "client_id", "client_secret"],
             "env_mapping": {
@@ -56,8 +56,8 @@ class MCPServerConfig:
         MCPServer.GOOGLE_ANALYTICS_SURENDRANB: {
             "name": "Google Analytics (Optimized)",
             "description": "GA4 MCP with smart optimizations by Surendran B",
-            "command": "uvx",
-            "args": ["ga4-mcp-server"],
+            "command": "ga4-mcp-server",  # Use installed script instead of uvx
+            "args": [],  # No args needed, script is already installed
             "service": "google_analytics",
             "requires_credentials": ["refresh_token", "property_id"],
             "env_mapping": {
@@ -70,7 +70,7 @@ class MCPServerConfig:
         MCPServer.GOOGLE_ADS_OFFICIAL: {
             "name": "Google Ads (Official)",
             "description": "Official Google Ads MCP server",
-            "command": "uvx",
+            "command": "uvx",  # Keep uvx for now, can install package later if needed
             "args": ["run-mcp-server"],  # From google_ads_mcp package
             "service": "google_ads",
             "requires_credentials": ["refresh_token", "developer_token", "client_id", "client_secret"],
@@ -87,7 +87,7 @@ class MCPServerConfig:
         MCPServer.GOOGLE_ADS_COHNEN: {
             "name": "Google Ads (Cohnen)",
             "description": "Alternative Google Ads MCP by Ernesto Cohnen",
-            "command": "uvx",
+            "command": "uvx",  # Keep uvx for now, can install package later if needed
             "args": ["mcp-google-ads"],
             "service": "google_ads",
             "requires_credentials": ["refresh_token", "developer_token"],
@@ -101,7 +101,7 @@ class MCPServerConfig:
         MCPServer.META_ADS: {
             "name": "Meta Ads (Pipeboard)",
             "description": "Meta/Facebook Ads MCP by Pipeboard",
-            "command": "uvx",
+            "command": "uvx",  # Keep uvx for now, can install package later if needed
             "args": ["meta-ads-mcp"],
             "service": "meta_ads",
             "requires_credentials": ["access_token"],

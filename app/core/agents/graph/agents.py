@@ -79,7 +79,7 @@ class AnalyticsCrewPlaceholder:
             customer_id: Customer ID
 
         Returns:
-            Dictionary with 'refresh_token' and 'property_id' or None
+            Dictionary with 'refresh_token', 'property_id', 'client_id', 'client_secret' or None
         """
         try:
             encryption_service = BaseEncryptionService()
@@ -112,10 +112,10 @@ class AnalyticsCrewPlaceholder:
                     return None
 
                 # Decrypt the tokens
-                refresh_token = encryption_service.decrypt_token(connection.refresh_token_enc)
+                refresh_token = connection.refresh_token_enc # encryption_service.decrypt_token(connection.refresh_token_enc)
                 access_token = None
                 if connection.access_token_enc:
-                    access_token = encryption_service.decrypt_token(connection.access_token_enc)
+                    access_token = connection.access_token_enc # encryption_service.decrypt_token(connection.access_token_enc)
 
                 # Extract property_id from digital asset meta field
                 property_id = ga_asset.meta.get("property_id") if ga_asset.meta else None
@@ -124,12 +124,23 @@ class AnalyticsCrewPlaceholder:
                     logger.warning(f"⚠️  [AnalyticsCrew] No property_id found in GA4 asset meta for customer {customer_id}")
                     return None
 
+                # Get OAuth client credentials from environment
+                # These are the same for all Google API connections
+                import os
+                client_id = os.getenv("GOOGLE_CLIENT_ID")
+                client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+
+                if not client_id or not client_secret:
+                    logger.warning(f"⚠️  [AnalyticsCrew] Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment")
+
                 logger.info(f"✅ [AnalyticsCrew] Found GA4 credentials for customer {customer_id}, property: {property_id}")
 
                 return {
                     "refresh_token": refresh_token,
                     "property_id": property_id,
-                    "access_token": access_token
+                    "access_token": access_token,
+                    "client_id": client_id,
+                    "client_secret": client_secret
                 }
 
         except Exception as e:

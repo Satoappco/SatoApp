@@ -380,6 +380,9 @@ if the user request is simple and can be answered without an agent, provide a di
                     task["customer_id"] = state.get("customer_id")
                     task["campaigner_id"] = campaigner.id
 
+                    # Add trace to task for proper trace propagation to agents
+                    task["trace"] = state.get("trace")
+
                     # Gather agency and campaigner context for agents
                     try:
                         db_tool = DatabaseTool(campaigner.id)
