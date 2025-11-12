@@ -70,7 +70,7 @@ class AnalyticsCrewPlaceholder:
             # Fallback to default platforms
             platforms = ["google"]
 
-        return platforms if platforms else ["google"]
+        return platforms
 
     def _fetch_google_analytics_token(self, customer_id: int) -> Optional[Dict[str, str]]:
         """Fetch customer's Google Analytics refresh token and property ID.
@@ -112,10 +112,28 @@ class AnalyticsCrewPlaceholder:
                     return None
 
                 # Decrypt the tokens
-                refresh_token = encryption_service.decrypt_token(connection.refresh_token_enc)
+                try:
+                    refresh_token = encryption_service.decrypt_token(connection.refresh_token_enc)
+                except Exception as decrypt_error:
+                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt refresh_token: {decrypt_error}")
+                    # Try using the token as-is (might be plain text or need re-encryption)
+                    refresh_token = connection.refresh_token_enc
+                    if isinstance(refresh_token, bytes):
+                        try:
+                            # Try decoding bytes to string
+                            refresh_token = refresh_token.decode('utf-8')
+                        except Exception:
+                            logger.error(f"❌ [AnalyticsCrew] Cannot decode refresh_token bytes")
+                            return None
+
                 access_token = None
                 if connection.access_token_enc:
-                    access_token = encryption_service.decrypt_token(connection.access_token_enc)
+                    try:
+                        access_token = encryption_service.decrypt_token(connection.access_token_enc)
+                    except Exception as decrypt_error:
+                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt access_token: {decrypt_error}")
+                        # Access token is optional, can continue without it
+                        access_token = None
 
                 # Extract property_id from digital asset meta field
                 property_id = ga_asset.meta.get("property_id") if ga_asset.meta else None
