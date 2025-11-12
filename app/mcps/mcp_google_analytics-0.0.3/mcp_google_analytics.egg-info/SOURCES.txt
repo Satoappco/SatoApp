@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+mcp_google_analytics/__init__.py
+mcp_google_analytics/server.py
+mcp_google_analytics.egg-info/PKG-INFO
+mcp_google_analytics.egg-info/SOURCES.txt
+mcp_google_analytics.egg-info/dependency_links.txt
+mcp_google_analytics.egg-info/entry_points.txt
+mcp_google_analytics.egg-info/requires.txt
+mcp_google_analytics.egg-info/top_level.txt

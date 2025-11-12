@@ -31,4 +31,5 @@ CMD exec gunicorn -k uvicorn.workers.UvicornWorker \
     --workers 1 \
     --threads 8 \
     --timeout 0 \
-    app.main:app
+    app.main:app 
+# --reload

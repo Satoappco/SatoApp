@@ -363,7 +363,7 @@ if the user request is simple and can be answered without an agent, provide a di
                     content = content.split("```json")[1].split("```")[0].strip()
                 elif "```" in content:
                     content = content.split("```")[1].split("```")[0].strip()
-
+                content = content.strip(' \n,\t')
                 parsed = json.loads(content)
                 logger.debug(f"✅ [ChatbotNode] Parsed JSON response: ready={parsed.get('ready')}")
 
@@ -473,7 +473,9 @@ if the user request is simple and can be answered without an agent, provide a di
     def process(self, state: GraphState) -> Dict[str, Any]:
         for i in range(self.num_retries + 1):
             try:
-                return self._process(state)
+                ret = self._process(state)
+                # ret["messages"] = ret["messages"][:(-2*i-1)] + [ret["messages"][-1]]
+                return ret
             except (json.JSONDecodeError, KeyError) as e:        
                 # Retry: Send error message to LLM asking for properly formatted JSON
                 response = state["messages"][-1]  # Last AIMessage
