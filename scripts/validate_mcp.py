@@ -34,7 +34,7 @@ from crewai_tools import MCPServerAdapter
 import logging
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -54,13 +54,14 @@ def print_section(text: str):
     print(f"{'-'*80}\n")
 
 
-async def validate_server(server: MCPServer, credentials: dict, timeout: int = 30):
+async def validate_server(server: MCPServer, credentials: dict, timeout: int = 30, test_tools: bool = False):
     """Validate a single MCP server.
 
     Args:
         server: MCP server enum
         credentials: Dictionary of credentials for the server
         timeout: Timeout in seconds for validation
+        test_tools: Whether to actually call tools to validate credentials
 
     Returns:
         Tuple of (success: bool, tools_count: int, error: str)
@@ -82,6 +83,13 @@ async def validate_server(server: MCPServer, credentials: dict, timeout: int = 3
         print(f"   Working Dir: {server_params.cwd}")
         print(f"   Environment vars: {list(server_params.env.keys()) if server_params.env else []}")
 
+        # Print environment variable values for debugging
+        if server_params.env:
+            print(f"\n   🔐 Environment variables being set:")
+            for key, value in server_params.env.items():
+                    print(f"      {key}: {value}")
+            print()
+
         # Try to initialize the server with timeout
         print(f"   Starting MCP server...")
 
@@ -98,6 +106,13 @@ async def validate_server(server: MCPServer, credentials: dict, timeout: int = 3
                         if tool_count > 5:
                             print(f"      ... and {tool_count - 5} more")
 
+                        # Test tools if requested
+                        if test_tools and credentials:
+                            print(f"\n   🧪 Testing tool execution with credentials...")
+                            success = await test_mcp_tool(tools, config['service'], credentials)
+                            if not success:
+                                return False, tool_count, "Tool execution failed (credentials may be invalid)"
+
                     return True, tool_count, None
 
         except asyncio.TimeoutError:
@@ -111,7 +126,62 @@ async def validate_server(server: MCPServer, credentials: dict, timeout: int = 3
         return False, 0, error_msg
 
 
-async def validate_all_servers(customer_id: int = None):
+async def test_mcp_tool(tools, service: str, credentials: dict):
+    """Test a tool to validate credentials work.
+
+    Args:
+        tools: List of MCP tools
+        service: Service name (google_analytics, google_ads, etc.)
+        credentials: Credentials dictionary
+
+    Returns:
+        bool: True if tool execution succeeded
+    """
+    try:
+        if service == "google_analytics":
+            # Try to call get_account_summaries
+            account_tool = next((t for t in tools if "account" in t.name.lower()), None)
+            if account_tool:
+                print(f"      Calling {account_tool.name}...")
+                result = account_tool._run()
+                print(f"      ✅ Tool execution successful")
+                return True
+            else:
+                print(f"      ⚠️  No account tool found to test")
+                return True  # Don't fail if tool not found
+
+        elif service == "google_ads":
+            # Try to list accessible customers
+            customer_tool = next((t for t in tools if "customer" in t.name.lower() or "accessible" in t.name.lower()), None)
+            if customer_tool:
+                print(f"      Calling {customer_tool.name}...")
+                result = customer_tool._run()
+                print(f"      ✅ Tool execution successful")
+                return True
+            else:
+                print(f"      ⚠️  No customer tool found to test")
+                return True
+
+        elif service == "meta_ads":
+            # Try to get account info
+            account_tool = next((t for t in tools if "account" in t.name.lower() or "me" in t.name.lower()), None)
+            if account_tool:
+                print(f"      Calling {account_tool.name}...")
+                result = account_tool._run()
+                print(f"      ✅ Tool execution successful")
+                return True
+            else:
+                print(f"      ⚠️  No account tool found to test")
+                return True
+
+        return True
+
+    except Exception as e:
+        print(f"      ❌ Tool execution failed: {str(e)}")
+        return False
+
+
+async def validate_all_servers(customer_id: int = None, test_tools: bool = False):
     """Validate all configured MCP servers."""
 
     print_header("MCP Server Validation")
@@ -130,11 +200,28 @@ async def validate_all_servers(customer_id: int = None):
         if google_analytics_creds:
             print(f"   ✅ Found Google Analytics credentials")
             print(f"      Property ID: {google_analytics_creds.get('property_id')}")
+            print(f"      Client ID: {google_analytics_creds.get('client_id')}")
+            print(f"      Client Secret: {google_analytics_creds.get('client_secret')[:10]}..." if google_analytics_creds.get('client_secret') else "      Client Secret: None")
+            print(f"      Refresh Token: {google_analytics_creds.get('refresh_token')[:20]}..." if google_analytics_creds.get('refresh_token') else "      Refresh Token: None")
+            print(f"      Access Token: {google_analytics_creds.get('access_token')[:20]}..." if google_analytics_creds.get('access_token') else "      Access Token: None")
+
+            # Print full credentials for debugging (be careful with this in production!)
+            print(f"\n   🔐 FULL CREDENTIALS (for debugging):")
+            for key, value in google_analytics_creds.items():
+                if value and isinstance(value, str) and len(value) > 50:
+                    print(f"      {key}: {value[:30]}...{value[-10:]}")
+                else:
+                    print(f"      {key}: {value}")
         else:
             print(f"   ⚠️  No Google Analytics credentials found")
     else:
         print("ℹ️  No customer ID provided, using environment variables")
         print("   To test with customer credentials, use --customer-id flag")
+
+    if test_tools:
+        print("   🧪 Tool execution testing ENABLED")
+    else:
+        print("   ℹ️  Tool execution testing DISABLED (use --test-tools to enable)")
 
     # Test each service
     results = {}
@@ -143,9 +230,9 @@ async def validate_all_servers(customer_id: int = None):
 
     for server in [MCPServer.GOOGLE_ANALYTICS_OFFICIAL, MCPServer.GOOGLE_ANALYTICS_SURENDRANB]:
         if google_analytics_creds:
-            success, tools, error = await validate_server(server, google_analytics_creds)
+            success, tools, error = await validate_server(server, google_analytics_creds, test_tools=test_tools)
         else:
-            success, tools, error = await validate_server(server, {})
+            success, tools, error = await validate_server(server, {}, test_tools=test_tools)
 
         results[server.value] = {
             "success": success,
@@ -203,7 +290,7 @@ async def validate_all_servers(customer_id: int = None):
     return 0 if failed == 0 else 1
 
 
-async def validate_single_server(server_name: str, customer_id: int = None):
+async def validate_single_server(server_name: str, customer_id: int = None, test_tools: bool = False):
     """Validate a single MCP server."""
 
     print_header(f"MCP Server Validation: {server_name}")
@@ -229,11 +316,24 @@ async def validate_single_server(server_name: str, customer_id: int = None):
     credentials = {}
 
     if customer_id and service == "google_analytics":
+        print(f"📊 Fetching credentials for customer ID: {customer_id}")
         analytics_placeholder = AnalyticsCrewPlaceholder(llm=None)
         credentials = analytics_placeholder._fetch_google_analytics_token(customer_id) or {}
 
+        if credentials:
+            print(f"   ✅ Found credentials")
+            print(f"\n   🔐 FULL CREDENTIALS (for debugging):")
+            for key, value in credentials.items():
+                if value and isinstance(value, str) and len(value) > 50:
+                    print(f"      {key}: {value[:30]}...{value[-10:]}")
+                else:
+                    print(f"      {key}: {value}")
+            print()
+        else:
+            print(f"   ⚠️  No credentials found")
+
     # Validate
-    success, tools, error = await validate_server(server_enum, credentials)
+    success, tools, error = await validate_server(server_enum, credentials, test_tools=test_tools)
 
     print_header("Result")
 
@@ -296,6 +396,12 @@ Examples:
         help="Timeout in seconds for each server (default: 30)"
     )
 
+    parser.add_argument(
+        "--test-tools",
+        action="store_true",
+        help="Actually call MCP tools to validate credentials work"
+    )
+
     args = parser.parse_args()
 
     # List servers
@@ -312,9 +418,9 @@ Examples:
 
     # Validate specific server or all servers
     if args.server:
-        exit_code = asyncio.run(validate_single_server(args.server, args.customer_id))
+        exit_code = asyncio.run(validate_single_server(args.server, args.customer_id, args.test_tools))
     else:
-        exit_code = asyncio.run(validate_all_servers(args.customer_id))
+        exit_code = asyncio.run(validate_all_servers(args.customer_id, args.test_tools))
 
     sys.exit(exit_code)
 

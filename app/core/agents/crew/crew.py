@@ -34,17 +34,17 @@ class AnalyticsCrew:
 
     def __init__(self):
         # Initialize LLM
-        self.llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.3,
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
-
-        # self.llm = LLM(
-        #     model="gemini/gemini-2.5-flash",
-        #     api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
-        #     temperature=0.1
+        # self.llm = ChatOpenAI(
+        #     model="gpt-4o",
+        #     temperature=0.3,
+        #     api_key=os.getenv("OPENAI_API_KEY")
         # )
+
+        self.llm = LLM(
+            model="gemini/gemini-2.5-flash",
+            api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+            temperature=0.1
+        )
 
         # Initialize agent factory
         self.agents_factory = AnalyticsAgents(self.llm)
@@ -385,13 +385,13 @@ class AnalyticsCrew:
                 tasks.append(google_task)
                 specialist_tasks.append(google_task)
 
-            # Create synthesis task for master agent
-            synthesis_task = self.tasks_factory.create_synthesis_task(
-                agent=master_agent,
-                task_details=task_details,
-                context=specialist_tasks  # Master agent gets specialist outputs
-            )
-            tasks.append(synthesis_task)
+            # # Create synthesis task for master agent
+            # synthesis_task = self.tasks_factory.create_synthesis_task(
+            #     agent=master_agent,
+            #     task_details=task_details,
+            #     context=specialist_tasks  # Master agent gets specialist outputs
+            # )
+            # tasks.append(synthesis_task)
 
             # Create callbacks for session recording
             callbacks = CrewCallbacks(recorder)
@@ -409,6 +409,7 @@ class AnalyticsCrew:
                 process=Process.hierarchical,
                 manager_agent=master_agent,
                 verbose=True,
+                planning=True,
                 # Note: CrewAI callbacks - task_callback called after each task completes
                 task_callback=callbacks.task_callback,
                 # step_callback=callbacks.step_callback,  # Uncomment if needed (can be verbose)

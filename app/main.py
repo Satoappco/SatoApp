@@ -77,9 +77,12 @@ def create_app() -> FastAPI:
     async def log_requests(request: Request, call_next):
         # Log incoming API requests and responses
         start_time = time.time()
+        # Print directly to stdout for immediate visibility
+        # print(f"🌐 REQUEST: {request.method} {request.url.path} Query: {dict(request.query_params)}")
         logger.debug(f"📥 {request.method} {request.url.path} - Query: {dict(request.query_params)} - Client: {request.client.host if request.client else 'unknown'}")
         response = await call_next(request)
         process_time = time.time() - start_time
+        # print(f"🌐 RESPONSE: {request.method} {request.url.path} Status: {response.status_code} Time: {process_time:.3f}s")
         logger.debug(f"📤 {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
         return response
 

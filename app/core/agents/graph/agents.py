@@ -10,7 +10,9 @@ from .sql_agent import SQLBasicInfoAgent
 from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType
 from app.core.base.encryption_service import BaseEncryptionService
+from app.services.google_ads_service import GoogleAdsService
 
+google_ads_service = GoogleAdsService()
 logger = logging.getLogger(__name__)
 
 class AnalyticsCrewPlaceholder:
@@ -113,7 +115,7 @@ class AnalyticsCrewPlaceholder:
 
                 # Decrypt the tokens
                 try:
-                    refresh_token = encryption_service.decrypt_token(connection.refresh_token_enc)
+                    refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc) #encryption_service.decrypt_token(connection.refresh_token_enc)
                 except Exception as decrypt_error:
                     logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt refresh_token: {decrypt_error}")
                     # Try using the token as-is (might be plain text or need re-encryption)
