@@ -39,6 +39,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# load environment variables from ../.env file if it exists
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 def print_header(text: str):
     """Print a formatted header."""
@@ -73,6 +76,7 @@ async def validate_server(server: MCPServer, credentials: dict, timeout: int = 3
     print(f"🔍 Validating {config['name']}...")
     print(f"   Description: {config['description']}")
     print(f"   Service: {config['service']}")
+    print(f"   Credentials: {credentials.keys() if credentials else 'None'}")
 
     try:
         # Build server parameters
@@ -98,13 +102,13 @@ async def validate_server(server: MCPServer, credentials: dict, timeout: int = 3
                 with MCPServerAdapter([server_params]) as tools:
                     tool_count = len(tools)
                     print(f"   ✅ Success! Loaded {tool_count} tools")
-
+                    show_max_cnt = 10
                     if tool_count > 0:
                         print(f"   📋 Available tools:")
-                        for i, tool in enumerate(tools[:5], 1):  # Show first 5 tools
+                        for i, tool in enumerate(tools[:show_max_cnt], 1):  # Show first 5 tools
                             print(f"      {i}. {tool.name}")
-                        if tool_count > 5:
-                            print(f"      ... and {tool_count - 5} more")
+                        if tool_count > show_max_cnt:
+                            print(f"      ... and {tool_count - show_max_cnt} more")
 
                         # Test tools if requested
                         if test_tools and credentials:
@@ -181,7 +185,7 @@ async def test_mcp_tool(tools, service: str, credentials: dict):
         return False
 
 
-async def validate_all_servers(customer_id: int = None, test_tools: bool = False):
+async def validate_all_servers(campaigner_id: int, customer_id: int = None, test_tools: bool = False):
     """Validate all configured MCP servers."""
 
     print_header("MCP Server Validation")
@@ -192,10 +196,12 @@ async def validate_all_servers(customer_id: int = None, test_tools: bool = False
     meta_ads_creds = None
 
     if customer_id:
-        print(f"📊 Fetching credentials for customer ID: {customer_id}")
+        print(f"📊 Fetching credentials for customer ID: {customer_id}, campaigner_id: {campaigner_id}")
         # Use the same method as AnalyticsCrew
         analytics_placeholder = AnalyticsCrewPlaceholder(llm=None)
-        google_analytics_creds = analytics_placeholder._fetch_google_analytics_token(customer_id)
+        google_analytics_creds = analytics_placeholder._fetch_google_analytics_token(customer_id, campaigner_id)
+        google_ads_creds = analytics_placeholder._fetch_google_ads_token(customer_id, campaigner_id)
+        meta_ads_creds = analytics_placeholder._fetch_meta_ads_token(customer_id, campaigner_id)
 
         if google_analytics_creds:
             print(f"   ✅ Found Google Analytics credentials")
@@ -214,6 +220,21 @@ async def validate_all_servers(customer_id: int = None, test_tools: bool = False
                     print(f"      {key}: {value}")
         else:
             print(f"   ⚠️  No Google Analytics credentials found")
+
+        if google_ads_creds:
+            print(f"\n   ✅ Found Google Ads credentials")
+            print(f"      Customer ID: {google_ads_creds.get('customer_id')}")
+            print(f"      Developer Token: {google_ads_creds.get('developer_token')[:10]}..." if google_ads_creds.get('developer_token') else "      Developer Token: None")
+            print(f"      Refresh Token: {google_ads_creds.get('refresh_token')[:20]}..." if google_ads_creds.get('refresh_token') else "      Refresh Token: None")
+        else:
+            print(f"   ⚠️  No Google Ads credentials found")
+
+        if meta_ads_creds:
+            print(f"\n   ✅ Found Facebook/Meta Ads credentials")
+            print(f"      Ad Account ID: {meta_ads_creds.get('ad_account_id')}")
+            print(f"      Access Token: {meta_ads_creds.get('access_token')[:20]}..." if meta_ads_creds.get('access_token') else "      Access Token: None")
+        else:
+            print(f"   ⚠️  No Facebook/Meta Ads credentials found")
     else:
         print("ℹ️  No customer ID provided, using environment variables")
         print("   To test with customer credentials, use --customer-id flag")
@@ -244,7 +265,7 @@ async def validate_all_servers(customer_id: int = None, test_tools: bool = False
     if google_ads_creds:
         print_section("Testing Google Ads MCP Servers")
         for server in [MCPServer.GOOGLE_ADS_OFFICIAL]:
-            success, tools, error = await validate_server(server, google_ads_creds)
+            success, tools, error = await validate_server(server, google_ads_creds, test_tools=test_tools)
             results[server.value] = {
                 "success": success,
                 "tools": tools,
@@ -254,7 +275,7 @@ async def validate_all_servers(customer_id: int = None, test_tools: bool = False
     # Meta Ads (skip if no credentials)
     if meta_ads_creds:
         print_section("Testing Meta Ads MCP Servers")
-        success, tools, error = await validate_server(MCPServer.META_ADS, meta_ads_creds)
+        success, tools, error = await validate_server(MCPServer.META_ADS, meta_ads_creds, test_tools=test_tools)
         results[MCPServer.META_ADS.value] = {
             "success": success,
             "tools": tools,
@@ -290,7 +311,7 @@ async def validate_all_servers(customer_id: int = None, test_tools: bool = False
     return 0 if failed == 0 else 1
 
 
-async def validate_single_server(server_name: str, customer_id: int = None, test_tools: bool = False):
+async def validate_single_server(server_name: str, campaigner_id: int, customer_id: int = None, test_tools: bool = False):
     """Validate a single MCP server."""
 
     print_header(f"MCP Server Validation: {server_name}")
@@ -308,29 +329,36 @@ async def validate_single_server(server_name: str, customer_id: int = None, test
         for server in MCPServer:
             print(f"   • {server.value}")
         return 1
-
+    
+    print(f"🔍 Validating server: {server_enum.value}")
     # Get credentials
     config = MCPServerConfig.REGISTRY.get(server_enum)
     service = config["service"]
 
     credentials = {}
 
-    if customer_id and service == "google_analytics":
-        print(f"📊 Fetching credentials for customer ID: {customer_id}")
+    if customer_id:
+        print(f"📊 Fetching credentials for customer ID: {customer_id}, campaigner_id: {campaigner_id}")
         analytics_placeholder = AnalyticsCrewPlaceholder(llm=None)
-        credentials = analytics_placeholder._fetch_google_analytics_token(customer_id) or {}
+
+        if service == "google_analytics":
+            credentials = analytics_placeholder._fetch_google_analytics_token(customer_id, campaigner_id) or {}
+        elif service == "google_ads":
+            credentials = analytics_placeholder._fetch_google_ads_token(customer_id, campaigner_id) or {}
+        elif service == "meta_ads":
+            credentials = analytics_placeholder._fetch_meta_ads_token(customer_id, campaigner_id) or {}
 
         if credentials:
-            print(f"   ✅ Found credentials")
+            print(f"   ✅ Found {service} credentials")
             print(f"\n   🔐 FULL CREDENTIALS (for debugging):")
             for key, value in credentials.items():
-                if value and isinstance(value, str) and len(value) > 50:
+                if value and isinstance(value, str) and len(value) > 100:
                     print(f"      {key}: {value[:30]}...{value[-10:]}")
                 else:
                     print(f"      {key}: {value}")
             print()
         else:
-            print(f"   ⚠️  No credentials found")
+            print(f"   ⚠️  No {service} credentials found")
 
     # Validate
     success, tools, error = await validate_server(server_enum, credentials, test_tools=test_tools)
@@ -382,6 +410,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--campaigner-id",
+        "-i",
+        type=int,
+        help="Campaigner ID to fetch credentials from database"
+    )
+
+    parser.add_argument(
         "--list",
         "-l",
         action="store_true",
@@ -418,9 +453,9 @@ Examples:
 
     # Validate specific server or all servers
     if args.server:
-        exit_code = asyncio.run(validate_single_server(args.server, args.customer_id, args.test_tools))
+        exit_code = asyncio.run(validate_single_server(args.server, args.campaigner_id, args.customer_id, args.test_tools))
     else:
-        exit_code = asyncio.run(validate_all_servers(args.customer_id, args.test_tools))
+        exit_code = asyncio.run(validate_all_servers(args.campaigner_id, args.customer_id, args.test_tools))
 
     sys.exit(exit_code)
 

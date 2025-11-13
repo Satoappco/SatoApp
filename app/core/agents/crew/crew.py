@@ -11,8 +11,8 @@ import logging
 
 from .agents import AnalyticsAgents
 from .tasks import AnalyticsTasks
-from .mcp_registry import MCPSelector, MCPServer
 from .session_recorder import SessionRecorder, CrewCallbacks
+from ..mcp_clients.mcp_registry import MCPSelector, MCPServer
 from ..mcp_clients.facebook_client import FacebookMCPClient
 from ..mcp_clients.google_client import GoogleMCPClient
 from app.config.langfuse_config import LangfuseConfig

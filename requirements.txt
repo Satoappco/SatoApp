@@ -40,6 +40,7 @@ uv==0.9.4
 
 # Utilities
 httpx==0.28.1
+httpx-sse==0.4.3
 tenacity==9.0.0
 
 # Observability

@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     parallel_specialists: bool = True
     cache_specialist_results: bool = True
     cache_ttl_seconds: int = 3600
+
+    # Analytics Agent Configuration
+    # Options: "crew" (multi-agent CrewAI) or "single" (single agent with all MCP tools)
+    analytics_agent_type: str = "crew"
     
     # Performance Configuration
     max_concurrent_analyses: int = 10

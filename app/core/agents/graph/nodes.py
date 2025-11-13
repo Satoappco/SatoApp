@@ -298,7 +298,6 @@ if the user request is simple and can be answered without an agent, provide a di
 {customer_info}
 """
 
-
     def _process(self, state: GraphState) -> Dict[str, Any]:
         """Process the conversation and determine next steps.
 
@@ -340,10 +339,11 @@ if the user request is simple and can be answered without an agent, provide a di
             campaigner_info_str = self._format_campaigner_info(comprehensive_info)
         except Exception as e:
             logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
+        logger.debug(f"🏪 [ChatbotNode] campaigner_info_str: {campaigner_info_str}")
 
         # Fetch and format customer info
         customer_info_str = self._format_customer_info(customer_id, campaigner.id)
-        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str[:100]}...")
+        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str}")
 
         # Format system prompt with campaigner and customer info
         self.formatted_system_prompt = self.system_prompt.format(
