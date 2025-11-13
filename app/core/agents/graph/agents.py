@@ -6,17 +6,12 @@ import asyncio
 from langchain_core.language_models import BaseChatModel
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
-from sqlmodel import select
 from ..crew.crew import AnalyticsCrew
 from .sql_agent import SQLBasicInfoAgent
-from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection, AssetType
-# from app.core.base.encryption_service import BaseEncryptionService
-from app.services.google_ads_service import GoogleAdsService
+from ..customer_credentials import CustomerCredentialManager
 from ..mcp_clients.google_client import GoogleMCPClient
 from ..mcp_clients.facebook_client import FacebookMCPClient
 
-google_ads_service = GoogleAdsService()
 logger = logging.getLogger(__name__)
 
 class AnalyticsCrewPlaceholder:
@@ -30,6 +25,7 @@ class AnalyticsCrewPlaceholder:
         self.llm = llm
         self.analytics_crew = AnalyticsCrew()
         self.trace = None  # Will be set by AgentExecutorNode
+        self.credential_manager = CustomerCredentialManager()
 
     def set_trace(self, trace):
         """Set the LangFuse trace for this agent."""
@@ -44,39 +40,7 @@ class AnalyticsCrewPlaceholder:
         Returns:
             List of platform names (e.g., ["google", "facebook"])
         """
-        platforms = []
-        try:
-            with get_session() as session:
-                # Get digital assets for this customer
-                digital_assets = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.is_active == True
-                    )
-                ).all()
-
-                # Extract unique platforms from asset_type and provider
-                platform_set = set()
-                for asset in digital_assets:
-                    # Check asset type to determine platform
-                    asset_type_str = asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type)
-                    provider = asset.provider.lower() if asset.provider else ""
-
-                    # Map asset types to platforms
-                    if asset_type_str in ["GA4", "GOOGLE_ADS", "GOOGLE_ADS_CAPS"]:
-                        platform_set.add("google")
-                    elif asset_type_str in ["FACEBOOK_ADS", "FACEBOOK_ADS_CAPS"] or "facebook" in provider or "meta" in provider:
-                        platform_set.add("facebook")
-
-                platforms = list(platform_set)
-                logger.info(f"📊 [AnalyticsCrew] Customer {customer_id} platforms: {platforms}")
-
-        except Exception as e:
-            logger.warning(f"⚠️  [AnalyticsCrew] Failed to fetch platforms for customer {customer_id}: {e}")
-            # Fallback to default platforms
-            platforms = ["google"]
-
-        return platforms
+        return self.credential_manager.fetch_customer_platforms(customer_id)
 
     def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
         """Fetch customer's Google Analytics refresh token and property ID.
@@ -87,93 +51,7 @@ class AnalyticsCrewPlaceholder:
         Returns:
             Dictionary with 'refresh_token', 'property_id', 'client_id', 'client_secret' or None
         """
-        try:
-            # encryption_service = BaseEncryptionService()
-
-            with get_session() as session:
-                # First, get Google Analytics digital asset for this customer
-                ga_asset = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.GA4,
-                        DigitalAsset.is_active == True
-                    )
-                ).first()
-
-                if not ga_asset:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No GA4 digital asset found for customer {customer_id}")
-                    return None
-
-                # Get the connection for this digital asset
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == ga_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
-                    )
-                ).first()
-
-                if not connection or not connection.refresh_token_enc:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No active connection or refresh token found for GA4 asset {ga_asset.id}")
-                    return None
-
-                # Decrypt the tokens
-                try:
-                    refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc) #encryption_service.decrypt_token(connection.refresh_token_enc)
-                except Exception as decrypt_error:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt refresh_token: {decrypt_error}")
-                    # Try using the token as-is (might be plain text or need re-encryption)
-                    refresh_token = connection.refresh_token_enc
-                    if isinstance(refresh_token, bytes):
-                        try:
-                            # Try decoding bytes to string
-                            refresh_token = refresh_token.decode('utf-8')
-                        except Exception:
-                            logger.error(f"❌ [AnalyticsCrew] Cannot decode refresh_token bytes")
-                            return None
-
-                access_token = None
-                if connection.access_token_enc:
-                    try:
-                        access_token = google_ads_service._decrypt_token(connection.access_token_enc)
-                    except Exception as decrypt_error:
-                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt access_token: {decrypt_error}")
-                        # Access token is optional, can continue without it
-                        access_token = None
-
-                # Extract property_id from digital asset meta field
-                property_id = ga_asset.meta.get("property_id") if ga_asset.meta else None
-
-                if not property_id:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No property_id found in GA4 asset meta for customer {customer_id}")
-                    return None
-
-                # Get OAuth client credentials from environment
-                # These are the same for all Google API connections
-                import os
-                client_id = os.getenv("GOOGLE_CLIENT_ID")
-                client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-
-                if not client_id or not client_secret:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in environment")
-
-                logger.info(f"✅ [AnalyticsCrew] Found GA4 credentials for customer {customer_id}, property: {property_id}")
-
-                return {
-                    "refresh_token": refresh_token,
-                    "property_id": property_id,
-                    "access_token": access_token,
-                    "client_id": client_id,
-                    "client_secret": client_secret
-                }
-
-        except Exception as e:
-            logger.warning(f"⚠️  [AnalyticsCrew] Failed to fetch GA token for customer {customer_id}: {e}")
-            import traceback
-            logger.warning(f"   Traceback: {traceback.format_exc()}")
-
-        return None
+        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
 
     def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
         """Fetch customer's Google Ads credentials.
@@ -185,74 +63,7 @@ class AnalyticsCrewPlaceholder:
         Returns:
             Dictionary with 'refresh_token', 'customer_id', 'client_id', 'client_secret' or None
         """
-        try:
-            with get_session() as session:
-                # Get Google Ads digital asset for this customer
-                gads_asset = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                        DigitalAsset.is_active == True
-                    )
-                ).first()
-
-                if not gads_asset:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No Google Ads digital asset found for customer {customer_id}")
-                    return None
-
-                # Get the connection for this digital asset
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == gads_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
-                    )
-                ).first()
-
-                if not connection or not connection.refresh_token_enc:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No active connection for Google Ads asset")
-                    return None
-
-                # Decrypt the tokens
-                try:
-                    refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc)
-                except Exception as decrypt_error:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt refresh_token: {decrypt_error}")
-                    return None
-
-                # Extract customer_id from digital asset meta field
-                gads_customer_id = gads_asset.meta.get("customer_id") if gads_asset.meta else None
-
-                if not gads_customer_id:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No customer_id in Google Ads asset meta")
-                    return None
-
-                # Get OAuth client credentials from environment
-                import os
-                client_id = os.getenv("GOOGLE_CLIENT_ID")
-                client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-                developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN")
-
-                if not client_id or not client_secret or not developer_token:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Missing Google Ads environment credentials")
-
-                logger.info(f"✅ [AnalyticsCrew] Found Google Ads credentials, customer: {gads_customer_id}")
-
-                return {
-                    "refresh_token": refresh_token,
-                    "customer_id": gads_customer_id,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "developer_token": developer_token
-                }
-
-        except Exception as e:
-            logger.warning(f"⚠️  [AnalyticsCrew] Failed to fetch Google Ads token: {e}")
-            import traceback
-            logger.warning(f"   Traceback: {traceback.format_exc()}")
-
-        return None
+        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
 
     def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
         """Fetch customer's Facebook/Meta Ads access token.
@@ -264,63 +75,7 @@ class AnalyticsCrewPlaceholder:
         Returns:
             Dictionary with 'access_token', 'ad_account_id' or None
         """
-        try:
-            with get_session() as session:
-                # Get Facebook Ads digital asset for this customer
-                fb_asset = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.FACEBOOK_ADS,
-                        Connection.campaigner_id == campaigner_id,
-                        DigitalAsset.is_active == True
-                    )
-                ).first()
-
-                if not fb_asset:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No Facebook Ads digital asset found for customer {customer_id}")
-                    return None
-
-                # Get the connection for this digital asset
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == fb_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
-                    )
-                ).first()
-
-                if not connection or not connection.access_token_enc:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No active connection for Facebook Ads asset")
-                    return None
-
-                # Decrypt the access token
-                try:
-                    access_token = google_ads_service._decrypt_token(connection.access_token_enc)
-                except Exception as decrypt_error:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to decrypt access_token: {decrypt_error}")
-                    return None
-
-                # Extract ad_account_id from digital asset meta field
-                ad_account_id = fb_asset.meta.get("ad_account_id") if fb_asset.meta else None
-
-                if not ad_account_id:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No ad_account_id in Facebook Ads asset meta")
-                    return None
-
-                logger.info(f"✅ [AnalyticsCrew] Found Facebook Ads credentials, account: {ad_account_id}")
-
-                return {
-                    "access_token": access_token,
-                    "ad_account_id": ad_account_id
-                }
-
-        except Exception as e:
-            logger.warning(f"⚠️  [AnalyticsCrew] Failed to fetch Facebook Ads token: {e}")
-            import traceback
-            logger.warning(f"   Traceback: {traceback.format_exc()}")
-
-        return None
+        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an analytics task using the AnalyticsCrew.
@@ -451,6 +206,7 @@ class SingleAnalyticsAgent:
         self.trace = None  # Will be set by AgentExecutorNode
         self.google_client: Optional[GoogleMCPClient] = None
         self.facebook_client: Optional[FacebookMCPClient] = None
+        self.credential_manager = CustomerCredentialManager()
 
     def set_trace(self, trace):
         """Set the LangFuse trace for this agent."""
@@ -458,95 +214,19 @@ class SingleAnalyticsAgent:
 
     def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
         """Fetch customer's enabled platforms from digital_assets table."""
-        platforms = []
-        try:
-            with get_session() as session:
-                digital_assets = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.is_active == True
-                    )
-                ).all()
-
-                platform_set = set()
-                for asset in digital_assets:
-                    asset_type_str = asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type)
-                    provider = asset.provider.lower() if asset.provider else ""
-
-                    if asset_type_str in ["GA4", "GOOGLE_ADS", "GOOGLE_ADS_CAPS"]:
-                        platform_set.add("google")
-                    elif asset_type_str in ["FACEBOOK_ADS", "FACEBOOK_ADS_CAPS"] or "facebook" in provider or "meta" in provider:
-                        platform_set.add("facebook")
-
-                platforms = list(platform_set)
-                logger.info(f"📊 [SingleAnalyticsAgent] Customer {customer_id} platforms: {platforms}")
-
-        except Exception as e:
-            logger.warning(f"⚠️  [SingleAnalyticsAgent] Failed to fetch platforms for customer {customer_id}: {e}")
-            platforms = ["google"]
-
-        return platforms
+        return self.credential_manager.fetch_customer_platforms(customer_id)
 
     def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
         """Fetch customer's Google Analytics refresh token and property ID."""
-        try:
-            with get_session() as session:
-                ga_asset = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.GA4,
-                        DigitalAsset.is_active == True
-                    )
-                ).first()
+        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
 
-                if not ga_asset:
-                    logger.warning(f"⚠️  [SingleAnalyticsAgent] No GA4 asset found for customer {customer_id}")
-                    return None
+    def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Ads credentials."""
+        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
 
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == ga_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
-                    )
-                ).first()
-
-                if not connection or not connection.refresh_token_enc:
-                    logger.warning(f"⚠️  [SingleAnalyticsAgent] No active connection for GA4 asset")
-                    return None
-
-                try:
-                    refresh_token = google_ads_service._decrypt_token(connection.refresh_token_enc)
-                except Exception as decrypt_error:
-                    logger.warning(f"⚠️  [SingleAnalyticsAgent] Failed to decrypt refresh_token: {decrypt_error}")
-                    return None
-
-                property_id = ga_asset.meta.get("property_id") if ga_asset.meta else None
-                if not property_id:
-                    logger.warning(f"⚠️  [SingleAnalyticsAgent] No property_id in GA4 asset meta")
-                    return None
-
-                import os
-                client_id = os.getenv("GOOGLE_CLIENT_ID")
-                client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-
-                if not client_id or not client_secret:
-                    logger.warning(f"⚠️  [SingleAnalyticsAgent] Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET")
-
-                logger.info(f"✅ [SingleAnalyticsAgent] Found GA4 credentials, property: {property_id}")
-
-                return {
-                    "refresh_token": refresh_token,
-                    "property_id": property_id,
-                    "client_id": client_id,
-                    "client_secret": client_secret
-                }
-
-        except Exception as e:
-            logger.warning(f"⚠️  [SingleAnalyticsAgent] Failed to fetch GA token: {e}")
-
-        return None
+    def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Facebook/Meta Ads access token."""
+        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
     async def _initialize_mcp_clients(self, task_details: Dict[str, Any]):
         """Initialize and connect MCP clients for enabled platforms.
@@ -579,6 +259,8 @@ class SingleAnalyticsAgent:
                 except Exception as e:
                     logger.error(f"❌ [SingleAnalyticsAgent] Failed to initialize Google MCP: {e}")
                     self.google_client = None
+            else:
+                logger.error("⚠️  [SingleAnalyticsAgent] No Google credentials provided, skipping Google MCP initialization")
 
         # Initialize Facebook MCP client if Facebook platform is enabled
         if "facebook" in platforms:
@@ -597,6 +279,8 @@ class SingleAnalyticsAgent:
                 except Exception as e:
                     logger.error(f"❌ [SingleAnalyticsAgent] Failed to initialize Facebook MCP: {e}")
                     self.facebook_client = None
+            else:
+                logger.error("⚠️  [SingleAnalyticsAgent] No Facebook credentials provided, skipping Facebook MCP initialization")
 
     async def _disconnect_mcp_clients(self):
         """Disconnect all MCP clients."""
@@ -816,8 +500,18 @@ Important: Use the tools available to you to fetch real data before providing in
         Returns:
             Dictionary containing the analytics results
         """
-        # Run async execution in event loop
-        return asyncio.run(self._execute_async(task))
+        # Check if there's already a running event loop
+        try:
+            asyncio.get_running_loop()
+            # We're in an async context, but execute() is sync
+            # Use asyncio to run the coroutine in a new thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._execute_async(task))
+                return future.result()
+        except RuntimeError:
+            # No running event loop, create a new one
+            return asyncio.run(self._execute_async(task))
 
 
 def get_agent(agent_name: str, llm: BaseChatModel):

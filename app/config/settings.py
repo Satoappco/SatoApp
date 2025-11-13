@@ -75,7 +75,7 @@ class Settings(BaseSettings):
 
     # Analytics Agent Configuration
     # Options: "crew" (multi-agent CrewAI) or "single" (single agent with all MCP tools)
-    analytics_agent_type: str = "crew"
+    analytics_agent_type: str = "single"
     
     # Performance Configuration
     max_concurrent_analyses: int = 10

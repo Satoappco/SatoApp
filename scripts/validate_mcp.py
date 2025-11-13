@@ -28,7 +28,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.agents.crew.mcp_registry import MCPSelector, MCPServer, MCPServerConfig
+from app.core.agents.mcp_clients.mcp_registry import MCPSelector, MCPServer, MCPServerConfig
 from app.core.agents.graph.agents import AnalyticsCrewPlaceholder
 from crewai_tools import MCPServerAdapter
 import logging
@@ -148,6 +148,7 @@ async def test_mcp_tool(tools, service: str, credentials: dict):
             if account_tool:
                 print(f"      Calling {account_tool.name}...")
                 result = account_tool._run()
+                print(f"      Result: {result}")
                 print(f"      ✅ Tool execution successful")
                 return True
             else:
@@ -160,6 +161,7 @@ async def test_mcp_tool(tools, service: str, credentials: dict):
             if customer_tool:
                 print(f"      Calling {customer_tool.name}...")
                 result = customer_tool._run()
+                print(f"      Result: {result}")
                 print(f"      ✅ Tool execution successful")
                 return True
             else:
@@ -172,6 +174,7 @@ async def test_mcp_tool(tools, service: str, credentials: dict):
             if account_tool:
                 print(f"      Calling {account_tool.name}...")
                 result = account_tool._run()
+                print(f"      Result: {result}")
                 print(f"      ✅ Tool execution successful")
                 return True
             else:
