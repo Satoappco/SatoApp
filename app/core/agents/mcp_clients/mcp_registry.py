@@ -131,7 +131,7 @@ class MCPServerConfig:
             "args": ["-m", "meta_ads_mcp"],  # Run the module
             "service": "meta_ads",
             "working_directory": str(MCPS_DIR / "meta-ads-mcp"),
-            "requires_credentials": ["access_token"],
+            "requires_credentials": ["access_token", "app_id", "app_secret", "ad_account_id"],
             "env_mapping": {
                 "access_token": "FACEBOOK_ACCESS_TOKEN",
                 "app_id": "FACEBOOK_APP_ID",

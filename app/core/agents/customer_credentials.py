@@ -7,6 +7,7 @@ from sqlmodel import select
 from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType
 from app.services.google_ads_service import GoogleAdsService
+from app.services.facebook_service import FacebookService
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class CustomerCredentialManager:
     def __init__(self):
         """Initialize the credential manager."""
         self.google_ads_service = GoogleAdsService()
-
+        self.facebook_ads_service = FacebookService()
     def fetch_customer_platforms(self, customer_id: int) -> List[str]:
         """Fetch customer's enabled platforms from digital_assets table.
 
@@ -263,8 +264,9 @@ class CustomerCredentialManager:
                     return None
 
                 # Decrypt the access token
+                access_token = None
                 try:
-                    access_token = self.google_ads_service._decrypt_token(connection.access_token_enc)
+                    access_token = self.facebook_ads_service._decrypt_token(connection.access_token_enc)
                 except Exception as decrypt_error:
                     logger.warning(f"⚠️  [CredentialManager] Failed to decrypt access_token: {decrypt_error}")
                     return None
@@ -277,7 +279,10 @@ class CustomerCredentialManager:
                     return None
 
                 logger.info(f"✅ [CredentialManager] Found Facebook Ads credentials, account: {ad_account_id}")
-
+                # from app.services.campaign_sync_service import CampaignSyncService
+                # sync_service = CampaignSyncService()
+                # res = sync_service.fetch_facebook_campaign_metrics(campaign_id, connection, fb_asset)
+                # logger.info(f"✅ [CredentialManager] RES: {res}")
                 return {
                     "access_token": access_token,
                     "ad_account_id": ad_account_id

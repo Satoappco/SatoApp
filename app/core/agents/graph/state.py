@@ -22,6 +22,7 @@ class GraphState(MessagesState):
 
     # Error handling
     error: Optional[str]
+    agent_error: Optional[str]  # Agent-specific error message for routing back to chatbot
 
     # User context (for authorization and data filtering)
     campaigner: Campaigner # ID of the authenticated campaigner

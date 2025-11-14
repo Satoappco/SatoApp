@@ -309,6 +309,22 @@ if the user request is simple and can be answered without an agent, provide a di
         """
         logger.info(f"🤖 [ChatbotNode] Processing conversation. current_state: {state}")
 
+        # Check if we're handling an agent error
+        if state.get("agent_error"):
+            logger.warning(f"⚠️  [ChatbotNode] Handling agent error: {state.get('agent_error')}")
+
+            # Get the error message that's already user-friendly
+            error_message = state.get("agent_error")
+
+            # Clear the agent_error flag and respond to user
+            return {
+                "messages": state["messages"] + [AIMessage(content=error_message)],
+                "agent_error": None,  # Clear the error flag
+                "next_agent": None,  # Clear next_agent to prevent loop
+                "needs_clarification": False,
+                "conversation_complete": True  # End conversation after showing error
+            }
+
         # Create Langfuse trace for this conversation turn
         langfuse = LangfuseConfig.get_client()
         if langfuse:
@@ -742,7 +758,31 @@ class AgentExecutorNode:
             result = agent.execute(task)
             logger.info(f"✅ [AgentExecutor] Agent {agent_name} completed. Status: {result.get('status')}")
 
-            # Format response message
+            # Check if agent returned error status
+            if result.get("status") == "error":
+                logger.warning(f"⚠️  [AgentExecutor] Agent {agent_name} returned error status")
+
+                # Get user-friendly error message from result
+                error_message = result.get("result", result.get("message", "An error occurred"))
+
+                # Update generation with error
+                if generation:
+                    generation.update(
+                        output={"error": error_message, "status": "error"},
+                        level="WARNING",
+                        metadata={"agent_error": True, "error_type": result.get("error_type")}
+                    )
+
+                # Return state that will route back to chatbot with error context
+                return {
+                    "agent_result": result,
+                    "agent_error": error_message,  # Special flag for routing
+                    "messages": state["messages"],  # Don't add message yet - let chatbot handle it
+                    "conversation_complete": False,  # Keep conversation active
+                    "error": None  # Don't set error - we want chatbot to handle it gracefully
+                }
+
+            # Format response message for successful completion
             response_message = self._format_agent_response(result)
 
             # Safe preview of response (handle both string and CrewOutput)

@@ -112,7 +112,16 @@ class ConversationWorkflow:
             }
         )
 
-        workflow.add_edge("execute_agent", END)
+        # Add conditional routing from execute_agent
+        workflow.add_conditional_edges(
+            "execute_agent",
+            self._route_from_agent,
+            {
+                "chatbot": "chatbot",  # Route back to chatbot if agent had error
+                "end": END  # End if agent completed successfully
+            }
+        )
+
         workflow.add_edge("handle_error", END)
 
         return workflow
@@ -143,6 +152,26 @@ class ConversationWorkflow:
 
         logger.info("🔀 [Workflow] Routing to: clarify (default)")
         return "clarify"
+
+    def _route_from_agent(
+        self, state: GraphState
+    ) -> Literal["chatbot", "end"]:
+        """Route from agent executor node based on state.
+
+        Args:
+            state: Current graph state
+
+        Returns:
+            Next node to execute
+        """
+        # Check if agent returned an error
+        if state.get("agent_error"):
+            logger.warning("🔀 [Workflow] Agent error detected, routing back to: chatbot")
+            return "chatbot"
+
+        # Normal completion - end workflow
+        logger.info("🔀 [Workflow] Agent completed successfully, routing to: END")
+        return "end"
 
     def process_message(self, message: str) -> dict:
         """Process a user message and return the updated state.
@@ -334,7 +363,7 @@ def build_graph():
     # Set entry point
     workflow.set_entry_point("chatbot")
 
-    # Routing function
+    # Routing functions
     def route_from_chatbot(
         state: GraphState
     ) -> Literal["execute_agent", "clarify", "error"]:
@@ -347,6 +376,14 @@ def build_graph():
             return "execute_agent"
         return "clarify"
 
+    def route_from_agent(
+        state: GraphState
+    ) -> Literal["chatbot", "end"]:
+        """Route from agent executor node based on state."""
+        if state.get("agent_error"):
+            return "chatbot"
+        return "end"
+
     # Add edges
     workflow.add_conditional_edges(
         "chatbot",
@@ -358,7 +395,15 @@ def build_graph():
         }
     )
 
-    workflow.add_edge("execute_agent", END)
+    workflow.add_conditional_edges(
+        "execute_agent",
+        route_from_agent,
+        {
+            "chatbot": "chatbot",
+            "end": END
+        }
+    )
+
     workflow.add_edge("handle_error", END)
 
     # Compile and return
