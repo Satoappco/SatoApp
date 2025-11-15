@@ -169,7 +169,8 @@ IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
 
 # Build image without cache from the parent directory (SatoApp/)
 cd ..
-gcloud builds submit --tag $IMAGE_NAME --no-cache
+gcloud builds submit --tag $IMAGE_NAME 
+# --no-cache
 cd scripts
 
 if [ $? -ne 0 ]; then
