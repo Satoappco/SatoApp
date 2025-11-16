@@ -366,19 +366,108 @@ class SingleAnalyticsAgent:
 
         # Wrap the coroutine method (this is what arun actually calls)
         async def wrapped_coroutine(*args, **kwargs):
-            """Wrapped coroutine that coerces types."""
-            logger.info(f"🔧 [TypeCoercion] Intercepted coroutine for '{getattr(tool, 'name', 'unknown')}' with kwargs keys: {list(kwargs.keys())}")
+            """Wrapped coroutine that coerces types and logs MCP calls."""
+            import time
+
+            # Sanitize arguments for logging (redact sensitive data)
+            def sanitize_for_logging(data, max_length=500):
+                """Sanitize data for logging."""
+                sensitive_keys = {"token", "password", "secret", "key", "api_key", "access_token", "refresh_token"}
+
+                if isinstance(data, dict):
+                    sanitized = {}
+                    for k, v in data.items():
+                        if isinstance(k, str) and any(sens in k.lower() for sens in sensitive_keys):
+                            sanitized[k] = "***REDACTED***"
+                        elif isinstance(v, str) and len(v) > max_length:
+                            sanitized[k] = v[:max_length] + "..."
+                        elif isinstance(v, (dict, list)):
+                            sanitized[k] = sanitize_for_logging(v, max_length)
+                        else:
+                            sanitized[k] = v
+                    return sanitized
+                elif isinstance(data, list):
+                    return [sanitize_for_logging(item, max_length) for item in data]
+                elif isinstance(data, str) and len(data) > max_length:
+                    return data[:max_length] + "..."
+                else:
+                    return data
+
+            # Debug print for MCP call
+            sanitized_kwargs = sanitize_for_logging(kwargs)
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🔧 [MCP CALL] Tool: {tool_name}")
+            logger.info(f"📦 [MCP CALL] Client: MultiServerMCPClient (SingleAnalyticsAgent)")
+            logger.info(f"📋 [MCP CALL] Arguments:")
+            for key, value in sanitized_kwargs.items():
+                logger.info(f"   - {key}: {value}")
+            logger.info(f"{'='*80}\n")
 
             # Coerce all kwargs recursively
             coerced_kwargs = {}
             for key, value in kwargs.items():
                 coerced_value = coerce_value(value, key)
                 if coerced_value != value:
-                    logger.info(f"   → {key}: {type(value).__name__} -> {type(coerced_value).__name__}")
+                    logger.info(f"🔧 [TypeCoercion] Coerced {key}: {type(value).__name__} -> {type(coerced_value).__name__}")
                 coerced_kwargs[key] = coerced_value
 
-            # Call original coroutine with coerced kwargs
-            return await original_coroutine(*args, **coerced_kwargs)
+            # Call original coroutine with coerced kwargs and track time
+            start_time = time.time()
+            try:
+                result = await original_coroutine(*args, **coerced_kwargs)
+                duration_ms = (time.time() - start_time) * 1000
+
+                # Debug print for MCP response
+                logger.info(f"\n{'='*80}")
+                logger.info(f"✅ [MCP RESPONSE] Tool: {tool_name}")
+                logger.info(f"⏱️  [MCP RESPONSE] Duration: {duration_ms:.2f}ms")
+                logger.info(f"📊 [MCP RESPONSE] Result type: {type(result).__name__}")
+
+                # Log the content of the response
+                if hasattr(result, 'content'):
+                    logger.info(f"📄 [MCP RESPONSE] Content:")
+                    if isinstance(result.content, list):
+                        for idx, item in enumerate(result.content):
+                            logger.info(f"   [{idx}] Type: {type(item).__name__}")
+                            if hasattr(item, 'text'):
+                                text = item.text
+                                if len(text) > 500:
+                                    logger.info(f"   [{idx}] Text (first 500 chars): {text[:500]}...")
+                                else:
+                                    logger.info(f"   [{idx}] Text: {text}")
+                            elif hasattr(item, '__dict__'):
+                                logger.info(f"   [{idx}] Data: {item.__dict__}")
+                            else:
+                                logger.info(f"   [{idx}] Value: {item}")
+                    else:
+                        logger.info(f"   {result.content}")
+                elif isinstance(result, str):
+                    # String response
+                    if len(result) > 500:
+                        logger.info(f"📄 [MCP RESPONSE] Result (first 500 chars): {result[:500]}...")
+                    else:
+                        logger.info(f"📄 [MCP RESPONSE] Result: {result}")
+                elif hasattr(result, '__dict__'):
+                    logger.info(f"📄 [MCP RESPONSE] Result dict: {result.__dict__}")
+                else:
+                    logger.info(f"📄 [MCP RESPONSE] Result: {result}")
+
+                logger.info(f"{'='*80}\n")
+
+                return result
+
+            except Exception as e:
+                duration_ms = (time.time() - start_time) * 1000
+
+                # Debug print for MCP error
+                logger.error(f"\n{'='*80}")
+                logger.error(f"❌ [MCP ERROR] Tool: {tool_name}")
+                logger.error(f"⏱️  [MCP ERROR] Duration: {duration_ms:.2f}ms")
+                logger.error(f"🚫 [MCP ERROR] Error type: {type(e).__name__}")
+                logger.error(f"💬 [MCP ERROR] Error message: {str(e)}")
+                logger.error(f"{'='*80}\n")
+
+                raise
 
         tool.coroutine = wrapped_coroutine
         logger.info(f"✅ [TypeCoercion] Wrapped coroutine for tool '{getattr(tool, 'name', 'unknown')}'")
@@ -744,6 +833,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
             property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
 
             gads_credentials = task_details.get("google_ads_credentials", {})
+            gads_credentials = gads_credentials or {}
             customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
 
             if property_id != "NOT_PROVIDED":

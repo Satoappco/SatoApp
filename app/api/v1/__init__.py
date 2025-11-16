@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from .routes import (
     agents,
     health,
-    # webhooks,
+    webhooks,
     # websocket,
     auth,
     google_analytics,
@@ -46,7 +46,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, tags=["authentication"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
-# api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 # api_router.include_router(websocket.router, tags=["websocket"])
 # api_router.include_router(crewai.router, tags=["crewai"])
 api_router.include_router(google_analytics.router, tags=["google-analytics"])
