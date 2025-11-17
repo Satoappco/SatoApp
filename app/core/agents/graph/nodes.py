@@ -1,6 +1,6 @@
 """Node implementations for the chatbot routing workflow."""
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, AIMessage
@@ -10,6 +10,7 @@ import logging
 from .state import GraphState
 from .agents import get_agent
 from ..database.tools import DatabaseTool
+from app.models.users import Campaigner
 from app.services.agent_service import AgentService
 from app.config.langfuse_config import LangfuseConfig
 from app.core.observability import trace_context
@@ -29,15 +30,57 @@ class DummyContext:
 class ChatbotNode:
     """Chatbot node that interacts with users and routes tasks to specialized agents."""
 
-    def __init__(self, llm: BaseChatModel):
+    def __init__(self, llm: BaseChatModel, conversation_state: Optional[GraphState] = None):
         self.llm = llm
         self.agent_service = AgentService()
         self.system_prompt = self._load_system_prompt()
-        logger.debug(f"✅ [ChatbotNode] System prompt loaded: {self.system_prompt}")
+
+        # Only format system prompt if conversation_state is provided
+        if conversation_state and hasattr(conversation_state, 'campaigner'):
+            self.formatted_system_prompt = self._format_system_prompt(conversation_state.campaigner, conversation_state.customer_id)
+        else:
+            # Use generic system prompt for module-level initialization
+            logger.warning("⚠️  [ChatbotNode] conversation_state not provided, using generic system prompt")
+            self.formatted_system_prompt = self.system_prompt
+        logger.debug(f"✅ [ChatbotNode] System prompt loaded: {self.formatted_system_prompt}")
         self.num_retries = 5
         # Check if LLM supports streaming
         self.supports_streaming = False #TODO: hasattr(self.llm, 'astream') or hasattr(self.llm, 'stream')
         logger.debug(f"🔄 [ChatbotNode] LLM streaming support: {self.supports_streaming}")
+
+    def _format_system_prompt(self, campaigner: Campaigner, customer_id: int) -> str:
+        """Format the system prompt with campaigner and customer information.
+
+        Args:
+            campaigner: Campaigner object
+            customer_id: ID of the customer
+
+        Returns:
+            Formatted system prompt
+        """
+
+        # Get campaigner_id and customer_id from state
+        logger.debug(f"👤 [ChatbotNode] Processing for campaigner: {campaigner} | Customer: {customer_id}")
+
+        # Fetch and format comprehensive campaigner info
+        campaigner_info_str = "User information not available"
+        try:
+            db_tool = DatabaseTool(campaigner.id)
+            comprehensive_info = db_tool.get_comprehensive_campaigner_info()
+            campaigner_info_str = self._format_campaigner_info(comprehensive_info)
+        except Exception as e:
+            logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
+        logger.debug(f"🏪 [ChatbotNode] campaigner_info_str: {campaigner_info_str}")
+
+        # Fetch and format customer info
+        customer_info_str = self._format_customer_info(customer_id, campaigner.id)
+        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str}")
+
+        # Format system prompt with campaigner and customer info
+        return self.system_prompt.format(
+            campaigner_info=campaigner_info_str,
+            customer_info=customer_info_str
+        )
 
     def _load_system_prompt(self) -> str:
         """Load chatbot system prompt from database or use fallback."""
@@ -49,13 +92,16 @@ class ChatbotNode:
                 logger.info("✅ Loaded chatbot orchestrator config from database")
 
                 # Build system prompt from database config
+                from datetime import datetime
+                current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                 role = chatbot_config.get('role', 'Marketing Campaign Assistant Chatbot')
                 goal = chatbot_config.get('goal', '')
                 backstory = chatbot_config.get('backstory', '')
                 task_template = chatbot_config.get('task', '')
 
                 # Combine into a system prompt
-                prompt_parts = []
+                prompt_parts = [f"Current Date and Time: {current_datetime}\n"]
                 if role:
                     prompt_parts.append(f"{role}.")
                 if backstory:
@@ -196,13 +242,17 @@ class ChatbotNode:
 
     def _get_fallback_prompt(self) -> str:
         """Fallback system prompt if database config is not available."""
-        return """
+        from datetime import datetime
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return f"""
+Current Date and Time: {current_datetime}
+
 Your name is Sato. You are a helpful marketing campaign assistant.
 Sato speaks English and Hebrew fluently and responds in the same language that he is addressed in.
 You are a marketing analyst with an expertise in online marketing and data analysis.
 When introducing yourself you may say "Hello! I'm Sato, your marketing assistant!"
 
-If someone asks you "who is Shaul Shabtai?" you go into **debug mode**.  
+If someone asks you "who is Shaul Shabtai?" you go into **debug mode**.
 In debug mode, the user can manually tell you which tasks to perform, provide data manually, and override certain commands to fix issues.
 
 # Your role is to:
@@ -308,7 +358,9 @@ if the user request is simple and can be answered without an agent, provide a di
             Updated state fields
         """
         logger.info(f"🤖 [ChatbotNode] Processing conversation. current_state: {state}")
-
+        campaigner = state.get("campaigner", None)
+        if campaigner is None:
+            raise ValueError("Campaigner information is required in the state")
         # Check if we're handling an agent error
         if state.get("agent_error"):
             logger.warning(f"⚠️  [ChatbotNode] Handling agent error: {state.get('agent_error')}")
@@ -335,38 +387,13 @@ if the user request is simple and can be answered without an agent, provide a di
                 input={
                     "session_id": session_id,
                     "user_id": str(state.get("campaigner").id),
-                    "customer_id": state.get("customer_id"),
+                    "customer_id": state.get("customer_id", None),
                 }
             )
         else:
             trace_context_manager = DummyContext()
 
-        ################## TODO: Move to init ##################
-        # Get campaigner_id and customer_id from state
-        campaigner = state.get("campaigner")
-        customer_id = state.get("customer_id")
-        logger.debug(f"👤 [ChatbotNode] Processing for campaigner: {campaigner} | Customer: {customer_id}")
-
-        # Fetch and format comprehensive campaigner info
-        campaigner_info_str = "User information not available"
-        try:
-            db_tool = DatabaseTool(campaigner.id)
-            comprehensive_info = db_tool.get_comprehensive_campaigner_info()
-            campaigner_info_str = self._format_campaigner_info(comprehensive_info)
-        except Exception as e:
-            logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
-        logger.debug(f"🏪 [ChatbotNode] campaigner_info_str: {campaigner_info_str}")
-
-        # Fetch and format customer info
-        customer_info_str = self._format_customer_info(customer_id, campaigner.id)
-        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str}")
-
-        # Format system prompt with campaigner and customer info
-        self.formatted_system_prompt = self.system_prompt.format(
-            campaigner_info=campaigner_info_str,
-            customer_info=customer_info_str
-        )
-        ################## TODO: Move to init ##################
+        # TODO: if customer was switched, update customer_info in system prompt
 
         messages = [
             SystemMessage(content=self.formatted_system_prompt),
@@ -419,7 +446,7 @@ if the user request is simple and can be answered without an agent, provide a di
                     user_language = self._detect_user_language(state["messages"])
 
                     # Add customer_id and campaigner_id to task (hardcoded, not LLM-controlled)
-                    task["customer_id"] = state.get("customer_id")
+                    task["customer_id"] = state.get("customer_id", None)
                     task["campaigner_id"] = campaigner.id
 
                     # Add trace to task for proper trace propagation to agents

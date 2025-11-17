@@ -216,6 +216,10 @@ class SQLBasicInfoAgent:
             if sql_agent_config:
                 logger.info("✅ Loaded SQL database expert config from database")
 
+                # Get current date and time
+                from datetime import datetime
+                current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                 # Build system prompt from database config
                 role = sql_agent_config.get('role', 'SQL database assistant')
                 goal = sql_agent_config.get('goal', '')
@@ -223,7 +227,7 @@ class SQLBasicInfoAgent:
                 task_template = sql_agent_config.get('task', '')
 
                 # Build the system message
-                prompt_parts = []
+                prompt_parts = [f"Current Date and Time: {current_datetime}\n"]
                 if role:
                     prompt_parts.append(f"{role}.")
                 if backstory:
@@ -259,7 +263,12 @@ class SQLBasicInfoAgent:
         Returns:
             Fallback system prompt
         """
-        return """
+        from datetime import datetime
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        return f"""
+Current Date and Time: {current_datetime}
+
 You are an expert SQL database assistant with READ-ONLY access to a PostgreSQL database.
 
 Your role is to:

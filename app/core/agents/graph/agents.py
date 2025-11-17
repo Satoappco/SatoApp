@@ -654,9 +654,15 @@ class SingleAnalyticsAgent:
             # Build context for the agent
             context_str = self._build_context_string(task_details)
 
+            # Get current date and time
+            from datetime import datetime
+            current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
             # Create prompt template with context
             prompt = ChatPromptTemplate.from_messages([
                 ("system", f"""You are an expert marketing analytics agent with direct access to multiple advertising platforms.
+
+Current Date and Time: {current_datetime}
 
 {context_str}
 
