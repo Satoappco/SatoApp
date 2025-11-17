@@ -594,7 +594,25 @@ async def get_customer_info(
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow()
                 )
-            
+
+            # Get assigned campaigners for this customer
+            from app.services.customer_assignment_service import CustomerAssignmentService
+            from app.models.users import Campaigner as CampaignerModel
+            assignments = CustomerAssignmentService.get_customer_assignments(
+                session, customer.id, active_only=True
+            )
+            assigned_campaigners = []
+            for assignment in assignments:
+                campaigner = session.get(CampaignerModel, assignment.campaigner_id)
+                if campaigner:
+                    assigned_campaigners.append({
+                        "id": campaigner.id,
+                        "full_name": campaigner.full_name,
+                        "email": campaigner.email,
+                        "avatar_url": campaigner.avatar_url,
+                        "is_primary": assignment.is_primary
+                    })
+
             return {
                 "success": True,
                 "data": {
@@ -616,7 +634,8 @@ async def get_customer_info(
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
-                    "assigned_campaigner_id": customer.assigned_campaigner_id,
+                    "assigned_campaigners": assigned_campaigners,
+                    "primary_campaigner_id": customer.primary_campaigner_id,
                     "created_at": customer.created_at.isoformat(),
                     "updated_at": customer.updated_at.isoformat(),
                     "rtm_data": rtm_data,
@@ -662,28 +681,16 @@ async def update_customer_info(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
                 )
-            
-            # Verify assigned campaigner if being changed
-            if 'assigned_campaigner_id' in request and request['assigned_campaigner_id'] is not None:
-                if request['assigned_campaigner_id']:  # Not None and not 0
-                    assigned_campaigner = session.exec(
-                        select(Campaigner).where(Campaigner.id == request['assigned_campaigner_id'])
-                    ).first()
-                    if not assigned_campaigner or assigned_campaigner.agency_id != current_user.agency_id:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Invalid assigned campaigner"
-                        )
-            
+
             # Store old currency before update to detect changes
             old_currency = customer.currency
-            
-            # Update customer fields
+
+            # Update customer fields (removed assigned_campaigner_id - use customer_assignments endpoint)
             update_fields = [
                 'full_name', 'contact_email', 'phone', 'address', 'opening_hours',
-                'narrative_report', 'website_url', 'facebook_page_url', 
+                'narrative_report', 'website_url', 'facebook_page_url',
                 'instagram_page_url', 'llm_engine_preference', 'enable_meta', 'enable_google',
-                'status', 'is_active', 'assigned_campaigner_id', 'country', 'currency'
+                'status', 'is_active', 'country', 'currency'
             ]
             
             for field in update_fields:
@@ -725,7 +732,25 @@ async def update_customer_info(
             
             session.commit()
             session.refresh(customer)
-            
+
+            # Get assigned campaigners for response
+            from app.services.customer_assignment_service import CustomerAssignmentService
+            from app.models.users import Campaigner as CampaignerModel
+            assignments = CustomerAssignmentService.get_customer_assignments(
+                session, customer.id, active_only=True
+            )
+            assigned_campaigners = []
+            for assignment in assignments:
+                campaigner = session.get(CampaignerModel, assignment.campaigner_id)
+                if campaigner:
+                    assigned_campaigners.append({
+                        "id": campaigner.id,
+                        "full_name": campaigner.full_name,
+                        "email": campaigner.email,
+                        "avatar_url": campaigner.avatar_url,
+                        "is_primary": assignment.is_primary
+                    })
+
             return {
                 "success": True,
                 "message": "Customer information updated successfully",
@@ -748,8 +773,8 @@ async def update_customer_info(
                     "status": customer.status,
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
-                    "assigned_campaigner_id": customer.assigned_campaigner_id,
-                    "is_my_customer": customer.assigned_campaigner_id == current_user.id,
+                    "assigned_campaigners": assigned_campaigners,
+                    "primary_campaigner_id": customer.primary_campaigner_id,
                     "created_at": customer.created_at.isoformat(),
                     "updated_at": customer.updated_at.isoformat()
                 }

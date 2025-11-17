@@ -2407,9 +2407,20 @@ async def reset_kpi_settings_to_defaults(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Customer not found or access denied"
                 )
-            
-            # Verify customer is assigned to current campaigner
-            if customer.assigned_campaigner_id != current_user.id:
+
+            # Verify customer is assigned to current campaigner via junction table
+            from app.models.users import CustomerCampaignerAssignment
+            is_assigned = session.exec(
+                select(CustomerCampaignerAssignment).where(
+                    and_(
+                        CustomerCampaignerAssignment.customer_id == customer_id,
+                        CustomerCampaignerAssignment.campaigner_id == current_user.id,
+                        CustomerCampaignerAssignment.is_active == True
+                    )
+                )
+            ).first()
+
+            if not is_assigned:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied - customer not assigned to you"

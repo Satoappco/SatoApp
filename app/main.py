@@ -35,25 +35,30 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     setup_logging()
-    
+
+    # Initialize file-based logging
+    from app.core.file_logger import initialize_file_logging
+    initialize_file_logging()
+    logger.info("✅ File-based logging initialized")
+
     # VALIDATE CRITICAL ENVIRONMENT VARIABLES
     settings = get_settings()
-    
+
     required_env_vars = {
         "GEMINI_API_KEY": settings.gemini_api_key,
         "DATABASE_URL": settings.database_url,
         "API_TOKEN": settings.api_token,
         "SECRET_KEY": settings.secret_key
     }
-    
+
     missing_vars = [var for var, value in required_env_vars.items() if not value]
     if missing_vars:
         error_msg = f"❌ Missing required environment variables: {', '.join(missing_vars)}"
         logger.error(error_msg)
         raise RuntimeError(error_msg)
-    
+
     logger.info("✅ All required environment variables are present")
-    
+
     init_database()
     yield
     # Shutdown

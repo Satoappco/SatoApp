@@ -781,13 +781,17 @@ async def get_customer_logs(
                     # Regular campaigner must select a customer - return empty result
                     query = query.filter(CustomerLog.customer_id == -1)  # Impossible filter
                 else:
-                    # Verify that the requested customer_id belongs to this user
-                    customer_ids = session.query(Customer.id).filter(
-                        Customer.assigned_campaigner_id == current_user.id,
-                        Customer.is_active == True
+                    # Verify that the requested customer_id belongs to this user via junction table
+                    from app.models.users import CustomerCampaignerAssignment
+                    from sqlmodel import select
+                    customer_ids = session.exec(
+                        select(CustomerCampaignerAssignment.customer_id).where(
+                            CustomerCampaignerAssignment.campaigner_id == current_user.id,
+                            CustomerCampaignerAssignment.is_active == True
+                        )
                     ).all()
-                    customer_id_list = [c[0] for c in customer_ids]
-                    
+                    customer_id_list = customer_ids
+
                     if customer_id not in customer_id_list:
                         # User doesn't have access to this customer - return empty result
                         query = query.filter(CustomerLog.customer_id == -1)  # Impossible filter

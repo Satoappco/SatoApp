@@ -52,6 +52,14 @@ class ClientType(str, Enum):
     LANDING_PAGE = "landing_page"
 
 
+class AssignmentRole(str, Enum):
+    """Campaigner assignment role types"""
+    PRIMARY = "PRIMARY"      # Main responsible campaigner
+    ASSIGNED = "ASSIGNED"    # Regular assigned campaigner
+    VIEWER = "VIEWER"        # Read-only access
+    ADMIN = "ADMIN"          # Full admin access
+
+
 class Campaigner(BaseModel, table=True):
     """Agency campaigners - משתמשים של הagency (e.g., Everest employees)"""
     __tablename__ = "campaigners"
@@ -88,14 +96,51 @@ class Agency(BaseModel, table=True):
     status: CustomerStatus = Field(default=CustomerStatus.ACTIVE)
 
 
+class CustomerCampaignerAssignment(BaseModel, table=True):
+    """Junction table for many-to-many customer-campaigner relationship"""
+    __tablename__ = "customer_campaigner_assignments"
+
+    # Relationships
+    customer_id: int = Field(foreign_key="customers.id", ondelete="CASCADE")
+    campaigner_id: int = Field(foreign_key="campaigners.id", ondelete="CASCADE")
+
+    # Assignment metadata
+    role: AssignmentRole = Field(default=AssignmentRole.ASSIGNED, max_length=50)
+    is_primary: bool = Field(default=False, description="Only one primary campaigner per customer")
+    assigned_at: datetime = Field(default_factory=datetime.utcnow)
+    assigned_by_campaigner_id: Optional[int] = Field(
+        default=None,
+        foreign_key="campaigners.id",
+        description="Campaigner who created this assignment"
+    )
+
+    # Status tracking
+    is_active: bool = Field(default=True)
+    unassigned_at: Optional[datetime] = Field(default=None)
+    unassigned_by_campaigner_id: Optional[int] = Field(
+        default=None,
+        foreign_key="campaigners.id",
+        description="Campaigner who removed this assignment"
+    )
+
+
 class Customer(BaseModel, table=True):
     """Agency clients/projects - לקוחות של הסוכנות (e.g., Brand X Store #12)"""
     __tablename__ = "customers"
-    
+
     # Relationships
     agency_id: int = Field(foreign_key="agencies.id")  # Points to parent agency
-    assigned_campaigner_id: Optional[int] = Field(default=None, foreign_key="campaigners.id", description="Campaigner assigned to this customer")
-    
+    assigned_campaigner_id: Optional[int] = Field(
+        default=None,
+        foreign_key="campaigners.id",
+        description="DEPRECATED: Use customer_campaigner_assignments table instead. Kept for backward compatibility."
+    )
+    primary_campaigner_id: Optional[int] = Field(
+        default=None,
+        foreign_key="campaigners.id",
+        description="Denormalized primary campaigner for fast lookups. Synced from customer_campaigner_assignments."
+    )
+
     # Core info - matches Info Table requirements from image
     full_name: str = Field(max_length=255, description="Full name or business name")
     status: CustomerStatus = Field(default=CustomerStatus.ACTIVE)

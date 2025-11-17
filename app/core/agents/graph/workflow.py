@@ -78,7 +78,7 @@ class ConversationWorkflow:
         logger.debug(f"🤖 [Workflow] LLM initialized: gpt-4o-mini")
 
         # Initialize nodes
-        self.chatbot_node = ChatbotNode(self.llm)
+        self.chatbot_node = ChatbotNode(self.llm, self.conversation_state)
         self.agent_executor_node = AgentExecutorNode(self.llm)
         self.error_handler_node = ErrorHandlerNode()
         logger.debug("📦 [Workflow] Nodes initialized")
@@ -347,7 +347,7 @@ def build_graph():
     #     api_key=os.getenv("OPENAI_API_KEY")
     # )
 
-    # Initialize nodes
+    # Initialize nodes (without conversation state for module-level graph)
     chatbot_node = ChatbotNode(llm)
     agent_executor_node = AgentExecutorNode(llm)
     error_handler_node = ErrorHandlerNode()
