@@ -1,5 +1,5 @@
 """Node implementations for the chatbot routing workflow."""
-
+from datetime import datetime
 from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
@@ -76,10 +76,13 @@ class ChatbotNode:
         customer_info_str = self._format_customer_info(customer_id, campaigner.id)
         logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str}")
 
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Format system prompt with campaigner and customer info
         return self.system_prompt.format(
             campaigner_info=campaigner_info_str,
-            customer_info=customer_info_str
+            customer_info=customer_info_str,
+            current_datetime=current_datetime
         )
 
     def _load_system_prompt(self) -> str:
@@ -242,9 +245,7 @@ class ChatbotNode:
 
     def _get_fallback_prompt(self) -> str:
         """Fallback system prompt if database config is not available."""
-        from datetime import datetime
-        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        return f"""
+        return """
 Current Date and Time: {current_datetime}
 
 Your name is Sato. You are a helpful marketing campaign assistant.
