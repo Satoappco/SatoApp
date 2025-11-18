@@ -17,6 +17,7 @@ from app.api.schemas.chat import (
 )
 from app.api.dependencies import get_app_state, ApplicationState
 from app.core.auth import get_current_user
+from app.services.chat_trace_service import ChatTraceService
 
 try:
     from langfuse import propagate_attributes
@@ -62,7 +63,8 @@ async def chat(
 
     Requires authentication via JWT token.
     """
-    from app.config.langfuse_config import LangfuseConfig
+    # Initialize ChatTraceService
+    trace_service = ChatTraceService()
 
     # Generate thread ID if not provided
     thread_id = request.thread_id or str(uuid.uuid4())
@@ -76,161 +78,128 @@ async def chat(
         except (ValueError, TypeError):
             logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
 
-    # Setup LangFuse session tracking using modern API
-    langfuse = LangfuseConfig.get_client()
-    use_langfuse = langfuse and LangfuseConfig.is_enabled()
-
-    # Create trace context manager
-    if use_langfuse:
-        try:
-            trace_context = langfuse.start_as_current_span(
-                name="chat_message",
-                input={"message": request.message, "customer_id": customer_id}
-            )
-        except Exception as e:
-            logger.warning(f"⚠️  [Chat] Failed to create LangFuse span: {e}")
-            trace_context = None
-            use_langfuse = False
-    else:
-        trace_context = None
-
-    # Dummy context manager for when LangFuse is disabled
-    class DummyContext:
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            pass
-        def update_trace(self, **kwargs):
-            pass
-
-    trace_mgr = trace_context if trace_context else DummyContext()
+    # Create conversation with ChatTraceService (includes Langfuse trace)
+    conversation, trace = trace_service.create_conversation(
+        thread_id=thread_id,
+        campaigner_id=current_user.id,
+        customer_id=customer_id,
+        metadata={
+            "campaigner_name": current_user.full_name,
+            "timestamp": datetime.now().isoformat()
+        }
+    )
 
     try:
-        with trace_mgr as trace:
-            # Update trace with session and user info
-            if trace and hasattr(trace, 'update_trace'):
-                trace.update_trace(
-                    session_id=thread_id,
-                    user_id=str(current_user.id),
-                    metadata={
-                        "campaigner_id": current_user.id,
-                        "campaigner_name": current_user.full_name,
-                        "customer_id": customer_id,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                )
-                logger.debug(f"✅ [Chat] Session tracking enabled for: {thread_id[:8]}...")
+        # Add user message to trace
+        trace_service.add_message(
+            thread_id=thread_id,
+            role="user",
+            content=request.message
+        )
 
-            # Get conversation workflow for this thread (with campaigner_id and trace)
-            logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
+        # Get conversation workflow for this thread (with campaigner_id and trace)
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
 
-            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
+        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
 
-            # Most likely never come here because of get_current_user requires msg len >= 1
-            if not request.message.strip():
-                # Return chat intialization response without processing
-                logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
-                return ChatResponse(
-                    message="",
-                    thread_id=thread_id,
-                    needs_clarification=False,
-                    ready_for_analysis=False,
-                    intent=None
-                )
-
-            # Process message
-            logger.debug(f"🔄 [Chat] Processing message through workflow...")
-            result = workflow.process_message(request.message)
-            logger.debug(f"✅ [Chat] Workflow processed. Result keys: {list(result.keys())}")
-
-            # Extract response message
-            messages = result.get("messages", [])
-            assistant_message = ""
-            if messages:
-                last_message = messages[-1]
-                if hasattr(last_message, "content"):
-                    assistant_message = last_message.content
-                    logger.debug(f"💭 [Chat] Assistant message: '{assistant_message[:100]}...'")
-
-            # If clarification question exists, use that
-            if result.get("clarification_question"):
-                assistant_message = result["clarification_question"]
-                logger.info(f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'")
-
-            # Build intent dict
-            intent = {
-                "platforms": result.get("platforms", []),
-                "metrics": result.get("metrics", []),
-                "date_range_start": result.get("date_range_start"),
-                "date_range_end": result.get("date_range_end"),
-                "comparison_period": result.get("comparison_period", False),
-                "specific_campaigns": result.get("specific_campaigns"),
-            }
-
-            needs_clarification = result.get("clarification_needed", False)
-            ready_for_analysis = result.get("ready_for_crew", False)
-
-            logger.info(
-                f"📊 [Chat] State: clarification={needs_clarification}, "
-                f"ready={ready_for_analysis}, "
-                f"platforms={intent.get('platforms', [])}"
-            )
-
-            response = ChatResponse(
-                message=assistant_message or "I'm processing your request...",
+        # Most likely never come here because of get_current_user requires msg len >= 1
+        if not request.message.strip():
+            # Return chat intialization response without processing
+            logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
+            return ChatResponse(
+                message="",
                 thread_id=thread_id,
-                needs_clarification=needs_clarification,
-                ready_for_analysis=ready_for_analysis,
-                intent=intent if any(intent.values()) else None
+                needs_clarification=False,
+                ready_for_analysis=False,
+                intent=None
             )
 
-            # Update trace with output
-            if trace and hasattr(trace, 'update'):
-                try:
-                    trace.update(
-                        output={
-                            "message": assistant_message,
-                            "needs_clarification": needs_clarification,
-                            "ready_for_analysis": ready_for_analysis,
-                            "intent": intent
-                        },
-                        metadata={
-                            "platforms": intent.get("platforms", []),
-                            "conversation_state": "clarification" if needs_clarification else ("ready" if ready_for_analysis else "processing")
-                        }
-                    )
-                except Exception as trace_error:
-                    logger.warning(f"⚠️  [Chat] Failed to update trace: {trace_error}")
+        # Process message
+        logger.debug(f"🔄 [Chat] Processing message through workflow...")
+        result = workflow.process_message(request.message)
+        logger.debug(f"✅ [Chat] Workflow processed. Result keys: {list(result.keys())}")
 
-            # Flush trace at the end
-            if langfuse:
-                try:
-                    langfuse.flush()
-                except Exception as flush_error:
-                    logger.warning(f"⚠️  [Chat] Failed to flush LangFuse: {flush_error}")
+        # Extract response message
+        messages = result.get("messages", [])
+        assistant_message = ""
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "content"):
+                assistant_message = last_message.content
+                logger.debug(f"💭 [Chat] Assistant message: '{assistant_message[:100]}...'")
 
-            return response
+        # If clarification question exists, use that
+        if result.get("clarification_question"):
+            assistant_message = result["clarification_question"]
+            logger.info(f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'")
+
+        # Add assistant message to trace
+        trace_service.add_message(
+            thread_id=thread_id,
+            role="assistant",
+            content=assistant_message or "I'm processing your request..."
+        )
+
+        # Build intent dict
+        intent = {
+            "platforms": result.get("platforms", []),
+            "metrics": result.get("metrics", []),
+            "date_range_start": result.get("date_range_start"),
+            "date_range_end": result.get("date_range_end"),
+            "comparison_period": result.get("comparison_period", False),
+            "specific_campaigns": result.get("specific_campaigns"),
+        }
+
+        needs_clarification = result.get("clarification_needed", False)
+        ready_for_analysis = result.get("ready_for_crew", False)
+
+        logger.info(
+            f"📊 [Chat] State: clarification={needs_clarification}, "
+            f"ready={ready_for_analysis}, "
+            f"platforms={intent.get('platforms', [])}"
+        )
+
+        # Update conversation intent in trace
+        trace_service.update_intent(
+            thread_id=thread_id,
+            intent=intent,
+            needs_clarification=needs_clarification,
+            ready_for_analysis=ready_for_analysis
+        )
+
+        # Complete conversation if ready for analysis
+        if ready_for_analysis:
+            trace_service.complete_conversation(
+                thread_id=thread_id,
+                status="completed",
+                final_intent=intent
+            )
+
+        # Flush Langfuse traces
+        trace_service.flush_langfuse()
+
+        response = ChatResponse(
+            message=assistant_message or "I'm processing your request...",
+            thread_id=thread_id,
+            needs_clarification=needs_clarification,
+            ready_for_analysis=ready_for_analysis,
+            intent=intent if any(intent.values()) else None
+        )
+
+        return response
 
     except Exception as e:
         logger.error(f"❌ [Chat] Error processing chat: {str(e)}", exc_info=True)
 
-        # Update trace with error
-        if trace:
-            try:
-                trace.update(
-                    output={"error": str(e)},
-                    level="ERROR",
-                    status_message=str(e)
-                )
-            except Exception as trace_error:
-                logger.warning(f"⚠️  [Chat] Failed to update trace with error: {trace_error}")
-
-        # Flush trace
-        if langfuse:
-            try:
-                langfuse.flush()
-            except Exception as flush_error:
-                logger.warning(f"⚠️  [Chat] Failed to flush LangFuse: {flush_error}")
+        # Complete conversation with error status
+        try:
+            trace_service.complete_conversation(
+                thread_id=thread_id,
+                status="error"
+            )
+            trace_service.flush_langfuse()
+        except Exception as trace_error:
+            logger.warning(f"⚠️  [Chat] Failed to update trace with error: {trace_error}")
 
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
@@ -249,7 +218,12 @@ async def stream_chat(
     Requires authentication via JWT token.
     """
     async def generate():
+        trace_service = None
+        thread_id = None
         try:
+            # Initialize ChatTraceService
+            trace_service = ChatTraceService()
+
             # Generate thread ID if not provided
             thread_id = request.thread_id or str(uuid.uuid4())
             logger.info(f"📡 [Stream] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
@@ -262,22 +236,45 @@ async def stream_chat(
                 except (ValueError, TypeError):
                     logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
 
+            # Create conversation with ChatTraceService
+            conversation, trace = trace_service.create_conversation(
+                thread_id=thread_id,
+                campaigner_id=current_user.id,
+                customer_id=customer_id,
+                metadata={
+                    "campaigner_name": current_user.full_name,
+                    "timestamp": datetime.now().isoformat(),
+                    "streaming": True
+                }
+            )
+
+            # Add user message to trace
+            trace_service.add_message(
+                thread_id=thread_id,
+                role="user",
+                content=request.message
+            )
+
             # Get conversation workflow for this thread (with campaigner_id and customer_id)
-            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
+            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
 
             # Stream message through workflow
             logger.debug(f"📡 [Stream] Starting real-time streaming...")
+
+            full_response = ""
+            final_metadata = None
 
             async for chunk in workflow.stream_message(request.message):
                 if chunk.get("type") == "content":
                     # Stream content chunk (character)
                     char = chunk.get("chunk", "")
+                    full_response += char
                     yield f"data: {json.dumps({'chunk': char})}\n\n"
 
                 #TODO: Why is that?
                 elif chunk.get("type") == "metadata":
                     # Final metadata with state
-                    metadata = {
+                    final_metadata = {
                         "thread_id": thread_id,
                         "needs_clarification": chunk.get("needs_clarification", False),
                         "ready_for_analysis": chunk.get("ready_for_crew", False),
@@ -288,13 +285,52 @@ async def stream_chat(
                             "date_range_end": chunk.get("date_range_end"),
                         }
                     }
-                    logger.info(f"✅ [Stream] Completed. Ready: {metadata['ready_for_analysis']}")
-                    yield f"data: {json.dumps({'metadata': metadata})}\n\n"
+                    logger.info(f"✅ [Stream] Completed. Ready: {final_metadata['ready_for_analysis']}")
+                    yield f"data: {json.dumps({'metadata': final_metadata})}\n\n"
+
+            # Add assistant message to trace after streaming completes
+            trace_service.add_message(
+                thread_id=thread_id,
+                role="assistant",
+                content=full_response or "I'm processing your request..."
+            )
+
+            # Update conversation intent if we have final metadata
+            if final_metadata:
+                trace_service.update_intent(
+                    thread_id=thread_id,
+                    intent=final_metadata["intent"],
+                    needs_clarification=final_metadata["needs_clarification"],
+                    ready_for_analysis=final_metadata["ready_for_analysis"]
+                )
+
+                # Complete conversation if ready for analysis
+                if final_metadata["ready_for_analysis"]:
+                    trace_service.complete_conversation(
+                        thread_id=thread_id,
+                        status="completed",
+                        final_intent=final_metadata["intent"]
+                    )
+
+            # Flush Langfuse traces
+            trace_service.flush_langfuse()
 
             yield "data: [DONE]\n\n"
 
         except Exception as e:
             logger.error(f"❌ [Stream] Error: {str(e)}", exc_info=True)
+
+            # Complete conversation with error status
+            if trace_service and thread_id:
+                try:
+                    trace_service.complete_conversation(
+                        thread_id=thread_id,
+                        status="error"
+                    )
+                    trace_service.flush_langfuse()
+                except Exception as trace_error:
+                    logger.warning(f"⚠️  [Stream] Failed to update trace with error: {trace_error}")
+
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -334,7 +370,6 @@ async def list_threads(
         threads=threads,
         total=len(threads)
     )
-
 
 @router.delete("/threads/{thread_id}")
 async def delete_thread(

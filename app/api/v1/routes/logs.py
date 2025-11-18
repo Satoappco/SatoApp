@@ -8,7 +8,10 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.core.file_logger import file_logger
-from app.core.api_auth import verify_admin_token
+# TODO: i think api_auth is not needed. 
+# from app.core.api_auth import verify_admin_token
+# TODO: Create verify_at_least(role : admin/owner/campaigner - default)
+from app.core.auth import get_current_user
 
 router = APIRouter()
 
@@ -31,7 +34,7 @@ class LogStatsResponse(BaseModel):
 @router.get("/recent", response_model=LogResponse)
 async def get_recent_logs(
     lines: int = Query(default=100, ge=1, le=10000, description="Number of recent lines to retrieve"),
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user) #get_current_user)
 ):
     """
     Get the most recent log entries.
@@ -63,7 +66,7 @@ async def search_logs(
     query: str = Query(..., min_length=1, description="Search term"),
     max_results: int = Query(default=100, ge=1, le=10000, description="Maximum number of results"),
     case_sensitive: bool = Query(default=False, description="Case-sensitive search"),
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user)
 ):
     """
     Search for a term in log files.
@@ -100,7 +103,7 @@ async def search_logs(
 async def get_logs_by_level(
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     max_results: int = Query(default=100, ge=1, le=10000, description="Maximum number of results"),
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user)
 ):
     """
     Get log entries of a specific level.
@@ -136,7 +139,7 @@ async def get_logs_by_timerange(
     end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
     hours_ago: Optional[int] = Query(None, ge=1, le=168, description="Hours ago from now (alternative to start_time)"),
     max_results: int = Query(default=1000, ge=1, le=10000, description="Maximum number of results"),
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user)
 ):
     """
     Get log entries within a time range.
@@ -178,7 +181,7 @@ async def get_logs_by_timerange(
 
 @router.get("/stats", response_model=LogStatsResponse)
 async def get_log_stats(
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user)
 ):
     """
     Get statistics about log files.
@@ -205,7 +208,7 @@ async def get_log_stats(
 @router.delete("/old")
 async def clear_old_logs(
     days: int = Query(default=7, ge=1, le=365, description="Delete logs older than N days"),
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user)
 ):
     """
     Clear log files older than specified days.
@@ -234,7 +237,7 @@ async def clear_old_logs(
 async def tail_logs(
     lines: int = Query(default=50, ge=1, le=1000, description="Number of lines to tail"),
     follow: bool = Query(default=False, description="Keep connection open for live updates"),
-    admin_verified: bool = Depends(verify_admin_token)
+    admin_verified: bool = Depends(get_current_user)
 ):
     """
     Tail the log file (like 'tail -f').

@@ -91,7 +91,7 @@ class CustomerCredentialManager:
                         Connection.digital_asset_id == ga_asset.id,
                         Connection.customer_id == customer_id,
                         Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
+                        Connection.revoked != True
                     )
                 ).first()
 
@@ -176,7 +176,7 @@ class CustomerCredentialManager:
                         Connection.digital_asset_id == gads_asset.id,
                         Connection.customer_id == customer_id,
                         Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
+                        Connection.revoked != True
                     )
                 ).first()
 
@@ -255,7 +255,7 @@ class CustomerCredentialManager:
                         Connection.digital_asset_id == fb_asset.id,
                         Connection.customer_id == customer_id,
                         Connection.campaigner_id == campaigner_id,
-                        Connection.revoked == False
+                        Connection.revoked != True
                     )
                 ).first()
 
