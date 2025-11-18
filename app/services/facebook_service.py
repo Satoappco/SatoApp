@@ -277,90 +277,52 @@ class FacebookService:
             created_assets = []
             
             for page in pages:
-                # Check if digital asset already exists
-                statement = select(DigitalAsset).where(
-                    and_(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
-                        DigitalAsset.provider == "Facebook",
-                        DigitalAsset.external_id == page['id']
-                    )
-                )
-                digital_asset = session.exec(statement).first()
-                
-                if not digital_asset:
-                    # Create new digital asset
-                    digital_asset = DigitalAsset(
-                        customer_id=customer_id,
-                        asset_type=AssetType.SOCIAL_MEDIA,
-                        provider="Facebook",
-                        name=page['name'],
-                        handle=page.get('username'),
-                        external_id=page['id'],
-                        meta={
-                            "page_id": page['id'],
-                            "page_name": page['name'],
-                            "page_username": page.get('username'),
-                            "page_category": page.get('category'),
-                            "user_name": user_name,
-                            "user_email": user_email,
-                            "access_token": access_token,  # Store for API calls
-                            "created_via": "oauth_flow"
-                        },
-                        is_active=True
-                    )
-                    session.add(digital_asset)
-                    session.commit()
-                    session.refresh(digital_asset)
-                    created_assets.append(digital_asset)
-                else:
-                    # Update existing asset
-                    digital_asset.meta.update({
+                # Create or update digital asset
+                from app.services.digital_asset_service import upsert_digital_asset
+
+                digital_asset = upsert_digital_asset(
+                    session=session,
+                    customer_id=customer_id,
+                    external_id=page['id'],
+                    asset_type=AssetType.SOCIAL_MEDIA,
+                    provider="Facebook",
+                    name=page['name'],
+                    handle=page.get('username'),
+                    meta={
+                        "page_id": page['id'],
                         "page_name": page['name'],
                         "page_username": page.get('username'),
                         "page_category": page.get('category'),
                         "user_name": user_name,
                         "user_email": user_email,
-                        "access_token": access_token
-                    })
-                    session.add(digital_asset)
-                    session.commit()
-                    created_assets.append(digital_asset)
+                        "access_token": access_token,
+                        "created_via": "oauth_flow"
+                    },
+                    is_active=True
+                )
+                created_assets.append(digital_asset)
             
             # Create digital assets for ad accounts
             for ad_account in ad_accounts:
-                statement = select(DigitalAsset).where(
-                    and_(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.ADVERTISING,
-                        DigitalAsset.provider == "Facebook",
-                        DigitalAsset.external_id == ad_account['id']
-                    )
+                digital_asset = upsert_digital_asset(
+                    session=session,
+                    customer_id=customer_id,
+                    external_id=ad_account['id'],
+                    asset_type=AssetType.ADVERTISING,
+                    provider="Facebook",
+                    name=ad_account['name'],
+                    meta={
+                        "ad_account_id": ad_account['id'],
+                        "ad_account_name": ad_account['name'],
+                        "ad_account_currency": ad_account.get('currency'),
+                        "user_name": user_name,
+                        "user_email": user_email,
+                        "access_token": access_token,
+                        "created_via": "oauth_flow"
+                    },
+                    is_active=True
                 )
-                digital_asset = session.exec(statement).first()
-                
-                if not digital_asset:
-                    digital_asset = DigitalAsset(
-                        customer_id=customer_id,
-                        asset_type=AssetType.ADVERTISING,
-                        provider="Facebook",
-                        name=ad_account['name'],
-                        external_id=ad_account['id'],
-                        meta={
-                            "ad_account_id": ad_account['id'],
-                            "ad_account_name": ad_account['name'],
-                            "ad_account_currency": ad_account.get('currency'),
-                            "user_name": user_name,
-                            "user_email": user_email,
-                            "access_token": access_token,
-                            "created_via": "oauth_flow"
-                        },
-                        is_active=True
-                    )
-                    session.add(digital_asset)
-                    session.commit()
-                    session.refresh(digital_asset)
-                    created_assets.append(digital_asset)
+                created_assets.append(digital_asset)
             
             # Create connections for each asset
             connections = []

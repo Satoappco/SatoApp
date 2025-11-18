@@ -836,6 +836,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
         # Add platform-specific credentials
         if "google" in platforms:
             ga_credentials = task_details.get("google_analytics_credentials", {})
+            ga_credentials = ga_credentials or {}
             property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
 
             gads_credentials = task_details.get("google_ads_credentials", {})

@@ -33,7 +33,8 @@ from .routes import (
     campaign_sync,
     crew_sessions,
     logs,
-    customer_assignments
+    customer_assignments,
+    traces
 )
 from app.api.v1.routes.chat import router as chat_router
 
@@ -75,6 +76,7 @@ api_router.include_router(campaign_sync.router, tags=["campaign-sync"])
 api_router.include_router(crew_sessions.router, tags=["crew-sessions"])
 api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
 api_router.include_router(customer_assignments.router, prefix="/customers", tags=["customer-assignments"])
+api_router.include_router(traces.router, tags=["traces"])
 
 # Conditionally include debug routes ONLY in development
 if os.getenv("ENVIRONMENT", "production") in ["development", "dev", "local"]:

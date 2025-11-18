@@ -124,42 +124,25 @@ class GoogleAdsService:
         print(f"🔄 Creating Google Ads connection for account {account_id} ({account_name})")
         
         with get_session() as session:
-            # First, find or create the digital asset
-            digital_asset_statement = select(DigitalAsset).where(
-                and_(
-                    DigitalAsset.customer_id == customer_id,
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    DigitalAsset.external_id == account_id
-                )
+            # Create or update the digital asset
+            from app.services.digital_asset_service import upsert_digital_asset
+
+            digital_asset = upsert_digital_asset(
+                session=session,
+                customer_id=customer_id,
+                external_id=account_id,
+                asset_type=AssetType.GOOGLE_ADS,
+                provider="Google",
+                name=account_name,
+                handle=None,
+                url=f"https://ads.google.com/aw/overview?ocid={account_id}",
+                meta={
+                    "account_id": account_id,
+                    "currency_code": "USD",  # Default, will be updated from API
+                    "time_zone": "America/New_York"  # Default, will be updated from API
+                },
+                is_active=True
             )
-            digital_asset = session.exec(digital_asset_statement).first()
-            
-            if not digital_asset:
-                # Create new digital asset
-                digital_asset = DigitalAsset(
-                    customer_id=customer_id,
-                    asset_type=AssetType.GOOGLE_ADS,
-                    provider="Google",
-                    name=account_name,
-                    handle=None,  # Google Ads doesn't have handles
-                    url=f"https://ads.google.com/aw/overview?ocid={account_id}",
-                    external_id=account_id,
-                    meta={
-                        "account_id": account_id,
-                        "currency_code": "USD",  # Default, will be updated from API
-                        "time_zone": "America/New_York"  # Default, will be updated from API
-                    },
-                    is_active=True
-                )
-                session.add(digital_asset)
-                session.commit()
-                session.refresh(digital_asset)
-            else:
-                # Activate existing asset
-                digital_asset.is_active = True
-                digital_asset.name = account_name  # Update name in case it changed
-                session.add(digital_asset)
-                session.commit()
             
             # Encrypt tokens
             access_token_enc = self._encrypt_token(access_token)

@@ -21,10 +21,17 @@ MCPS_DIR = Path(__file__).parent.parent.parent.parent / "mcps"
 
 class MCPServer(str, Enum):
     """Available MCP servers."""
+
     # Google Analytics
-    GOOGLE_ANALYTICS_OAUTH = "google-analytics-oauth"  # OAuth2-compatible wrapper (RECOMMENDED)
-    GOOGLE_ANALYTICS_OFFICIAL = "google-analytics-mcp"  # Official from Google (requires service account)
-    GOOGLE_ANALYTICS_SURENDRANB = "surendranb-google-analytics-mcp"  # Alternative with optimizations
+    GOOGLE_ANALYTICS_OAUTH = (
+        "google-analytics-oauth"  # OAuth2-compatible wrapper (RECOMMENDED)
+    )
+    GOOGLE_ANALYTICS_OFFICIAL = (
+        "google-analytics-mcp"  # Official from Google (requires service account)
+    )
+    GOOGLE_ANALYTICS_SURENDRANB = (
+        "surendranb-google-analytics-mcp"  # Alternative with optimizations
+    )
     GOOGLE_ANALYTICS_OLD = "mcp_google_analytics-0.0.3"  # Older version
 
     # Google Ads
@@ -52,15 +59,19 @@ class MCPServerConfig:
             "args": [str(MCPS_DIR / "google-analytics-oauth" / "ga4_oauth_server.py")],
             "service": "google_analytics",
             "working_directory": str(MCPS_DIR / "google-analytics-oauth"),
-            "requires_credentials": ["refresh_token", "property_id", "client_id", "client_secret"],
+            "requires_credentials": [
+                "refresh_token",
+                "property_id",
+                "client_id",
+                "client_secret",
+            ],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
                 "property_id": "GOOGLE_ANALYTICS_PROPERTY_ID",
                 "client_id": "GOOGLE_ANALYTICS_CLIENT_ID",
                 "client_secret": "GOOGLE_ANALYTICS_CLIENT_SECRET",
-            }
+            },
         },
-
         MCPServer.GOOGLE_ANALYTICS_OFFICIAL: {
             "name": "Google Analytics (Official)",
             "description": "Official Google Analytics MCP server (supports OAuth2 and ADC)",
@@ -68,28 +79,33 @@ class MCPServerConfig:
             "args": ["-m", "analytics_mcp.server"],  # Run the module
             "service": "google_analytics",
             "working_directory": str(MCPS_DIR / "google-analytics-mcp"),
-            "requires_credentials": ["refresh_token", "property_id", "client_id", "client_secret"],
+            "requires_credentials": [
+                "refresh_token",
+                "property_id",
+                "client_id",
+                "client_secret",
+            ],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
                 "property_id": "GOOGLE_ANALYTICS_PROPERTY_ID",
                 "client_id": "GOOGLE_ANALYTICS_CLIENT_ID",
                 "client_secret": "GOOGLE_ANALYTICS_CLIENT_SECRET",
-            }
+            },
         },
-
         MCPServer.GOOGLE_ANALYTICS_SURENDRANB: {
             "name": "Google Analytics (Optimized)",
             "description": "GA4 MCP with smart optimizations by Surendran B from local mcps directory",
             "command": sys.executable,  # Use current Python interpreter
-            "args": [str(MCPS_DIR / "surendranb-google-analytics-mcp" / "ga4_mcp_server.py")],
+            "args": [
+                str(MCPS_DIR / "surendranb-google-analytics-mcp" / "ga4_mcp_server.py")
+            ],
             "service": "google_analytics",
             "requires_credentials": ["refresh_token", "property_id"],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ANALYTICS_REFRESH_TOKEN",
                 "property_id": "GOOGLE_ANALYTICS_PROPERTY_ID",
-            }
+            },
         },
-
         # === GOOGLE ADS SERVERS ===
         MCPServer.GOOGLE_ADS_OFFICIAL: {
             "name": "Google Ads (Official)",
@@ -98,7 +114,12 @@ class MCPServerConfig:
             "args": ["-m", "ads_mcp.server"],  # Run the module
             "service": "google_ads",
             "working_directory": str(MCPS_DIR / "google_ads_mcp"),
-            "requires_credentials": ["refresh_token", "developer_token", "client_id", "client_secret"],
+            "requires_credentials": [
+                "refresh_token",
+                "developer_token",
+                "client_id",
+                "client_secret",
+            ],
             "env_mapping": {
                 "refresh_token": "GOOGLE_ADS_REFRESH_TOKEN",
                 "developer_token": "GOOGLE_ADS_DEVELOPER_TOKEN",
@@ -106,9 +127,8 @@ class MCPServerConfig:
                 "client_secret": "GOOGLE_ADS_CLIENT_SECRET",
                 "customer_id": "GOOGLE_ADS_CUSTOMER_ID",
                 "login_customer_id": "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
-            }
+            },
         },
-
         MCPServer.GOOGLE_ADS_COHNEN: {
             "name": "Google Ads (Cohnen)",
             "description": "Alternative Google Ads MCP by Ernesto Cohnen from local mcps directory",
@@ -120,9 +140,8 @@ class MCPServerConfig:
             "env_mapping": {
                 "refresh_token": "GOOGLE_ADS_REFRESH_TOKEN",
                 "developer_token": "GOOGLE_ADS_DEVELOPER_TOKEN",
-            }
+            },
         },
-
         # === META/FACEBOOK ADS SERVERS ===
         MCPServer.META_ADS: {
             "name": "Meta Ads (Pipeboard)",
@@ -131,13 +150,18 @@ class MCPServerConfig:
             "args": ["-m", "meta_ads_mcp"],  # Run the module
             "service": "meta_ads",
             "working_directory": str(MCPS_DIR / "meta-ads-mcp"),
-            "requires_credentials": ["access_token", "app_id", "app_secret", "ad_account_id"],
+            "requires_credentials": [
+                "access_token",
+                "app_id",
+                "app_secret",
+                "ad_account_id",
+            ],
             "env_mapping": {
-                "access_token": "FACEBOOK_ACCESS_TOKEN",
-                "app_id": "FACEBOOK_APP_ID",
-                "app_secret": "FACEBOOK_APP_SECRET",
+                "access_token": "META_ACCESS_TOKEN",
+                "app_id": "META_APP_ID",
+                "app_secret": "META_APP_SECRET",
                 "ad_account_id": "FACEBOOK_AD_ACCOUNT_ID",
-            }
+            },
         },
     }
 
@@ -154,8 +178,7 @@ class MCPSelector:
 
     @staticmethod
     def get_selected_servers(
-        services: List[str],
-        custom_selection: Optional[Dict[str, MCPServer]] = None
+        services: List[str], custom_selection: Optional[Dict[str, MCPServer]] = None
     ) -> List[MCPServer]:
         """Get list of MCP servers to load based on services and preferences.
 
@@ -180,8 +203,7 @@ class MCPSelector:
 
     @staticmethod
     def build_server_params(
-        server: MCPServer,
-        credentials: Dict[str, str]
+        server: MCPServer, credentials: Dict[str, str]
     ) -> StdioServerParameters:
         """Build server parameters for MCPServerAdapter.
 
@@ -230,7 +252,7 @@ class MCPSelector:
             command=config["command"],
             args=config["args"],
             env=env_vars,
-            cwd=config.get("working_directory")  # Set working directory if specified
+            cwd=config.get("working_directory"),  # Set working directory if specified
         )
 
         return server_params
@@ -241,7 +263,7 @@ class MCPSelector:
         google_analytics_credentials: Optional[Dict[str, str]] = None,
         google_ads_credentials: Optional[Dict[str, str]] = None,
         meta_ads_credentials: Optional[Dict[str, str]] = None,
-        custom_selection: Optional[Dict[str, MCPServer]] = None
+        custom_selection: Optional[Dict[str, MCPServer]] = None,
     ) -> List[StdioServerParameters]:
         """Build server parameters for all selected MCP servers.
 
@@ -303,7 +325,7 @@ def configure_all_mcps(
     google_analytics_credentials: Optional[Dict[str, str]] = None,
     google_ads_credentials: Optional[Dict[str, str]] = None,
     meta_ads_credentials: Optional[Dict[str, str]] = None,
-    custom_selection: Optional[Dict[str, MCPServer]] = None
+    custom_selection: Optional[Dict[str, MCPServer]] = None,
 ) -> List[StdioServerParameters]:
     """Configure all MCP servers (backwards compatible API).
 
@@ -314,5 +336,5 @@ def configure_all_mcps(
         google_analytics_credentials,
         google_ads_credentials,
         meta_ads_credentials,
-        custom_selection
+        custom_selection,
     )

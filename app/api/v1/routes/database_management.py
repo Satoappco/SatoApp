@@ -1773,22 +1773,22 @@ async def create_digital_asset(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Customer with ID {asset_data.customer_id} not found"
                 )
-            
-            new_asset = DigitalAsset(
+
+            # Use upsert to create or update digital asset
+            from app.services.digital_asset_service import upsert_digital_asset
+
+            new_asset = upsert_digital_asset(
+                session=session,
                 customer_id=asset_data.customer_id,
+                external_id=asset_data.external_id,
                 asset_type=asset_data.asset_type,
                 provider=asset_data.provider,
                 name=asset_data.name,
                 handle=asset_data.handle,
                 url=asset_data.url,
-                external_id=asset_data.external_id,
                 meta=asset_data.meta,
                 is_active=asset_data.is_active
             )
-            
-            session.add(new_asset)
-            session.commit()
-            session.refresh(new_asset)
             
             return {
                 "success": True,

@@ -261,6 +261,7 @@ class CustomerCredentialManager:
 
                 if not connection or not connection.access_token_enc:
                     logger.warning(f"⚠️  [CredentialManager] No active connection for Facebook Ads asset")
+                    logger.debug(f"digital_asset_id: {fb_asset.id}, customer_id: {customer_id}, campaigner_id: {campaigner_id} could not get: {'connection' if not connection else 'access_token'}")
                     return None
 
                 # Decrypt the access token
