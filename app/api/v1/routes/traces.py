@@ -82,9 +82,6 @@ async def list_traces(
     # Apply filters
     if campaigner_id:
         query = query.where(ChatTrace.campaigner_id == campaigner_id)
-    else:
-        # Default: show only current user's traces
-        query = query.where(ChatTrace.campaigner_id == current_user.id)
 
     if customer_id:
         query = query.where(ChatTrace.customer_id == customer_id)
@@ -169,10 +166,6 @@ async def get_trace_detail(
 
     if not conversation:
         raise HTTPException(status_code=404, detail=f"Trace not found: {thread_id}")
-
-    # Check access (user can only see their own traces)
-    if conversation.campaigner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Get messages
     messages = session.exec(
@@ -289,23 +282,21 @@ async def get_trace_stats(
     """
     since = datetime.utcnow() - timedelta(days=days)
 
-    # Total conversations
+    # Total conversations (all users)
     total_conversations = session.exec(
         select(func.count(ChatTrace.id)).where(
             and_(
                 ChatTrace.record_type == RecordType.CONVERSATION,
-                ChatTrace.campaigner_id == current_user.id,
                 ChatTrace.created_at >= since
             )
         )
     ).one()
 
-    # Conversations by status
+    # Conversations by status (all users)
     conversations = session.exec(
         select(ChatTrace).where(
             and_(
                 ChatTrace.record_type == RecordType.CONVERSATION,
-                ChatTrace.campaigner_id == current_user.id,
                 ChatTrace.created_at >= since
             )
         )

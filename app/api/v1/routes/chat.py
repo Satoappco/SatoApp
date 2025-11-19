@@ -97,10 +97,10 @@ async def chat(
             content=request.message
         )
 
-        # Get conversation workflow for this thread (with campaigner_id and trace)
+        # Get conversation workflow for this thread (with campaigner_id)
         logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
 
-        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
+        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
 
         # Most likely never come here because of get_current_user requires msg len >= 1
         if not request.message.strip():
@@ -256,7 +256,7 @@ async def stream_chat(
             )
 
             # Get conversation workflow for this thread (with campaigner_id and customer_id)
-            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id, trace)
+            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
 
             # Stream message through workflow
             logger.debug(f"📡 [Stream] Starting real-time streaming...")

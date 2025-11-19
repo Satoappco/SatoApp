@@ -26,12 +26,7 @@ class AnalyticsCrewPlaceholder:
     def __init__(self, llm: BaseChatModel):
         self.llm = llm
         self.analytics_crew = AnalyticsCrew()
-        self.trace = None  # Will be set by AgentExecutorNode
         self.credential_manager = CustomerCredentialManager()
-
-    def set_trace(self, trace):
-        """Set the LangFuse trace for this agent."""
-        self.trace = trace
 
     def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
         """Fetch customer's enabled platforms from digital_assets table.
@@ -135,9 +130,7 @@ class AnalyticsCrewPlaceholder:
             "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
             "specific_campaigns": task.get("specific_campaigns", None),
             # Pass credentials for MCP configuration
-            "google_analytics_credentials": google_analytics_credentials,
-            # Pass the LangFuse trace
-            "trace": self.trace
+            "google_analytics_credentials": google_analytics_credentials
         }
 
         logger.info(f"🚀 [AnalyticsCrew] Executing with platforms: {platforms}")
@@ -219,13 +212,8 @@ class SingleAnalyticsAgent:
         if hasattr(llm, '_lc_kwargs'):
             self.llm_kwargs.update(llm._lc_kwargs)
 
-        self.trace = None  # Will be set by AgentExecutorNode
         self.mcp_client: Optional[MCPClient] = None
         self.credential_manager = CustomerCredentialManager()
-
-    def set_trace(self, trace):
-        """Set the LangFuse trace for this agent."""
-        self.trace = trace
 
     def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
         """Fetch customer's enabled platforms from digital_assets table."""

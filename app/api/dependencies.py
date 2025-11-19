@@ -32,21 +32,17 @@ class ApplicationState:
             logger.info("🏗️  [AppState] Created new ApplicationState singleton")
         return cls._instance
 
-    def get_conversation_workflow(self, current_user: Campaigner, thread_id: str = "default", customer_id: int = None, trace=None) -> ConversationWorkflow:
+    def get_conversation_workflow(self, current_user: Campaigner, thread_id: str = "default", customer_id: int = None) -> ConversationWorkflow:
         """Get or create conversation workflow for thread."""
         if thread_id not in self._conversation_workflows:
             logger.info(f"🆕 [AppState] Creating new workflow for thread: {thread_id[:8]}... | Campaigner: {current_user.id} | Customer: {customer_id}")
             self._conversation_workflows[thread_id] = ConversationWorkflow(
                 campaigner=current_user,
                 thread_id=thread_id,
-                customer_id=customer_id,
-                trace=trace
+                customer_id=customer_id
             )
         else:
             logger.debug(f"♻️  [AppState] Reusing existing workflow for thread: {thread_id[:8]}...")
-            # Update trace for existing workflow
-            if trace:
-                self._conversation_workflows[thread_id].trace = trace
         return self._conversation_workflows[thread_id]
 
     def get_analytics_crew(self) -> AnalyticsCrew:
