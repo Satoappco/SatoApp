@@ -281,41 +281,13 @@ class SingleAnalyticsAgent:
                 self.mcp_client = MCPClient(servers)
                 logger.info(f"✅ [SingleAnalyticsAgent] Initialized {len(servers)} MCP servers: {list(servers.keys())}")
 
-                # Log MCP details to traces
-                if thread_id:
-                    trace_service = ChatTraceService()
-
-                    # Build MCP details string
-                    mcp_details = "**MCP Server Configuration:**\n\n"
-                    for server_name, server_config in servers.items():
-                        mcp_details += f"**{server_name}:**\n"
-                        mcp_details += f"  - Command: `{server_config['command']}`\n"
-                        mcp_details += f"  - Args: `{' '.join(server_config.get('args', []))}`\n"
-
-                        # Log environment variables (sanitize sensitive data)
-                        env_vars = server_config.get('env', {})
-                        if env_vars:
-                            mcp_details += f"  - Environment Variables:\n"
-                            for key, value in env_vars.items():
-                                # Sanitize tokens and secrets
-                                if any(sensitive in key.lower() for sensitive in ['token', 'secret', 'key', 'password']):
-                                    mcp_details += f"    - {key}: ***REDACTED***\n"
-                                else:
-                                    mcp_details += f"    - {key}: {value}\n"
-                        mcp_details += "\n"
-
-                    trace_service.add_agent_step(
-                        thread_id=thread_id,
-                        step_type="mcp_initialization",
-                        content=f"Initialized {len(servers)} MCP server(s)\n\n{mcp_details}",
-                        agent_name="single_analytics_agent",
-                        metadata={
-                            "num_servers": len(servers),
-                            "server_names": list(servers.keys()),
-                            "platforms": platforms
-                        },
-                        level=level
-                    )
+                # Store MCP details for later logging (will be logged with tools)
+                self._mcp_servers_info = {
+                    "servers": servers,
+                    "platforms": platforms,
+                    "thread_id": thread_id,
+                    "level": level
+                }
 
             except Exception as e:
                 logger.error(f"❌ [SingleAnalyticsAgent] Failed to initialize MCP client: {e}")
@@ -685,20 +657,67 @@ class SingleAnalyticsAgent:
 
             logger.info(f"🚀 [SingleAnalyticsAgent] Executing with {len(tools)} tools from platforms: {platforms}")
 
-            # Log available tools
+            # Log MCP initialization with tools list (combined)
             if trace_service and thread_id:
-                tools_list = "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
-                trace_service.add_agent_step(
-                    thread_id=thread_id,
-                    step_type="tools_loaded",
-                    content=f"Loaded {len(tools)} MCP tools:\n\n{tools_list}",
-                    agent_name="single_analytics_agent",
-                    metadata={
-                        "num_tools": len(tools),
-                        "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)]
-                    },
-                    level=level
-                )
+                # Build MCP servers summary
+                mcp_info = getattr(self, '_mcp_servers_info', None)
+                if mcp_info:
+                    servers = mcp_info['servers']
+                    server_names = list(servers.keys())
+
+                    # Build combined content
+                    content = f"**Initialized {len(servers)} MCP Server(s):**\n"
+                    content += f"{', '.join(server_names)}\n\n"
+
+                    # Add tools list
+                    content += f"**Loaded {len(tools)} Tools:**\n"
+                    content += "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
+
+                    # Build detailed metadata with server configurations
+                    mcp_details = {}
+                    for server_name, server_config in servers.items():
+                        server_info = {
+                            "command": server_config['command'],
+                            "args": server_config.get('args', [])
+                        }
+                        # Sanitize environment variables
+                        env_vars = server_config.get('env', {})
+                        if env_vars:
+                            server_info["env"] = {
+                                key: "***REDACTED***" if any(s in key.lower() for s in ['token', 'secret', 'key', 'password']) else value
+                                for key, value in env_vars.items()
+                            }
+                        mcp_details[server_name] = server_info
+
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="mcp_initialization",
+                        content=content,
+                        agent_name="single_analytics_agent",
+                        metadata={
+                            "num_servers": len(servers),
+                            "server_names": server_names,
+                            "num_tools": len(tools),
+                            "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)],
+                            "platforms": mcp_info['platforms'],
+                            "mcp_servers": mcp_details  # Full server config in metadata
+                        },
+                        level=level
+                    )
+                else:
+                    # Fallback if MCP info not available
+                    tools_list = "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="tools_loaded",
+                        content=f"Loaded {len(tools)} MCP tools:\n\n{tools_list}",
+                        agent_name="single_analytics_agent",
+                        metadata={
+                            "num_tools": len(tools),
+                            "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)]
+                        },
+                        level=level
+                    )
 
             # Build context for the agent
             context_str = self._build_context_string(task_details)
@@ -790,18 +809,30 @@ fix the specific issue, and retry immediately. Don't give up after the first err
 
 Remember: Use the tools available to you to fetch real data before providing insights."""
 
-            # Log agent start with system prompt
+            # Log agent start with key parameters
             if trace_service and thread_id:
+                params_summary = f"""**Query:** {query}
+
+**Platforms:** {', '.join(platforms)}
+
+**Customer ID:** {customer_id}
+
+**Language:** {language}
+
+**Available Tools:** {len(tools)} MCP tools loaded"""
+
                 trace_service.add_agent_step(
                     thread_id=thread_id,
                     step_type="agent_start",
-                    content=f"Starting Analytics Agent execution\n\n**System Prompt:**\n{system_prompt}",
+                    content=f"Starting Analytics Agent execution\n\n{params_summary}",
                     agent_name="single_analytics_agent",
                     metadata={
                         "platforms": platforms,
                         "num_tools": len(tools),
                         "query": query,
-                        "task": str(task)[:500]  # Truncated task for logging
+                        "customer_id": customer_id,
+                        "language": language,
+                        "system_prompt": system_prompt  # Full prompt in metadata for reference
                     },
                     level=level
                 )
@@ -862,6 +893,29 @@ Remember: Use the tools available to you to fetch real data before providing ins
                         )
 
             except Exception as e:
+                # Log any tool calls that were made before the exception
+                if trace_service and thread_id:
+                    # Try to extract intermediate_steps from the exception context
+                    import sys
+                    exc_info = sys.exc_info()
+
+                    # Log the exception with full traceback
+                    import traceback
+                    traceback_str = traceback.format_exc()
+
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="agent_exception",
+                        content=f"Exception during agent execution: {str(e)}",
+                        agent_name="single_analytics_agent",
+                        metadata={
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "traceback": traceback_str
+                        },
+                        level=level
+                    )
+
                 # Check if this is a tool schema error
                 error_str = str(e)
                 if "GenerateContentRequest.tools" in error_str and "missing field" in error_str:
@@ -930,11 +984,27 @@ Remember: Use the tools available to you to fetch real data before providing ins
             elif "ToolException" in error_type:
                 user_message = f"I ran into an issue using the analytics tools: {error_str}"
 
+            # Log error with traceback to traces
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="agent_error",
+                    content=f"Agent execution failed: {error_str}",
+                    agent_name="single_analytics_agent",
+                    metadata={
+                        "error_type": error_type,
+                        "error_message": error_str,
+                        "traceback": traceback_str
+                    },
+                    level=level
+                )
+
             return {
                 "status": "error",
                 "result": user_message,
                 "message": f"Single analytics agent execution failed: {str(e)}",
                 "error_type": error_type,
+                "traceback": traceback_str,  # Include traceback in response
                 "agent": "single_analytics_agent",
                 "platforms": platforms,
                 "task_received": task

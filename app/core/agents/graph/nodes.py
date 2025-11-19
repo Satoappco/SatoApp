@@ -713,16 +713,23 @@ class AgentExecutorNode:
 
                 # Log agent error step
                 if trace_service and thread_id:
+                    error_metadata = {
+                        "error_message": str(error_message),
+                        "error_type": result.get("error_type", "unknown"),
+                        "execution_time_ms": execution_time_ms,
+                        "end_time": time.time()
+                    }
+
+                    # Include traceback if available in result
+                    if "traceback" in result:
+                        error_metadata["traceback"] = result["traceback"]
+
                     trace_service.add_agent_step(
                         thread_id=thread_id,
                         step_type="agent_error",
                         content=f"Agent {agent_name} encountered an error: {error_message}",
                         agent_name=agent_name,
-                        metadata={
-                            "error_message": str(error_message),
-                            "execution_time_ms": execution_time_ms,
-                            "end_time": time.time()
-                        }
+                        metadata=error_metadata
                     )
 
                 # Return state that will route back to chatbot with error context
@@ -770,6 +777,10 @@ class AgentExecutorNode:
             logger.error(f"❌ [AgentExecutor] Agent execution failed: {str(e)}", exc_info=True)
             execution_time_ms = int((time.time() - start_time) * 1000)
 
+            # Get full traceback
+            import traceback
+            traceback_str = traceback.format_exc()
+
             # Log agent exception step
             if trace_service and thread_id:
                 trace_service.add_agent_step(
@@ -780,6 +791,7 @@ class AgentExecutorNode:
                     metadata={
                         "exception": str(e),
                         "exception_type": type(e).__name__,
+                        "traceback": traceback_str,
                         "execution_time_ms": execution_time_ms,
                         "end_time": time.time()
                     }
