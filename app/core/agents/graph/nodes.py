@@ -744,11 +744,18 @@ class AgentExecutorNode:
             # Format response message for successful completion
             response_message = self._format_agent_response(result)
 
+            # Log the raw result for debugging
+            logger.info(f"📋 [AgentExecutor] Raw result status: {result.get('status')}")
+            logger.info(f"📋 [AgentExecutor] Raw result keys: {list(result.keys())}")
+            logger.debug(f"📋 [AgentExecutor] Raw result.result type: {type(result.get('result'))}")
+
             # Safe preview of response (handle both string and CrewOutput)
             try:
                 preview = str(response_message)[:100] if response_message else "No response"
-                logger.debug(f"💬 [AgentExecutor] Response: '{preview}...'")
-            except Exception:
+                logger.info(f"💬 [AgentExecutor] Formatted response: '{preview}...'")
+                logger.info(f"💬 [AgentExecutor] Response length: {len(str(response_message)) if response_message else 0} characters")
+            except Exception as e:
+                logger.error(f"💬 [AgentExecutor] Response formatting error: {e}")
                 logger.debug(f"💬 [AgentExecutor] Response: (non-string type: {type(response_message)})")
 
             # Log agent completion step
@@ -766,9 +773,17 @@ class AgentExecutorNode:
                     }
                 )
 
+            # Ensure we have a valid response message
+            final_message = str(response_message) if response_message else "Task completed."
+            if not final_message or final_message.strip() == "":
+                logger.error(f"❌ [AgentExecutor] Empty response message! Using fallback.")
+                final_message = "I've processed your request, but encountered an issue generating the response. Please check the traces for details."
+
+            logger.info(f"✅ [AgentExecutor] Adding AI message with {len(final_message)} characters")
+
             return {
                 "agent_result": result,
-                "messages": state["messages"] + [AIMessage(content=str(response_message))],
+                "messages": state["messages"] + [AIMessage(content=final_message)],
                 "conversation_complete": True,
                 "error": None
             }
@@ -818,25 +833,35 @@ class AgentExecutorNode:
         status = result.get("status")
         agent = result.get("agent", "Unknown agent")
 
+        logger.debug(f"🔍 [_format_agent_response] Formatting result with status: {status}, agent: {agent}")
+
         if status == "completed":
             crew_result = result.get("result", "Task completed successfully.")
+
+            logger.debug(f"🔍 [_format_agent_response] crew_result type: {type(crew_result)}")
 
             # Handle CrewOutput object from CrewAI
             # CrewOutput has multiple attributes: raw, pydantic, json_dict, tasks_output, token_usage
             if hasattr(crew_result, "raw"):
                 # Use the raw string output from CrewAI
-                return str(crew_result.raw)
+                formatted = str(crew_result.raw)
+                logger.debug(f"🔍 [_format_agent_response] Using .raw attribute: {len(formatted)} chars")
+                return formatted
             elif hasattr(crew_result, "__str__"):
                 # Fallback to string representation
-                return str(crew_result)
+                formatted = str(crew_result)
+                logger.debug(f"🔍 [_format_agent_response] Using __str__: {len(formatted)} chars")
+                return formatted
             else:
                 # Already a string
-                return crew_result
+                logger.debug(f"🔍 [_format_agent_response] Using as-is: {len(str(crew_result))} chars")
+                return crew_result if isinstance(crew_result, str) else str(crew_result)
 
         elif status == "placeholder":
             message = result.get("message", "")
             return f"{message}\n\nThis feature is coming soon!"
         else:
+            logger.warning(f"⚠️  [_format_agent_response] Unknown status: {status}, using fallback")
             return f"Task processed by {agent}."
 
 

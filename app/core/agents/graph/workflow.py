@@ -246,16 +246,29 @@ class ConversationWorkflow:
         # Extract response message
         messages = result.get("messages", [])
         assistant_message = ""
+
+        logger.debug(f"📋 [Stream] Total messages in result: {len(messages)}")
         if messages:
             last_message = messages[-1]
+            logger.debug(f"📋 [Stream] Last message type: {last_message.type if hasattr(last_message, 'type') else type(last_message)}")
             if hasattr(last_message, "content"):
                 assistant_message = last_message.content
+                logger.info(f"📋 [Stream] Extracted message content: {len(assistant_message)} chars")
+            else:
+                logger.warning(f"⚠️  [Stream] Last message has no content attribute")
+        else:
+            logger.warning(f"⚠️  [Stream] No messages in result!")
 
         # If clarification question exists, use that
         if result.get("clarification_question"):
             assistant_message = result["clarification_question"]
+            logger.debug(f"📋 [Stream] Using clarification question instead")
 
-        logger.info(f"📤 [Stream] Streaming {len(assistant_message.split())} words")
+        if not assistant_message:
+            logger.error(f"❌ [Stream] No assistant message to stream! Result keys: {list(result.keys())}")
+            logger.error(f"❌ [Stream] Messages: {[(m.type if hasattr(m, 'type') else type(m), len(m.content) if hasattr(m, 'content') else 0) for m in messages]}")
+
+        logger.info(f"📤 [Stream] Streaming {len(assistant_message.split()) if assistant_message else 0} words ({len(assistant_message)} chars)")
         #TODO: Why is that needed?
         yield {
             "type": "metadata",
@@ -267,7 +280,9 @@ class ConversationWorkflow:
             "date_range_start": self.conversation_state.get("date_range_start"),
             "date_range_end": self.conversation_state.get("date_range_end"),
         }
-        yield {"type": "content", "chunk": assistant_message}
+        # Yield content character by character for streaming
+        for char in assistant_message:
+            yield {"type": "content", "chunk": char}
 
 
         # logger.info(f"📡 [Workflow] Streaming message: '{message[:50]}...'")
