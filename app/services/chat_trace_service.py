@@ -16,6 +16,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from sqlmodel import Session, select, func
 from sqlalchemy import and_, or_
 from sqlalchemy.orm.attributes import flag_modified
+import tiktoken
 
 from app.models.chat_traces import ChatTrace, RecordType
 from app.config.langfuse_config import LangfuseConfig
@@ -53,6 +54,28 @@ class ChatTraceService:
         """Close session if it was created internally."""
         if self._should_close_session and session:
             session.close()
+
+    @staticmethod
+    def count_tokens(text: str, model: str = "gpt-4") -> int:
+        """
+        Count tokens in a text string using tiktoken.
+
+        Args:
+            text: Text to count tokens for
+            model: Model name (default: gpt-4)
+
+        Returns:
+            Number of tokens
+        """
+        try:
+            # Get encoding for the model
+            encoding = tiktoken.encoding_for_model(model)
+            return len(encoding.encode(text))
+        except Exception as e:
+            # Fallback to approximate count if tiktoken fails
+            print(f"⚠️ Token counting failed: {e}, using approximation")
+            # Rough approximation: 1 token ~ 4 characters
+            return len(text) // 4
 
     # ===== Conversation Management =====
 
@@ -129,6 +152,7 @@ class ChatTraceService:
                 "tool_usage_count": 0,
                 "total_tokens": 0,
                 "duration_seconds": None,
+                "current_level": 0,  # Track routing hierarchy level
                 "extra_metadata": metadata or {}
             }
 
@@ -325,7 +349,8 @@ class ChatTraceService:
         model: Optional[str] = None,
         tokens_used: Optional[int] = None,
         latency_ms: Optional[int] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        level: int = 0
     ) -> Optional[ChatTrace]:
         """
         Add a message to a conversation.
@@ -359,6 +384,10 @@ class ChatTraceService:
                 )
             ).one()
 
+            # Count tokens if not provided
+            if tokens_used is None and content:
+                tokens_used = self.count_tokens(content, model or "gpt-4")
+
             # Create Langfuse generation if this is an assistant message
             langfuse_generation_id = None
             if LANGFUSE_AVAILABLE and role == "assistant" and conversation.langfuse_trace_id:
@@ -385,6 +414,7 @@ class ChatTraceService:
                 "model": model,
                 "tokens_used": tokens_used,
                 "latency_ms": latency_ms,
+                "level": level,
                 "langfuse_generation_id": langfuse_generation_id,
                 "extra_metadata": metadata or {}
             }
@@ -435,7 +465,8 @@ class ChatTraceService:
         agent_role: Optional[str] = None,
         task_index: Optional[int] = None,
         task_description: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        level: int = 0
     ) -> Optional[ChatTrace]:
         """
         Add an agent step to a conversation.
@@ -500,6 +531,7 @@ class ChatTraceService:
                 "agent_role": agent_role,
                 "task_index": task_index,
                 "task_description": task_description,
+                "level": level,
                 "extra_metadata": metadata or {}
             }
 
@@ -548,7 +580,8 @@ class ChatTraceService:
         success: bool = True,
         error: Optional[str] = None,
         latency_ms: Optional[int] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        level: int = 0
     ) -> Optional[ChatTrace]:
         """
         Add a tool usage to a conversation.
@@ -618,6 +651,7 @@ class ChatTraceService:
                 "success": success,
                 "error": error,
                 "latency_ms": latency_ms,
+                "level": level,
                 "extra_metadata": metadata or {}
             }
 

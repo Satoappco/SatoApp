@@ -231,11 +231,13 @@ class SingleAnalyticsAgent:
         """Fetch customer's Facebook/Meta Ads access token."""
         return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
-    async def _initialize_mcp_clients(self, task_details: Dict[str, Any]):
+    async def _initialize_mcp_clients(self, task_details: Dict[str, Any], thread_id: Optional[str] = None, level: int = 1):
         """Initialize and connect MultiServerMCPClient using MCP registry.
 
         Args:
             task_details: Task details containing platforms and credentials
+            thread_id: Optional thread ID for logging
+            level: Hierarchy level for logging (default: 1)
         """
         platforms = task_details.get("platforms", [])
         ga_credentials = task_details.get("google_analytics_credentials")
@@ -278,6 +280,43 @@ class SingleAnalyticsAgent:
             try:
                 self.mcp_client = MCPClient(servers)
                 logger.info(f"✅ [SingleAnalyticsAgent] Initialized {len(servers)} MCP servers: {list(servers.keys())}")
+
+                # Log MCP details to traces
+                if thread_id:
+                    trace_service = ChatTraceService()
+
+                    # Build MCP details string
+                    mcp_details = "**MCP Server Configuration:**\n\n"
+                    for server_name, server_config in servers.items():
+                        mcp_details += f"**{server_name}:**\n"
+                        mcp_details += f"  - Command: `{server_config['command']}`\n"
+                        mcp_details += f"  - Args: `{' '.join(server_config.get('args', []))}`\n"
+
+                        # Log environment variables (sanitize sensitive data)
+                        env_vars = server_config.get('env', {})
+                        if env_vars:
+                            mcp_details += f"  - Environment Variables:\n"
+                            for key, value in env_vars.items():
+                                # Sanitize tokens and secrets
+                                if any(sensitive in key.lower() for sensitive in ['token', 'secret', 'key', 'password']):
+                                    mcp_details += f"    - {key}: ***REDACTED***\n"
+                                else:
+                                    mcp_details += f"    - {key}: {value}\n"
+                        mcp_details += "\n"
+
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="mcp_initialization",
+                        content=f"Initialized {len(servers)} MCP server(s)\n\n{mcp_details}",
+                        agent_name="single_analytics_agent",
+                        metadata={
+                            "num_servers": len(servers),
+                            "server_names": list(servers.keys()),
+                            "platforms": platforms
+                        },
+                        level=level
+                    )
+
             except Exception as e:
                 logger.error(f"❌ [SingleAnalyticsAgent] Failed to initialize MCP client: {e}")
                 import traceback
@@ -565,6 +604,7 @@ class SingleAnalyticsAgent:
         context = task.get("context", {})
         language = context.get("language", "english")
         thread_id = task.get("thread_id")  # Extract thread_id for tracing
+        level = task.get("level", 1)  # Extract level for hierarchy tracking
 
         # Initialize trace service if thread_id is available
         trace_service = ChatTraceService() if thread_id else None
@@ -612,7 +652,7 @@ class SingleAnalyticsAgent:
         }
 
         # Initialize and connect MCP clients
-        await self._initialize_mcp_clients(task_details)
+        await self._initialize_mcp_clients(task_details, thread_id=thread_id, level=level)
 
         # Check if MCP client was initialized successfully
         if not self.mcp_client:
@@ -644,6 +684,21 @@ class SingleAnalyticsAgent:
                 }
 
             logger.info(f"🚀 [SingleAnalyticsAgent] Executing with {len(tools)} tools from platforms: {platforms}")
+
+            # Log available tools
+            if trace_service and thread_id:
+                tools_list = "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="tools_loaded",
+                    content=f"Loaded {len(tools)} MCP tools:\n\n{tools_list}",
+                    agent_name="single_analytics_agent",
+                    metadata={
+                        "num_tools": len(tools),
+                        "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)]
+                    },
+                    level=level
+                )
 
             # Build context for the agent
             context_str = self._build_context_string(task_details)
@@ -718,19 +773,20 @@ You have 15 iterations to get it right - USE THEM!
 
 Remember: Use the tools available to you to fetch real data before providing insights."""
 
-            # Log system prompt to traces
+            # Log agent start with system prompt
             if trace_service and thread_id:
                 trace_service.add_agent_step(
                     thread_id=thread_id,
-                    step_type="system_prompt",
-                    content="Analytics Agent System Prompt",
+                    step_type="agent_start",
+                    content=f"Starting Analytics Agent execution\n\n**System Prompt:**\n{system_prompt}",
                     agent_name="single_analytics_agent",
                     metadata={
-                        "system_prompt": system_prompt,
                         "platforms": platforms,
                         "num_tools": len(tools),
-                        "query": query
-                    }
+                        "query": query,
+                        "task": str(task)[:500]  # Truncated task for logging
+                    },
+                    level=level
                 )
 
             # Create prompt template
@@ -777,7 +833,8 @@ Remember: Use the tools available to you to fetch real data before providing ins
                             metadata={
                                 "step_index": i,
                                 "action_type": type(action).__name__
-                            }
+                            },
+                            level=level
                         )
 
             except Exception as e:

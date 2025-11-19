@@ -355,21 +355,7 @@ if the user request is simple and can be answered without an agent, provide a di
         if campaigner is None:
             raise ValueError("Campaigner information is required in the state")
 
-        # Log chatbot system prompt
-        thread_id = state.get("thread_id")
-        if thread_id:
-            trace_service = ChatTraceService()
-            trace_service.add_agent_step(
-                thread_id=thread_id,
-                step_type="system_prompt",
-                content="Chatbot System Prompt",
-                agent_name="chatbot_orchestrator",
-                metadata={
-                    "system_prompt": self.formatted_system_prompt,
-                    "campaigner_id": campaigner.id if campaigner else None,
-                    "customer_id": state.get("customer_id")
-                }
-            )
+        # System prompt will be logged with agent_start in AgentExecutorNode
 
         # Check if we're handling an agent error
         if state.get("agent_error"):
@@ -696,26 +682,21 @@ class AgentExecutorNode:
         trace_service = ChatTraceService() if thread_id else None
         start_time = time.time()
 
-        try:
-            # Log agent step start
-            if trace_service and thread_id:
-                trace_service.add_agent_step(
-                    thread_id=thread_id,
-                    step_type="agent_start",
-                    content=f"Starting execution of {agent_name}",
-                    agent_name=agent_name,
-                    metadata={
-                        "task": str(task),  # Convert to string to ensure JSON serialization
-                        "start_time": start_time
-                    }
-                )
+        # Get current level from conversation and increment for this agent execution
+        current_level = 0
+        if trace_service and thread_id:
+            conversation = trace_service.get_conversation(thread_id)
+            if conversation:
+                current_level = conversation.data.get("current_level", 0) + 1
 
+        try:
             # Get and execute the agent
+            # Note: agent_start will be logged by the agent itself with its system prompt
             logger.debug(f"🔍 [AgentExecutor] Getting agent instance: {agent_name}")
             agent = get_agent(agent_name, self.llm)
 
-            # Add thread_id to task for tracing inside the agent
-            task_with_trace = {**task, "thread_id": thread_id} if thread_id else task
+            # Add thread_id and level to task for tracing inside the agent
+            task_with_trace = {**task, "thread_id": thread_id, "level": current_level} if thread_id else task
 
             logger.info(f"🚀 [AgentExecutor] Executing {agent_name} with task...")
             logger.debug(f"📋 [AgentExecutor] Task details: {task}")
