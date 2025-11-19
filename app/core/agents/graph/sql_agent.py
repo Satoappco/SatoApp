@@ -2,7 +2,7 @@
 
 import logging
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.language_models import BaseChatModel
@@ -31,6 +31,35 @@ class SQLBasicInfoAgent:
         self.validator_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash") #ChatOpenAI(model="gpt-4o-mini", temperature=0)  # Dedicated validator
         self.agent_service = AgentService()
 
+    def _get_assigned_customers(self, campaigner_id: int) -> list:
+        """Get list of customers assigned to this campaigner.
+
+        Args:
+            campaigner_id: ID of the campaigner
+
+        Returns:
+            List of dicts with customer id and name
+        """
+        try:
+            from app.config.database import get_session
+            from app.models.analytics import Customer
+            from sqlmodel import select
+
+            with get_session() as session:
+                # Query customers where assigned_campaigner_id matches
+                statement = select(Customer).where(
+                    Customer.assigned_campaigner_id == campaigner_id
+                )
+                customers = session.exec(statement).all()
+
+                return [
+                    {"id": customer.id, "name": customer.full_name}
+                    for customer in customers
+                ]
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to fetch assigned customers: {e}")
+            return []
+
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a database query task.
 
@@ -46,6 +75,7 @@ class SQLBasicInfoAgent:
         query = task.get("query", "")
         campaigner_id = task.get("campaigner_id")
         context = task.get("context", {})
+        customer_id = task.get("customer_id")
 
         logger.info(f"🤖 [SQLBasicInfoAgent] Processing query for campaigner: {campaigner_id}")
         logger.debug(f"📝 [SQLBasicInfoAgent] Query: '{query[:100]}...'")
@@ -67,7 +97,7 @@ class SQLBasicInfoAgent:
             schema_info = postgres_tool.get_schema_info()
 
             # Create the agent with tools
-            agent = self._create_agent(postgres_tool, schema_info, context)
+            agent = self._create_agent(postgres_tool, schema_info, context, customer_id)
 
             # Execute the agent
             logger.info(f"🚀 [SQLBasicInfoAgent] Executing agent")
@@ -97,7 +127,8 @@ class SQLBasicInfoAgent:
         self,
         postgres_tool: PostgresTool,
         schema_info: Dict[str, Any],
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        customer_id : Optional[int]
     ) -> AgentExecutor:
         """Create a LangChain agent with PostgresTool.
 
@@ -119,7 +150,16 @@ class SQLBasicInfoAgent:
             context_parts.append(f"Agency: {agency.get('name')} (ID: {agency.get('id')}), Status: {agency.get('status')}")
         if context.get("campaigner"):
             camp = context["campaigner"]
-            context_parts.append(f"User: {camp.get('full_name')} ({camp.get('email')}), Role: {camp.get('role')}")
+            campaigner_info = f"User: {camp.get('full_name')} ({camp.get('email')}), Role: {camp.get('role')}"
+
+            # Add assigned customers information
+            assigned_customers = self._get_assigned_customers(postgres_tool.campaigner_id)
+            if assigned_customers:
+                customer_names = [f"{c['name']} (ID: {c['id']})" for c in assigned_customers]
+                campaigner_info += f"\n   Responsible for customers: {', '.join(customer_names)}"
+
+            context_parts.append(campaigner_info)
+        context_parts.append(f"If not specified otherwise, assume user is subjecting to Customer ID: {customer_id if customer_id else 'ANY'}")
 
         # Add language instruction
         user_language = context.get("language", "hebrew")
@@ -176,6 +216,10 @@ class SQLBasicInfoAgent:
             if sql_agent_config:
                 logger.info("✅ Loaded SQL database expert config from database")
 
+                # Get current date and time
+                from datetime import datetime
+                current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                 # Build system prompt from database config
                 role = sql_agent_config.get('role', 'SQL database assistant')
                 goal = sql_agent_config.get('goal', '')
@@ -183,7 +227,7 @@ class SQLBasicInfoAgent:
                 task_template = sql_agent_config.get('task', '')
 
                 # Build the system message
-                prompt_parts = []
+                prompt_parts = [f"Current Date and Time: {current_datetime}\n"]
                 if role:
                     prompt_parts.append(f"{role}.")
                 if backstory:
@@ -219,7 +263,12 @@ class SQLBasicInfoAgent:
         Returns:
             Fallback system prompt
         """
-        return """
+        from datetime import datetime
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        return f"""
+Current Date and Time: {current_datetime}
+
 You are an expert SQL database assistant with READ-ONLY access to a PostgreSQL database.
 
 Your role is to:
@@ -250,12 +299,12 @@ IMPORTANT SQL WRITING RULES:
    WHERE camp.id = :campaigner_id
    ```
 
-   **For customers table:**
+   **For user's customers table:**
    - Join directly with campaigners:
    ```sql
    FROM customers c
    JOIN campaigners camp ON camp.agency_id = c.agency_id
-   WHERE camp.id = :campaigner_id
+   WHERE c.assigned_campaigner_id = camp.id AND camp.id = :campaigner_id
    ```
 
    **For agencies or campaigners table:**

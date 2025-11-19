@@ -17,6 +17,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # Copy application code
 COPY app/ ./app/
 COPY alembic.ini ./
+# COPY google.json ./
 COPY app/db/migrations/ ./alembic/
 
 # Set environment variables
@@ -30,4 +31,5 @@ CMD exec gunicorn -k uvicorn.workers.UvicornWorker \
     --workers 1 \
     --threads 8 \
     --timeout 0 \
-    app.main:app
+    app.main:app 
+    # --reload \

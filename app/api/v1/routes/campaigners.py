@@ -54,12 +54,17 @@ async def get_workers(
             
             workers = session.exec(statement).all()
             
-            # Get customer counts for each worker
-            from app.models.users import Customer
+            # Get customer counts for each worker from customer_campaigner_assignments
+            from app.models.users import Customer, CustomerCampaignerAssignment
             customer_counts = {}
             for worker in workers:
                 count = session.exec(
-                    select(Customer).where(Customer.assigned_campaigner_id == worker.id)
+                    select(CustomerCampaignerAssignment).where(
+                        and_(
+                            CustomerCampaignerAssignment.campaigner_id == worker.id,
+                            CustomerCampaignerAssignment.is_active == True
+                        )
+                    )
                 ).all()
                 customer_counts[worker.id] = len(count)
             
@@ -341,17 +346,32 @@ async def delete_worker(
                     detail="Cannot delete yourself"
                 )
             
-            # Reassign customers assigned to this worker to NULL
-            from app.models.users import Customer, CampaignerSession, InviteToken
+            # Deactivate customer assignments for this worker
+            from app.models.users import Customer, CampaignerSession, InviteToken, CustomerCampaignerAssignment
             from app.models.analytics import Connection, UserPropertySelection
-            
-            # Reassign customers
-            customers_to_reassign = session.exec(
+
+            # Deactivate assignments (don't delete - keeps history)
+            assignments_to_deactivate = session.exec(
+                select(CustomerCampaignerAssignment).where(
+                    and_(
+                        CustomerCampaignerAssignment.campaigner_id == worker_id,
+                        CustomerCampaignerAssignment.is_active == True
+                    )
+                )
+            ).all()
+
+            for assignment in assignments_to_deactivate:
+                assignment.is_active = False
+                assignment.unassigned_at = datetime.utcnow()
+
+            # Also update old deprecated field for backward compatibility
+            customers_to_update = session.exec(
                 select(Customer).where(Customer.assigned_campaigner_id == worker_id)
             ).all()
-            
-            for customer in customers_to_reassign:
+
+            for customer in customers_to_update:
                 customer.assigned_campaigner_id = None
+                customer.primary_campaigner_id = None
             
             # Delete all sessions for this worker
             sessions_to_delete = session.exec(

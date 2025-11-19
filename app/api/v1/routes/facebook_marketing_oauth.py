@@ -306,21 +306,47 @@ async def create_facebook_marketing_connection(
             
             # Encrypt access token
             access_token_enc = facebook_service._encrypt_token(request.access_token)
-            
+            token_hash = facebook_service._generate_token_hash(request.access_token)
+
             # Calculate expiry time (default to 1 hour if not specified)
             expires_at = datetime.utcnow() + timedelta(seconds=3600)
-            
-            # Create connection
-            connection = Connection(
-                digital_asset_id=digital_asset.id,
-                customer_id=request.customer_id,
-                campaigner_id=request.campaigner_id,
-                auth_type=AuthType.OAUTH2,
-                access_token_enc=access_token_enc,
-                expires_at=expires_at,
-                revoked=False,
-                last_used_at=datetime.utcnow()
+
+            # Check for existing connection and update if found
+            connection_statement = select(Connection).where(
+                and_(
+                    Connection.digital_asset_id == digital_asset.id,
+                    Connection.campaigner_id == request.campaigner_id,
+                    Connection.auth_type == AuthType.OAUTH2
+                )
             )
+            connection = session.exec(connection_statement).first()
+
+            if connection:
+                # Update existing connection
+                print(f"DEBUG: Updating existing connection {connection.id} for asset {digital_asset.id}")
+                connection.access_token_enc = access_token_enc
+                connection.token_hash = token_hash
+                connection.expires_at = expires_at
+                connection.scopes = facebook_service.FACEBOOK_SCOPES
+                connection.rotated_at = datetime.utcnow()
+                connection.last_used_at = datetime.utcnow()
+                connection.revoked = False  # Reactivate if it was revoked
+            else:
+                # Create new connection
+                print(f"DEBUG: Creating new connection for asset {digital_asset.id}")
+                connection = Connection(
+                    digital_asset_id=digital_asset.id,
+                    customer_id=request.customer_id,
+                    campaigner_id=request.campaigner_id,
+                    auth_type=AuthType.OAUTH2,
+                    access_token_enc=access_token_enc,
+                    token_hash=token_hash,
+                    scopes=facebook_service.FACEBOOK_SCOPES,
+                    expires_at=expires_at,
+                    revoked=False,
+                    last_used_at=datetime.utcnow()
+                )
+
             session.add(connection)
             session.commit()
             session.refresh(connection)

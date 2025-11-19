@@ -29,7 +29,7 @@ class ConversationWorkflow:
     def __init__(self, campaigner: Campaigner, thread_id: str = "default", customer_id: int = None):
         logger.info(f"🏗️  [Workflow] Initializing ConversationWorkflow for thread: {thread_id[:8]}...")
 
-        # Store campaigner id, customer_id and thread_id for this workflow
+        # Store campaigner id, customer_id, and thread_id for this workflow
         self.campaigner = campaigner
         self.customer_id = customer_id
         self.thread_id = thread_id
@@ -63,7 +63,8 @@ class ConversationWorkflow:
             "conversation_complete": False,
             "error": None,
             "campaigner": campaigner,
-            "customer_id": customer_id
+            "customer_id": customer_id,
+            "thread_id": thread_id  # Pass thread_id for tracing
         }
 
         # Initialize LLM
@@ -76,7 +77,7 @@ class ConversationWorkflow:
         logger.debug(f"🤖 [Workflow] LLM initialized: gpt-4o-mini")
 
         # Initialize nodes
-        self.chatbot_node = ChatbotNode(self.llm)
+        self.chatbot_node = ChatbotNode(self.llm, self.conversation_state)
         self.agent_executor_node = AgentExecutorNode(self.llm)
         self.error_handler_node = ErrorHandlerNode()
         logger.debug("📦 [Workflow] Nodes initialized")
@@ -110,7 +111,16 @@ class ConversationWorkflow:
             }
         )
 
-        workflow.add_edge("execute_agent", END)
+        # Add conditional routing from execute_agent
+        workflow.add_conditional_edges(
+            "execute_agent",
+            self._route_from_agent,
+            {
+                "chatbot": "chatbot",  # Route back to chatbot if agent had error
+                "end": END  # End if agent completed successfully
+            }
+        )
+
         workflow.add_edge("handle_error", END)
 
         return workflow
@@ -141,6 +151,26 @@ class ConversationWorkflow:
 
         logger.info("🔀 [Workflow] Routing to: clarify (default)")
         return "clarify"
+
+    def _route_from_agent(
+        self, state: GraphState
+    ) -> Literal["chatbot", "end"]:
+        """Route from agent executor node based on state.
+
+        Args:
+            state: Current graph state
+
+        Returns:
+            Next node to execute
+        """
+        # Check if agent returned an error
+        if state.get("agent_error"):
+            logger.warning("🔀 [Workflow] Agent error detected, routing back to: chatbot")
+            return "chatbot"
+
+        # Normal completion - end workflow
+        logger.info("🔀 [Workflow] Agent completed successfully, routing to: END")
+        return "end"
 
     def process_message(self, message: str) -> dict:
         """Process a user message and return the updated state.
@@ -200,6 +230,118 @@ class ConversationWorkflow:
 
         return self.conversation_state
 
+    async def stream_message(self, message: str):
+        """Stream a user message response in real-time.
+
+        Args:
+            message: User's message
+
+        Yields:
+            Chunks of the assistant's response as they are generated
+        """
+
+        #TODO: fix
+        result = self.process_message(message)
+
+        # Extract response message
+        messages = result.get("messages", [])
+        assistant_message = ""
+
+        logger.debug(f"📋 [Stream] Total messages in result: {len(messages)}")
+        if messages:
+            last_message = messages[-1]
+            logger.debug(f"📋 [Stream] Last message type: {last_message.type if hasattr(last_message, 'type') else type(last_message)}")
+            if hasattr(last_message, "content"):
+                assistant_message = last_message.content
+                logger.info(f"📋 [Stream] Extracted message content: {len(assistant_message)} chars")
+            else:
+                logger.warning(f"⚠️  [Stream] Last message has no content attribute")
+        else:
+            logger.warning(f"⚠️  [Stream] No messages in result!")
+
+        # If clarification question exists, use that
+        if result.get("clarification_question"):
+            assistant_message = result["clarification_question"]
+            logger.debug(f"📋 [Stream] Using clarification question instead")
+
+        if not assistant_message:
+            logger.error(f"❌ [Stream] No assistant message to stream! Result keys: {list(result.keys())}")
+            logger.error(f"❌ [Stream] Messages: {[(m.type if hasattr(m, 'type') else type(m), len(m.content) if hasattr(m, 'content') else 0) for m in messages]}")
+
+        logger.info(f"📤 [Stream] Streaming {len(assistant_message.split()) if assistant_message else 0} words ({len(assistant_message)} chars)")
+        #TODO: Why is that needed?
+        yield {
+            "type": "metadata",
+            # "state": final_state,
+            "needs_clarification": self.conversation_state.get("needs_clarification", False),
+            "ready_for_crew": self.conversation_state.get("ready_for_crew", False),
+            "platforms": self.conversation_state.get("platforms", []),
+            "metrics": self.conversation_state.get("metrics", []),
+            "date_range_start": self.conversation_state.get("date_range_start"),
+            "date_range_end": self.conversation_state.get("date_range_end"),
+        }
+        # Yield content character by character for streaming
+        for char in assistant_message:
+            yield {"type": "content", "chunk": char}
+
+
+        # logger.info(f"📡 [Workflow] Streaming message: '{message[:50]}...'")
+        # logger.debug(f"♻️  [Workflow] Continuing with {len(self.conversation_state.get('messages', []))} existing messages")
+
+        # # Add user message to PostgreSQL history
+        # try:
+        #     self.message_history.add_user_message(message)
+        #     logger.debug(f"💾 [Workflow] User message saved to PostgreSQL")
+        # except Exception as e:
+        #     logger.error(f"❌ [Workflow] Failed to save user message to PostgreSQL: {e}")
+
+        # # Add user message to state for processing
+        # self.conversation_state["messages"].append(HumanMessage(content=message))
+
+        # # Reset flags for this turn
+        # self.conversation_state["next_agent"] = None
+        # self.conversation_state["agent_task"] = None
+        # self.conversation_state["agent_result"] = None
+        # self.conversation_state["needs_clarification"] = False
+        # self.conversation_state["error"] = None
+
+        # # Stream through chatbot node directly
+        # logger.debug("⚙️  [Workflow] Streaming through chatbot node...")
+
+        # full_response = ""
+        # async for chunk in self.chatbot_node.stream_process(self.conversation_state):
+        #     if isinstance(chunk, dict) and "content" in chunk:
+        #         # Stream content chunk
+        #         content = chunk["content"]
+        #         full_response += content
+        #         yield {"type": "content", "chunk": content}
+        #     elif isinstance(chunk, dict) and "state" in chunk:
+        #         # Final state update
+        #         final_state = chunk["state"]
+        #         self.conversation_state.update(final_state)
+
+        #         # Save AI response to PostgreSQL
+        #         try:
+        #             if full_response:
+        #                 self.message_history.add_ai_message(full_response)
+        #                 logger.debug(f"💾 [Workflow] AI message saved to PostgreSQL")
+        #         except Exception as e:
+        #             logger.error(f"❌ [Workflow] Failed to save AI message to PostgreSQL: {e}")
+
+        #         # Yield metadata
+        #         yield {
+        #             "type": "metadata",
+        #             "state": final_state,
+        #             "needs_clarification": final_state.get("needs_clarification", False),
+        #             "ready_for_crew": final_state.get("ready_for_crew", False),
+        #             "platforms": final_state.get("platforms", []),
+        #             "metrics": final_state.get("metrics", []),
+        #             "date_range_start": final_state.get("date_range_start"),
+        #             "date_range_end": final_state.get("date_range_end"),
+        #         }
+
+        # logger.info(f"✅ [Workflow] Streaming completed | Total messages: {len(self.conversation_state['messages'])}")
+
 
 # Module-level function to build and return the compiled graph
 #TODO: Review why it is needed if already in ConversationWorkflow
@@ -219,7 +361,7 @@ def build_graph():
     #     api_key=os.getenv("OPENAI_API_KEY")
     # )
 
-    # Initialize nodes
+    # Initialize nodes (without conversation state for module-level graph)
     chatbot_node = ChatbotNode(llm)
     agent_executor_node = AgentExecutorNode(llm)
     error_handler_node = ErrorHandlerNode()
@@ -235,7 +377,7 @@ def build_graph():
     # Set entry point
     workflow.set_entry_point("chatbot")
 
-    # Routing function
+    # Routing functions
     def route_from_chatbot(
         state: GraphState
     ) -> Literal["execute_agent", "clarify", "error"]:
@@ -248,6 +390,14 @@ def build_graph():
             return "execute_agent"
         return "clarify"
 
+    def route_from_agent(
+        state: GraphState
+    ) -> Literal["chatbot", "end"]:
+        """Route from agent executor node based on state."""
+        if state.get("agent_error"):
+            return "chatbot"
+        return "end"
+
     # Add edges
     workflow.add_conditional_edges(
         "chatbot",
@@ -259,7 +409,15 @@ def build_graph():
         }
     )
 
-    workflow.add_edge("execute_agent", END)
+    workflow.add_conditional_edges(
+        "execute_agent",
+        route_from_agent,
+        {
+            "chatbot": "chatbot",
+            "end": END
+        }
+    )
+
     workflow.add_edge("handle_error", END)
 
     # Compile and return

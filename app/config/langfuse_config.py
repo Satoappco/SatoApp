@@ -7,6 +7,43 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Initialize CrewAI and LiteLLM instrumentation for Langfuse
+_instrumentation_initialized = False
+
+def _initialize_instrumentation():
+    """Initialize OpenInference instrumentation for CrewAI and LiteLLM."""
+    global _instrumentation_initialized
+    if _instrumentation_initialized:
+        return
+
+    crewai_instrumented = False
+    litellm_instrumented = False
+
+    # Try to instrument CrewAI
+    try:
+        from openinference.instrumentation.crewai import CrewAIInstrumentor
+        CrewAIInstrumentor().instrument(skip_dep_check=True)
+        crewai_instrumented = True
+        logger.info("✅ CrewAI instrumentation initialized for Langfuse")
+    except ImportError as e:
+        logger.warning(f"⚠️  CrewAI instrumentation not available: {e}")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize CrewAI instrumentation: {e}")
+
+    # Try to instrument LiteLLM (may not be available)
+    try:
+        from openinference.instrumentation.litellm import LiteLLMInstrumentor
+        LiteLLMInstrumentor().instrument()
+        litellm_instrumented = True
+        logger.info("✅ LiteLLM instrumentation initialized for Langfuse")
+    except ImportError as e:
+        logger.debug(f"LiteLLM instrumentation not available (not using LiteLLM): {e}")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize LiteLLM instrumentation: {e}")
+
+    if crewai_instrumented or litellm_instrumented:
+        _instrumentation_initialized = True
+
 
 class LangfuseConfig:
     """Langfuse configuration and client management."""
@@ -23,6 +60,9 @@ class LangfuseConfig:
         """
         if cls._instance is not None:
             return cls._instance
+
+        # Initialize instrumentation first
+        _initialize_instrumentation()
 
         # Try to get settings from database first, fall back to environment variables
         enabled = False
@@ -89,8 +129,7 @@ class LangfuseConfig:
             cls._instance = Langfuse(
                 public_key=public_key,
                 secret_key=secret_key,
-                host=host,
-                enabled=True
+                host=host
             )
             cls._enabled = True
             logger.info(f"✅ Langfuse initialized successfully (host: {host})")

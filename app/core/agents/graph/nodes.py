@@ -1,6 +1,6 @@
 """Node implementations for the chatbot routing workflow."""
-
-from typing import Dict, Any
+from datetime import datetime
+from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage, AIMessage
@@ -10,30 +10,72 @@ import logging
 from .state import GraphState
 from .agents import get_agent
 from ..database.tools import DatabaseTool
+from app.models.users import Campaigner
 from app.services.agent_service import AgentService
-from app.config.langfuse_config import LangfuseConfig
-from app.core.observability import trace_context
+from app.services.chat_trace_service import ChatTraceService
 import os
+import time
 
 logger = logging.getLogger(__name__)
-
-
-class DummyContext:
-    """Dummy context manager for when tracing is disabled."""
-    def __enter__(self):
-        return self
-    def __exit__(self, *args):
-        pass
 
 
 class ChatbotNode:
     """Chatbot node that interacts with users and routes tasks to specialized agents."""
 
-    def __init__(self, llm: BaseChatModel):
+    def __init__(self, llm: BaseChatModel, conversation_state: Optional[GraphState] = None):
         self.llm = llm
         self.agent_service = AgentService()
         self.system_prompt = self._load_system_prompt()
-        logger.debug(f"✅ [ChatbotNode] System prompt loaded")
+
+        # Only format system prompt if conversation_state is provided
+        if conversation_state and hasattr(conversation_state, 'campaigner'):
+            self.formatted_system_prompt = self._format_system_prompt(conversation_state.campaigner, conversation_state.customer_id)
+        else:
+            # Use generic system prompt for module-level initialization
+            logger.warning("⚠️  [ChatbotNode] conversation_state not provided, using generic system prompt")
+            self.formatted_system_prompt = self.system_prompt
+        logger.debug(f"✅ [ChatbotNode] System prompt loaded: {self.formatted_system_prompt}")
+        self.num_retries = 5
+        # Check if LLM supports streaming
+        self.supports_streaming = False #TODO: hasattr(self.llm, 'astream') or hasattr(self.llm, 'stream')
+        logger.debug(f"🔄 [ChatbotNode] LLM streaming support: {self.supports_streaming}")
+
+    def _format_system_prompt(self, campaigner: Campaigner, customer_id: int) -> str:
+        """Format the system prompt with campaigner and customer information.
+
+        Args:
+            campaigner: Campaigner object
+            customer_id: ID of the customer
+
+        Returns:
+            Formatted system prompt
+        """
+
+        # Get campaigner_id and customer_id from state
+        logger.debug(f"👤 [ChatbotNode] Processing for campaigner: {campaigner} | Customer: {customer_id}")
+
+        # Fetch and format comprehensive campaigner info
+        campaigner_info_str = "User information not available"
+        try:
+            db_tool = DatabaseTool(campaigner.id)
+            comprehensive_info = db_tool.get_comprehensive_campaigner_info()
+            campaigner_info_str = self._format_campaigner_info(comprehensive_info)
+        except Exception as e:
+            logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
+        logger.debug(f"🏪 [ChatbotNode] campaigner_info_str: {campaigner_info_str}")
+
+        # Fetch and format customer info
+        customer_info_str = self._format_customer_info(customer_id, campaigner.id)
+        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str}")
+
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Format system prompt with campaigner and customer info
+        return self.system_prompt.format(
+            campaigner_info=campaigner_info_str,
+            customer_info=customer_info_str,
+            current_datetime=current_datetime
+        )
 
     def _load_system_prompt(self) -> str:
         """Load chatbot system prompt from database or use fallback."""
@@ -45,13 +87,16 @@ class ChatbotNode:
                 logger.info("✅ Loaded chatbot orchestrator config from database")
 
                 # Build system prompt from database config
+                from datetime import datetime
+                current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                 role = chatbot_config.get('role', 'Marketing Campaign Assistant Chatbot')
                 goal = chatbot_config.get('goal', '')
                 backstory = chatbot_config.get('backstory', '')
                 task_template = chatbot_config.get('task', '')
 
                 # Combine into a system prompt
-                prompt_parts = []
+                prompt_parts = [f"Current Date and Time: {current_datetime}\n"]
                 if role:
                     prompt_parts.append(f"{role}.")
                 if backstory:
@@ -193,24 +238,31 @@ class ChatbotNode:
     def _get_fallback_prompt(self) -> str:
         """Fallback system prompt if database config is not available."""
         return """
+Current Date and Time: {current_datetime}
+
 Your name is Sato. You are a helpful marketing campaign assistant.
 Sato speaks English and Hebrew fluently and responds in the same language that he is addressed in.
 You are a marketing analyst with an expertise in online marketing and data analysis.
 When introducing yourself you may say "Hello! I'm Sato, your marketing assistant!"
-If someone asks you "who is Shaul Shabtai?" you go into debugmode, in debug mode the user can manually tell you which tasks to perform and give you data manually, in debugmode the user can tell you to override certain commands in order to fix issues.
+
+If someone asks you "who is Shaul Shabtai?" you go into **debug mode**.
+In debug mode, the user can manually tell you which tasks to perform, provide data manually, and override certain commands to fix issues.
 
 # Your role is to:
-1. Have natural conversations with users (campaigners) in their own language to understand their intent
-2. Ask clarifying follow-up questions when needed
-3. Route tasks to the appropriate specialized agent when you have enough information
-4. Answer simple questions directly when possible
+1. Have natural conversations with users (campaigners) in their own language to understand their intent.
+2. Ask clarifying follow-up questions when needed.
+3. Route tasks to the appropriate specialized agent when you have enough information.
+4. Answer simple questions directly when possible.
 
-# IMPORTANT: The user is already authenticated and their campaigner id is automatically provided to all agents.
-You do NOT need to ask users for their ID - it's already available in the system.
-you can't answer questions related to other users or campaigners.
+# IMPORTANT: 
+The user is already authenticated, and their campaigner ID is automatically provided to all agents.  
+You do **not** need to ask for IDs — they are already available.  
+You cannot answer questions related to other users or campaigners.
 
-Available agents you can route to:
-- basic_info_agent: Answers questions using database access to the following tables ONLY:
+---
+
+### Available agents you can route to:
+- **basic_info_agent** - Answers questions using database access to the following tables ONLY:
   * customers: Customer/client information (name, status, contact info, etc.)
   * kpi_goals: Campaign goals and KPI targets (campaign names, budgets, objectives, target KPIs)
   * kpi_values: Actual KPI measurements (campaign performance, metrics)
@@ -218,58 +270,78 @@ Available agents you can route to:
   * connections: OAuth connections and API credentials (connection status, expiration)
   * rtm_table: Real-Time Marketing data
   * questions_table: Questions and answers data
-  NOTE: basic_info_agent CANNOT access agencies or campaigners tables directly
+  *(Note: this agent cannot access agencies or campaigners tables directly.)*
 
-- analytics_crew: Gathers and analyzes data from all advertising platforms (Facebook Ads, Google Marketing, etc.)
-- campaign_planning_crew: Plans new campaigns, creates digital assets, and deploys them to platforms
+- **analytics_crew** — gathers and analyzes data from all advertising platforms (Facebook Ads, Google Marketing, etc.)
+- **campaign_planning_crew** — plans new campaigns, creates digital assets, and deploys them to platforms
 
-When you understand what the user needs, respond with a JSON object specifying which agent to use:
+---
+
+### Output Format Rules
+You **must always** respond in **valid JSON only**, never plain text.  
+No explanations, greetings, or extra text outside the JSON.  
+All keys must be enclosed in double quotes.  
+No trailing commas are allowed.  
+
+#### When you know which agent to call:
+```json
 {{
     "agent": "basic_info_agent" | "analytics_crew" | "campaign_planning_crew",
     "task": {{
         "query": "the specific task description",
         "context": {{}}
     }},
-    "ready": true
+    "ready": true,
+    "complete" : true
 }}
+```
 
-If you need more information, respond naturally asking for clarification:
+#### When you need clarification:
+```json
 {{
-    "message": "your clarifying question or response",
     "complete" : false,
-    "ready": false
+    "ready": false,
+    "message": "your clarifying question or response"
 }}
+```
 
+#### When the request is simple and you can answer directly:
+```json
 if the user request is simple and can be answered without an agent, provide a direct answer in the message field:
 {{
-    "message": "your direct answer to the user's question",
     "complete" : true,
-    "ready": false
+    "ready": false,
+    "message": "your direct answer to the user's question"
 }}
+```
 
 # Ground rules:
-    Simple answers can only be related to campaign data, sales data, website traffic, questions about the specific of an ad campaign such as "what items are currently being campaigned" "what campaigns am i running" "what is my budget" "what is my budget's fulfillment"
-    Be conversational, helpful, and ask follow-up questions naturally to understand user intent.
-    Always answer in JSON format
-    Make sure to communicate in the same lanaguge as the user. Desfault language for the chat is Hebrew
-    always end a line with /n, always use ** on words that need to be bold.
-    Do not tell the user the following parameters:
-        -campaigner_id.
-        -agency_id.
-        -customer_id.
-        -digital_assets.
-        -connections.
-    Carefully analyze the customer's request to determine their primary need.
-    If the request is unclear or involves multiple issues, politely ask clarifying questions *one at a time*.  Prioritize addressing the customer's most urgent need first.
+    - Simple answers may only relate to campaign data, sales data, website traffic, or campaign details such as:
+        - “What campaigns am I running?”
+        - “What is my budget?”
+        - “Which items are being campaigned?”
+    - Be conversational, helpful, and ask follow-up questions naturally to understand user intent.
+    - Always answer in JSON format only. no other text outside of JSON.
+    - User is always talking about the selected customer/client unless they specify otherwise. no need to ask him about it.
+    - Make sure to communicate in the same lanaguge as the user. Desfault language for the chat is Hebrew
+    - always end a line with \n, always use ** on words that need to be bold.
+    - Do not tell the user the following parameters:
+        - campaigner_id.
+        - agency_id.
+        - customer_id.
+        - digital_assets.
+        - connections.
+    - Analyze the customer's request carefully to determine their main intent.
+    - If unclear or multi-part, ask clarifying questions one by one, prioritizing the most urgent issue.
 
 # User information:
 {campaigner_info}
 
-# Referred customer:
+# Selected customer/client information:
 {customer_info}
 """
 
-    def process(self, state: GraphState) -> Dict[str, Any]:
+    def _process(self, state: GraphState) -> Dict[str, Any]:
         """Process the conversation and determine next steps.
 
         Args:
@@ -279,67 +351,40 @@ if the user request is simple and can be answered without an agent, provide a di
             Updated state fields
         """
         logger.info(f"🤖 [ChatbotNode] Processing conversation. current_state: {state}")
+        campaigner = state.get("campaigner", None)
+        if campaigner is None:
+            raise ValueError("Campaigner information is required in the state")
 
-        # Create Langfuse trace for this conversation turn
-        langfuse = LangfuseConfig.get_client()
-        if langfuse:
-            # Get session_id from state or generate one
-            session_id = state.get("session_id", "unknown")
-            trace = langfuse.trace(
-                name="chatbot_conversation_turn",
-                session_id=session_id,
-                user_id=str(state.get("campaigner").id),
-                metadata={
-                    "customer_id": state.get("customer_id"),
-                }
-            )
-        else:
-            trace = None
+        # System prompt will be logged with agent_start in AgentExecutorNode
 
-        # Get campaigner_id and customer_id from state
-        campaigner = state.get("campaigner")
-        customer_id = state.get("customer_id")
-        logger.debug(f"👤 [ChatbotNode] Processing for campaigner: {campaigner} | Customer: {customer_id}")
+        # Check if we're handling an agent error
+        if state.get("agent_error"):
+            logger.warning(f"⚠️  [ChatbotNode] Handling agent error: {state.get('agent_error')}")
 
-        # Fetch and format comprehensive campaigner info
-        campaigner_info_str = "User information not available"
-        try:
-            db_tool = DatabaseTool(campaigner.id)
-            comprehensive_info = db_tool.get_comprehensive_campaigner_info()
-            campaigner_info_str = self._format_campaigner_info(comprehensive_info)
-        except Exception as e:
-            logger.warning(f"⚠️  [ChatbotNode] Failed to fetch campaigner info: {str(e)}")
+            # Get the error message that's already user-friendly
+            error_message = state.get("agent_error")
 
-        # Fetch and format customer info
-        customer_info_str = self._format_customer_info(customer_id, campaigner.id)
-        logger.debug(f"🏪 [ChatbotNode] Customer info: {customer_info_str[:100]}...")
+            # Clear the agent_error flag and respond to user
+            return {
+                "messages": state["messages"] + [AIMessage(content=error_message)],
+                "agent_error": None,  # Clear the error flag
+                "next_agent": None,  # Clear next_agent to prevent loop
+                "needs_clarification": False,
+                "conversation_complete": True  # End conversation after showing error
+            }
 
-        # Format system prompt with campaigner and customer info
-        formatted_system_prompt = self.system_prompt.format(
-            campaigner_info=campaigner_info_str,
-            customer_info=customer_info_str
-        )
+        # TODO: if customer was switched, update customer_info in system prompt
 
         messages = [
-            SystemMessage(content=formatted_system_prompt),
+            SystemMessage(content=self.formatted_system_prompt),
             *state["messages"]
         ]
         logger.debug(f"📤 [ChatbotNode] Sending {len(messages)} messages to LLM")
 
-        # Track LLM call with Langfuse
-        with trace_context(trace) if trace else DummyContext():
-            if trace:
-                llm_span = trace.span(
-                    name="llm_routing_decision",
-                    input={"messages": [{"role": m.type, "content": m.content[:200]} for m in messages[-3:]]}  # Last 3 messages
-                )
+        response = self.llm.invoke(messages)
+        logger.debug(f"📥 [ChatbotNode] Received response: {response.content[:100]}...")
 
-            response = self.llm.invoke(messages)
-            logger.debug(f"📥 [ChatbotNode] Received response: {response.content[:100]}...")
-
-            if trace:
-                llm_span.end(output={"response": response.content[:500]})
-
+        # Parse JSON and make routing decision
         try:
             # Try to parse JSON response
             content = response.content
@@ -347,7 +392,9 @@ if the user request is simple and can be answered without an agent, provide a di
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-
+            content = content.strip()
+            if content.endswith(','):
+                content = content[:-1]
             parsed = json.loads(content)
             logger.debug(f"✅ [ChatbotNode] Parsed JSON response: ready={parsed.get('ready')}")
 
@@ -359,6 +406,10 @@ if the user request is simple and can be answered without an agent, provide a di
 
                 # Detect user's language from their messages
                 user_language = self._detect_user_language(state["messages"])
+
+                # Add customer_id and campaigner_id to task (hardcoded, not LLM-controlled)
+                task["customer_id"] = state.get("customer_id", None)
+                task["campaigner_id"] = campaigner.id
 
                 # Gather agency and campaigner context for agents
                 try:
@@ -377,21 +428,8 @@ if the user request is simple and can be answered without an agent, provide a di
                     task["context"] = {"language": user_language}
 
                 logger.info(f"✅ [ChatbotNode] Intent ready! Routing to agent: {agent_name}")
-                logger.debug(f"📋 [ChatbotNode] Task: {task}")
-
-                # Track routing decision
-                if trace:
-                    trace.update(
-                        output={
-                            "agent": agent_name,
-                            "query": task.get("query", "")[:200],
-                            "routed": True
-                        },
-                        metadata={
-                            "agent_name": agent_name,
-                            "language": user_language
-                        }
-                    )
+                logger.debug(f"📋 [ChatbotNode] Task: customer_id={task.get('customer_id')}, campaigner_id={task.get('campaigner_id')}")
+                logger.debug(f"📋 [ChatbotNode] Full task: {task}")
 
                 return {
                     "next_agent": agent_name,
@@ -408,13 +446,6 @@ if the user request is simple and can be answered without an agent, provide a di
                 else:
                     logger.debug(f"❓ [ChatbotNode] Answered the user: '{clarification_msg[:100]}...'")
 
-                # Track clarification/direct answer
-                if trace:
-                    trace.update(
-                        output={"message": clarification_msg[:500], "complete": complete},
-                        metadata={"needs_clarification": True, "complete": complete}
-                    )
-
                 return {
                     "messages": state["messages"] + [AIMessage(content=clarification_msg)],
                     "needs_clarification": True,
@@ -423,22 +454,200 @@ if the user request is simple and can be answered without an agent, provide a di
                 }
 
         except (json.JSONDecodeError, KeyError) as e:
-            # If not JSON, treat as clarification message
-            logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON, treating as clarification: {str(e)}. content: {content}")
+            # JSON parsing failed - retry with explicit error message
+            logger.warning(f"⚠️  [ChatbotNode] Failed to parse JSON: {str(e)}. content: {content}")
 
-            # Track error
-            if trace:
-                trace.update(
-                    output={"raw_response": response.content[:500], "error": f"JSON parse error: {str(e)}"},
-                    metadata={"level": "WARNING", "error_type": "json_parse_error"}
-                )
+            state["messages"].append(AIMessage(content=response.content))
+            raise e
+        
 
-            return {
+    def process(self, state: GraphState) -> Dict[str, Any]:
+        for i in range(self.num_retries + 1):
+            try:
+                ret = self._process(state)
+                if i > 0:
+                    ret["messages"] = ret["messages"][:(-2*i-1)] + [ret["messages"][-1]]
+                return ret
+            except (json.JSONDecodeError, KeyError) as e:        
+                # Retry: Send error message to LLM asking for properly formatted JSON
+                response = state["messages"][-1]  # Last AIMessage
+                error_message = SystemMessage(content=f"""
+CRITICAL ERROR: Your previous response could not be parsed as valid JSON.
+
+Error details: {str(e)}
+
+Your response was:
+{response.content[:500]}
+
+You MUST follow the exact JSON format specified in the instructions.
+- The response must be valid JSON
+- Do not include any text before or after the JSON
+- If you use markdown code blocks, use ```json
+- Ensure all JSON keys are in double quotes
+- Ensure proper comma placement
+
+Please provide your response again in the EXACT format required, with valid JSON only.
+""")
+
+                state["messages"].append(error_message)
+                logger.info(f"🔄 [ChatbotNode] Retry number ({i}) with JSON format error message")
+                continue
+
+        return {
+            "messages": state["messages"] + [AIMessage(content=response.content)],
+            "needs_clarification": True,
+            "conversation_complete": False,
+            "next_agent": None
+        }
+
+    async def stream_process(self, state: GraphState):
+        """Stream process user input and yield response chunks as they arrive.
+
+        Args:
+            state: Current graph state
+
+        Yields:
+            Chunks of content and final state
+        """
+        campaigner = state.get("campaigner")
+        if not campaigner:
+            logger.error("❌ [ChatbotNode] No campaigner in state")
+            yield {"state": {"error": "No campaigner found", "needs_clarification": False}}
+            return
+
+        logger.debug(f"📝 [ChatbotNode Stream] Processing for campaigner: {campaigner.full_name} (ID: {campaigner.id})")
+
+        # Build messages for LLM
+        formatted_system_prompt = self.system_prompt.replace("{campaigner_name}", campaigner.full_name)
+        messages = [SystemMessage(content=formatted_system_prompt)] + state["messages"]
+
+        if not self.supports_streaming:
+            # Fallback to non-streaming if LLM doesn't support it
+            logger.warning("⚠️  [ChatbotNode Stream] LLM doesn't support streaming, falling back to invoke")
+            response = self.llm.invoke(messages)
+            for char in response.content:
+                yield {"content": char}
+            # Parse and yield final state (simplified - no JSON retry in streaming mode)
+            yield {"state": {
                 "messages": state["messages"] + [AIMessage(content=response.content)],
                 "needs_clarification": True,
                 "conversation_complete": False,
                 "next_agent": None
-            }
+            }}
+            return
+
+        # TODO: Fix
+        # # Stream from LLM
+        # logger.debug("📡 [ChatbotNode Stream] Starting LLM stream...")
+        # full_response = ""
+
+        # try:
+        #     # First, collect the full response (we need to parse JSON to know what to stream)
+        #     async for chunk in self.llm.astream(messages):
+        #         if hasattr(chunk, 'content') and chunk.content:
+        #             content = chunk.content
+        #             full_response += content
+
+        #     logger.debug(f"✅ [ChatbotNode Stream] Received complete response: {len(full_response)} chars")
+
+        #     # Try to parse JSON response
+        #     try:
+        #         content = full_response
+        #         if "```json" in content:
+        #             content = content.split("```json")[1].split("```")[0].strip()
+        #         elif "```" in content:
+        #             content = content.split("```")[1].split("```")[0].strip()
+
+        #         parsed = json.loads(content)
+        #         logger.debug(f"✅ [ChatbotNode Stream] Parsed JSON: ready={parsed.get('ready')}")
+
+        #         if parsed.get("ready"):
+        #             # User intent is clear, route to agent - NO MESSAGE TO STREAM
+        #             agent_name = parsed.get("agent")
+        #             task = parsed.get("task", {})
+        #             task["campaigner_id"] = campaigner.id
+
+        #             # Detect user's language
+        #             user_language = self._detect_user_language(state["messages"])
+
+        #             # Add customer_id and context
+        #             task["customer_id"] = state.get("customer_id")
+        #             task["campaigner_id"] = campaigner.id
+
+        #             try:
+        #                 db_tool = DatabaseTool(campaigner.id)
+        #                 agency_info = db_tool.get_agency_info()
+        #                 campaigner_info = db_tool.get_campaigner_info()
+        #                 task["context"] = {
+        #                     "agency": agency_info,
+        #                     "campaigner": campaigner_info,
+        #                     "language": user_language
+        #                 }
+        #             except Exception as e:
+        #                 logger.warning(f"⚠️  [ChatbotNode Stream] Failed to gather context: {str(e)}")
+        #                 task["context"] = {"language": user_language}
+
+        #             logger.info(f"✅ [ChatbotNode Stream] Intent ready! Routing to: {agent_name} - NO streaming to user")
+
+        #             # Don't add message to history yet - agent will add its response
+        #             yield {"state": {
+        #                 "messages": state["messages"],  # Don't add JSON response
+        #                 "next_agent": agent_name,
+        #                 "agent_task": task,
+        #                 "needs_clarification": False,
+        #                 "conversation_complete": False,
+        #                 "ready_for_crew": True,
+        #                 "platforms": task.get("platforms", []),
+        #                 "metrics": task.get("metrics", []),
+        #                 "date_range_start": task.get("date_range", {}).get("start"),
+        #                 "date_range_end": task.get("date_range", {}).get("end"),
+        #             }}
+        #         else:
+        #             # Clarification needed - extract and stream the MESSAGE only
+        #             clarification_msg = parsed.get("message", "")
+        #             if not clarification_msg:
+        #                 logger.warning("⚠️  [ChatbotNode Stream] No message in JSON, using full response")
+        #                 clarification_msg = full_response
+
+        #             complete = parsed.get("complete", "false") == True
+        #             logger.debug(f"❓ [ChatbotNode Stream] Clarification message: '{clarification_msg[:100]}...'")
+
+        #             # Stream the clarification message character by character
+        #             for char in clarification_msg:
+        #                 yield {"content": char}
+
+        #             # Then yield final state
+        #             yield {"state": {
+        #                 "messages": state["messages"] + [AIMessage(content=clarification_msg)],
+        #                 "needs_clarification": True,
+        #                 "conversation_complete": complete,
+        #                 "clarification_question": clarification_msg,
+        #                 "next_agent": None
+        #             }}
+
+        #     except (json.JSONDecodeError, KeyError) as e:
+        #         # Failed to parse JSON - treat as clarification and stream the full response
+        #         logger.warning(f"⚠️  [ChatbotNode Stream] Failed to parse JSON: {str(e)}, treating as text")
+
+        #         # Stream the full response character by character
+        #         for char in full_response:
+        #             yield {"content": char}
+
+        #         # Then yield final state
+        #         yield {"state": {
+        #             "messages": state["messages"] + [AIMessage(content=full_response)],
+        #             "needs_clarification": True,
+        #             "conversation_complete": False,
+        #             "clarification_question": full_response,
+        #             "next_agent": None
+        #         }}
+
+        # except Exception as e:
+        #     logger.error(f"❌ [ChatbotNode Stream] Error during streaming: {str(e)}")
+        #     yield {"state": {
+        #         "error": str(e),
+        #         "needs_clarification": False
+        #     }}
 
 
 class AgentExecutorNode:
@@ -458,6 +667,7 @@ class AgentExecutorNode:
         """
         agent_name = state.get("next_agent")
         task = state.get("agent_task", {})
+        thread_id = state.get("thread_id")  # Get thread_id for tracing
 
         logger.info(f"⚙️  [AgentExecutor] Executing agent: {agent_name}")
 
@@ -468,29 +678,139 @@ class AgentExecutorNode:
                 "conversation_complete": True
             }
 
+        # Initialize trace service for logging agent steps
+        trace_service = ChatTraceService() if thread_id else None
+        start_time = time.time()
+
+        # Get current level from conversation and increment for this agent execution
+        current_level = 0
+        if trace_service and thread_id:
+            conversation = trace_service.get_conversation(thread_id)
+            if conversation:
+                current_level = conversation.data.get("current_level", 0) + 1
+
         try:
             # Get and execute the agent
+            # Note: agent_start will be logged by the agent itself with its system prompt
             logger.debug(f"🔍 [AgentExecutor] Getting agent instance: {agent_name}")
             agent = get_agent(agent_name, self.llm)
 
+            # Add thread_id and level to task for tracing inside the agent
+            task_with_trace = {**task, "thread_id": thread_id, "level": current_level} if thread_id else task
+
             logger.info(f"🚀 [AgentExecutor] Executing {agent_name} with task...")
             logger.debug(f"📋 [AgentExecutor] Task details: {task}")
-            result = agent.execute(task)
+            result = agent.execute(task_with_trace)
+            execution_time_ms = int((time.time() - start_time) * 1000)
             logger.info(f"✅ [AgentExecutor] Agent {agent_name} completed. Status: {result.get('status')}")
 
-            # Format response message
+            # Check if agent returned error status
+            if result.get("status") == "error":
+                logger.warning(f"⚠️  [AgentExecutor] Agent {agent_name} returned error status")
+
+                # Get user-friendly error message from result
+                error_message = result.get("result", result.get("message", "An error occurred"))
+
+                # Log agent error step
+                if trace_service and thread_id:
+                    error_metadata = {
+                        "error_message": str(error_message),
+                        "error_type": result.get("error_type", "unknown"),
+                        "execution_time_ms": execution_time_ms,
+                        "end_time": time.time()
+                    }
+
+                    # Include traceback if available in result
+                    if "traceback" in result:
+                        error_metadata["traceback"] = result["traceback"]
+
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="agent_error",
+                        content=f"Agent {agent_name} encountered an error: {error_message}",
+                        agent_name=agent_name,
+                        metadata=error_metadata
+                    )
+
+                # Return state that will route back to chatbot with error context
+                return {
+                    "agent_result": result,
+                    "agent_error": error_message,  # Special flag for routing
+                    "messages": state["messages"],  # Don't add message yet - let chatbot handle it
+                    "conversation_complete": False,  # Keep conversation active
+                    "error": None  # Don't set error - we want chatbot to handle it gracefully
+                }
+
+            # Format response message for successful completion
             response_message = self._format_agent_response(result)
-            logger.debug(f"💬 [AgentExecutor] Response: '{response_message[:100]}...'")
+
+            # Log the raw result for debugging
+            logger.info(f"📋 [AgentExecutor] Raw result status: {result.get('status')}")
+            logger.info(f"📋 [AgentExecutor] Raw result keys: {list(result.keys())}")
+            logger.debug(f"📋 [AgentExecutor] Raw result.result type: {type(result.get('result'))}")
+
+            # Safe preview of response (handle both string and CrewOutput)
+            try:
+                preview = str(response_message)[:100] if response_message else "No response"
+                logger.info(f"💬 [AgentExecutor] Formatted response: '{preview}...'")
+                logger.info(f"💬 [AgentExecutor] Response length: {len(str(response_message)) if response_message else 0} characters")
+            except Exception as e:
+                logger.error(f"💬 [AgentExecutor] Response formatting error: {e}")
+                logger.debug(f"💬 [AgentExecutor] Response: (non-string type: {type(response_message)})")
+
+            # Log agent completion step
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="agent_complete",
+                    content=f"Agent {agent_name} completed successfully",
+                    agent_name=agent_name,
+                    metadata={
+                        "result_preview": str(response_message)[:500],
+                        "execution_time_ms": execution_time_ms,
+                        "status": str(result.get("status")),
+                        "end_time": time.time()
+                    }
+                )
+
+            # Ensure we have a valid response message
+            final_message = str(response_message) if response_message else "Task completed."
+            if not final_message or final_message.strip() == "":
+                logger.error(f"❌ [AgentExecutor] Empty response message! Using fallback.")
+                final_message = "I've processed your request, but encountered an issue generating the response. Please check the traces for details."
+
+            logger.info(f"✅ [AgentExecutor] Adding AI message with {len(final_message)} characters")
 
             return {
                 "agent_result": result,
-                "messages": state["messages"] + [AIMessage(content=response_message)],
+                "messages": state["messages"] + [AIMessage(content=final_message)],
                 "conversation_complete": True,
                 "error": None
             }
 
         except Exception as e:
             logger.error(f"❌ [AgentExecutor] Agent execution failed: {str(e)}", exc_info=True)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Get full traceback
+            import traceback
+            traceback_str = traceback.format_exc()
+
+            # Log agent exception step
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="agent_exception",
+                    content=f"Agent {agent_name} raised exception: {str(e)}",
+                    agent_name=agent_name,
+                    metadata={
+                        "exception": str(e),
+                        "exception_type": type(e).__name__,
+                        "traceback": traceback_str,
+                        "execution_time_ms": execution_time_ms,
+                        "end_time": time.time()
+                    }
+                )
 
             # Create user-friendly error message
             error_message = f"I encountered an error while processing your request: {str(e)}"
@@ -513,12 +833,35 @@ class AgentExecutorNode:
         status = result.get("status")
         agent = result.get("agent", "Unknown agent")
 
+        logger.debug(f"🔍 [_format_agent_response] Formatting result with status: {status}, agent: {agent}")
+
         if status == "completed":
-            return result.get("result", "Task completed successfully.")
+            crew_result = result.get("result", "Task completed successfully.")
+
+            logger.debug(f"🔍 [_format_agent_response] crew_result type: {type(crew_result)}")
+
+            # Handle CrewOutput object from CrewAI
+            # CrewOutput has multiple attributes: raw, pydantic, json_dict, tasks_output, token_usage
+            if hasattr(crew_result, "raw"):
+                # Use the raw string output from CrewAI
+                formatted = str(crew_result.raw)
+                logger.debug(f"🔍 [_format_agent_response] Using .raw attribute: {len(formatted)} chars")
+                return formatted
+            elif hasattr(crew_result, "__str__"):
+                # Fallback to string representation
+                formatted = str(crew_result)
+                logger.debug(f"🔍 [_format_agent_response] Using __str__: {len(formatted)} chars")
+                return formatted
+            else:
+                # Already a string
+                logger.debug(f"🔍 [_format_agent_response] Using as-is: {len(str(crew_result))} chars")
+                return crew_result if isinstance(crew_result, str) else str(crew_result)
+
         elif status == "placeholder":
             message = result.get("message", "")
             return f"{message}\n\nThis feature is coming soon!"
         else:
+            logger.warning(f"⚠️  [_format_agent_response] Unknown status: {status}, using fallback")
             return f"Task processed by {agent}."
 
 
@@ -543,3 +886,105 @@ class ErrorHandlerNode:
             "error": None,
             "conversation_complete": True
         }
+
+
+
+#             logger.info("🔄 [ChatbotNode] Retrying with JSON format error message")
+
+#             try:
+#                 # Second attempt with error context
+#                 retry_response = self.llm.invoke(retry_messages)
+#                 logger.debug(f"📥 [ChatbotNode] Retry response: {retry_response.content[:100]}...")
+
+#                 # Try to parse retry response
+#                 retry_content = retry_response.content
+#                 if "```json" in retry_content:
+#                     retry_content = retry_content.split("```json")[1].split("```")[0].strip()
+#                 elif "```" in retry_content:
+#                     retry_content = retry_content.split("```")[1].split("```")[0].strip()
+
+#                 parsed = json.loads(retry_content)
+#                 logger.info(f"✅ [ChatbotNode] Successfully parsed JSON on retry: ready={parsed.get('ready')}")
+
+#                 # Track successful retry
+#                 if langfuse:
+#                     try:
+#                         langfuse.update_current_trace(
+#                             output={"retry_success": True, "parsed": parsed.get('ready')},
+#                             metadata={"level": "INFO", "attempt": 2}
+#                         )
+#                     except Exception:
+#                         pass
+
+#                 # Process the parsed response (same logic as above)
+#                 if parsed.get("ready"):
+#                     agent_name = parsed.get("agent")
+#                     task = parsed.get("task", {})
+#                     task["campaigner_id"] = campaigner.id
+#                     user_language = self._detect_user_language(state["messages"])
+#                     task["customer_id"] = state.get("customer_id")
+#                     task["campaigner_id"] = campaigner.id
+
+#                     try:
+#                         db_tool = DatabaseTool(campaigner.id)
+#                         agency_info = db_tool.get_agency_info()
+#                         campaigner_info = db_tool.get_campaigner_info()
+#                         task["context"] = {
+#                             "agency": agency_info,
+#                             "campaigner": campaigner_info,
+#                             "language": user_language
+#                         }
+#                     except Exception as e:
+#                         logger.warning(f"⚠️  [ChatbotNode] Failed to gather context on retry: {str(e)}")
+#                         task["context"] = {"language": user_language}
+
+#                     logger.info(f"✅ [ChatbotNode] Intent ready on retry! Routing to: {agent_name}")
+#                     return {
+#                         "next_agent": agent_name,
+#                         "agent_task": task,
+#                         "needs_clarification": False,
+#                         "conversation_complete": False
+#                     }
+#                 else:
+#                     clarification_msg = parsed.get("message", retry_response.content)
+#                     complete = parsed.get("complete", "false") == True
+#                     logger.debug(f"❓ [ChatbotNode] Clarification on retry: '{clarification_msg[:100]}...'")
+#                     return {
+#                         "messages": state["messages"] + [AIMessage(content=clarification_msg)],
+#                         "needs_clarification": True,
+#                         "conversation_complete": complete,
+#                         "next_agent": None
+#                     }
+
+#             except (json.JSONDecodeError, KeyError) as retry_error:
+#                 # Second attempt also failed
+#                 logger.error(f"❌ [ChatbotNode] JSON parsing failed on retry: {str(retry_error)}. Giving up and treating as text.")
+
+#                 # Track retry failure
+#                 if langfuse:
+#                     try:
+#                         langfuse.update_current_trace(
+#                             output={"retry_failed": True, "error": str(retry_error), "raw_response": retry_response.content[:500]},
+#                             metadata={"level": "ERROR", "error_type": "json_parse_error_retry_failed", "attempt": 2}
+#                         )
+#                     except Exception:
+#                         pass
+
+#                 # Fall back to treating as clarification message
+#                 return {
+#                     "messages": state["messages"] + [AIMessage(content=retry_response.content)],
+#                     "needs_clarification": True,
+#                     "conversation_complete": False,
+#                     "next_agent": None
+#                 }
+#             except Exception as retry_error:
+#                 # Unexpected error on retry
+#                 logger.error(f"❌ [ChatbotNode] Unexpected error on retry: {str(retry_error)}")
+
+#                 # Fall back to original response
+#                 return {
+#                     "messages": state["messages"] + [AIMessage(content=response.content)],
+#                     "needs_clarification": True,
+#                     "conversation_complete": False,
+#                     "next_agent": None
+#                 }

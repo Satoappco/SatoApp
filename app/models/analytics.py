@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 from sqlmodel import SQLModel, Field, Column, JSON
+from sqlalchemy import Index, UniqueConstraint
 from .base import BaseModel
 
 
@@ -37,10 +38,10 @@ class AuthType(str, Enum):
 class DigitalAsset(BaseModel, table=True):
     """Digital assets for sub-clients - נכסים דיגיטליים"""
     __tablename__ = "digital_assets"
-    
+
     # Relationships
     customer_id: int = Field(foreign_key="customers.id")
-    
+
     # Asset identification
     asset_type: AssetType = Field()
     provider: str = Field(max_length=100)  # "Google", "Facebook", "TikTok", "LinkedIn"
@@ -48,15 +49,21 @@ class DigitalAsset(BaseModel, table=True):
     handle: Optional[str] = Field(default=None, max_length=100)  # @username, page name
     url: Optional[str] = Field(default=None, max_length=500)  # Asset URL
     external_id: str = Field(max_length=255)  # Platform's unique ID
-    
+
     # Metadata (provider-specific information)
     meta: dict = Field(default_factory=dict, sa_column=Column(JSON))
     # Examples:
     # {"business_id": "123", "pixel_id": "456"} for Facebook
     # {"property_id": "GA_PROPERTY_123", "stream_id": "456"} for GA4
     # {"account_id": "123-456-7890"} for Google Ads
-    
+
     is_active: bool = Field(default=True)
+
+    # Unique constraint: one asset per (customer_id, external_id, asset_type)
+    __table_args__ = (
+        UniqueConstraint('customer_id', 'external_id', 'asset_type',
+                        name='uq_digital_asset_customer_external_type'),
+    )
 
 
 class Connection(BaseModel, table=True):

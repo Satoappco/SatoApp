@@ -2,20 +2,21 @@
 
 from crewai import Crew, Process
 from crewai_tools import MCPServerAdapter
-from mcp import StdioServerParameters  # For future MCP server configuration
 
 from typing import Dict, Any, List, Optional
-# from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from crewai.llm import LLM
 import os
 import logging
 
 from .agents import AnalyticsAgents
 from .tasks import AnalyticsTasks
+from .session_recorder import SessionRecorder, CrewCallbacks
+from ..mcp_clients.mcp_registry import MCPSelector, MCPServer
 from ..mcp_clients.facebook_client import FacebookMCPClient
 from ..mcp_clients.google_client import GoogleMCPClient
 from app.config.langfuse_config import LangfuseConfig
-from app.core.observability import trace_context, get_current_trace
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -98,28 +99,37 @@ class AnalyticsCrew:
         except Exception as e:
             print(f"⚠️  Failed to fetch user tokens: {e}")
 
-    def _initialize_mcp_clients(self, platforms: List[str]):
-        """Initialize MCP clients for required platforms."""
-        # Initialize Google Analytics MCP server
-        if "google" in platforms or "both" in platforms:
-            # Get Google service account credentials path from environment
-            google_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "NONE")
+    def _initialize_mcp_clients(
+        self,
+        platforms: List[str],
+        google_analytics_credentials: Optional[Dict[str, str]] = None,
+        google_ads_credentials: Optional[Dict[str, str]] = None,
+        meta_ads_credentials: Optional[Dict[str, str]] = None,
+        custom_mcp_selection: Optional[Dict[str, MCPServer]] = None
+    ):
+        """Initialize MCP clients for required platforms.
 
-            if google_creds:
-                self.mcp_param_list.append(
-                    StdioServerParameters(
-                        command="ga4-mcp-server",
-                        args=[],
-                        env={
-                            "GOOGLE_APPLICATION_CREDENTIALS": google_creds,
-                            **os.environ,
-                        },
-                    )
-                )
-                logger.info(f"✅ Configured Google Analytics MCP server with credentials: {google_creds}")
-            else:
-                logger.warning("⚠️  GOOGLE_APPLICATION_CREDENTIALS not set, GA4 MCP server disabled")
-        
+        Args:
+            platforms: List of platforms to initialize
+            google_analytics_credentials: Dict with 'refresh_token' and 'property_id' for GA MCP
+            google_ads_credentials: Dict with Google Ads credentials
+            meta_ads_credentials: Dict with Meta/Facebook Ads credentials
+            custom_mcp_selection: Custom selection of which MCP servers to use per service
+                Example: {"google_analytics": MCPServer.GOOGLE_ANALYTICS_SURENDRANB}
+        """
+        # Use the MCP registry and selector system
+        self.mcp_param_list = MCPSelector.build_all_server_params(
+            platforms=platforms,
+            google_analytics_credentials=google_analytics_credentials,
+            google_ads_credentials=google_ads_credentials,
+            meta_ads_credentials=meta_ads_credentials,
+            custom_selection=custom_mcp_selection,
+        )
+
+        if not self.mcp_param_list:
+            logger.warning("⚠️  No MCP servers configured")
+
+        # Legacy MCP clients (kept for backwards compatibility if needed)
         # if "facebook" in platforms or "both" in platforms:
         #     if not self.facebook_client:
         #         # Pass Facebook token if available
@@ -200,13 +210,33 @@ class AnalyticsCrew:
     def execute(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the analytics crew with the given task details."""
         logger.debug(f"🧑‍💼 [AnalyticsCrew] Received task: {task_details}...")
+
+        # Get the parent trace from task_details if provided
+        parent_trace = task_details.get("trace")
+
         # Get Langfuse client
         langfuse = LangfuseConfig.get_client()
-        parent_trace = get_current_trace()
 
-        # Create trace for crew execution if Langfuse is enabled
-        if langfuse and parent_trace:
-            trace = parent_trace.span(
+        # Use the parent trace if provided, otherwise create a new trace
+        if parent_trace:
+            logger.info("✅ [AnalyticsCrew] Using parent trace from session")
+            # Create a span within the parent trace
+            trace_context_manager = parent_trace.span(
+                name="analytics_crew_execution",
+                input={
+                    "query": task_details.get("query"),
+                    "platforms": task_details.get("platforms"),
+                    "campaigner_id": task_details.get("campaigner_id"),
+                },
+                metadata={
+                    "crew_type": "analytics",
+                    "language": task_details.get("context", {}).get("language"),
+                }
+            )
+        elif langfuse:
+            logger.warning("⚠️  [AnalyticsCrew] No parent trace provided, creating standalone trace")
+            # Fallback: create standalone trace (shouldn't happen with new implementation)
+            trace_context_manager = langfuse.start_as_current_span(
                 name="analytics_crew_execution",
                 input={
                     "query": task_details.get("query"),
@@ -219,61 +249,105 @@ class AnalyticsCrew:
                 }
             )
         else:
-            trace = None
+            trace_context_manager = DummyContext()
 
         try:
-            with trace_context(trace) if trace else DummyContext():
-                return self._execute_internal(task_details)
+            with trace_context_manager as span:
+                result = self._execute_internal(task_details)
+
+                # Update span with output
+                if span and hasattr(span, 'update'):
+                    span.update(
+                        output={"success": result.get("success"), "platforms": result.get("platforms")},
+                        metadata={"session_id": result.get("session_id")}
+                    )
+
+                return result
         except Exception as e:
-            if trace:
-                trace.end(level="ERROR", status_message=str(e))
+            logger.error(f"❌ Analytics crew execution error: {e}")
+
+            # Update span with error
+            if hasattr(trace_context_manager, '__enter__'):
+                try:
+                    span = trace_context_manager.__enter__()
+                    if span and hasattr(span, 'update'):
+                        span.update(
+                            output={"error": str(e)},
+                            level="ERROR",
+                            status_message=str(e)
+                        )
+                except Exception:
+                    pass
+
             raise
-        finally:
-            if trace:
-                trace.end()
 
     def _execute_internal(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
         """Internal execution logic with tracing context."""
 
         platforms = task_details.get("platforms", [])
+        google_analytics_credentials = task_details.get("google_analytics_credentials")
+        google_ads_credentials = task_details.get("google_ads_credentials")
+        meta_ads_credentials = task_details.get("meta_ads_credentials")
 
-        # Extract campaigner_id and fetch user tokens
+        # Extract campaigner_id (for backwards compatibility, but credentials are now passed in)
         self.campaigner_id = task_details.get("campaigner_id")
-        if self.campaigner_id:
-            current_trace = get_current_trace()
-            if current_trace:
-                token_span = current_trace.span(name="fetch_user_tokens")
+        customer_id = task_details.get("customer_id")
 
-            #TODO: fix: self._fetch_user_tokens(self.campaigner_id)
+        # Initialize session recorder
+        session_id = str(uuid.uuid4())
+        recorder = SessionRecorder(session_id=session_id, customer_id=customer_id)
+        recorder.set_metadata("query", task_details.get("query"))
+        recorder.set_metadata("platforms", platforms)
+        recorder.set_metadata("campaigner_id", self.campaigner_id)
+        logger.info(f"🎬 [AnalyticsCrew] Session recording started: {session_id}")
 
-            if current_trace:
-                token_span.end()
+        # Log credential info
+        cred_count = 0
+        if google_analytics_credentials:
+            logger.info(f"🔑 [AnalyticsCrew] Received Google Analytics credentials")
+            logger.debug(f"   Property ID: {google_analytics_credentials.get('property_id')}")
+            cred_count += 1
+        if google_ads_credentials:
+            logger.info(f"🔑 [AnalyticsCrew] Received Google Ads credentials")
+            cred_count += 1
+        if meta_ads_credentials:
+            logger.info(f"🔑 [AnalyticsCrew] Received Meta Ads credentials")
+            cred_count += 1
 
-        # Initialize MCP clients
-        current_trace = get_current_trace()
-        if current_trace:
-            init_span = current_trace.span(name="initialize_mcp_clients", metadata={"platforms": platforms})
+        if cred_count == 0:
+            logger.warning(f"⚠️  [AnalyticsCrew] No credentials provided")
 
-        self._initialize_mcp_clients(platforms)
+        # Initialize MCP clients with customer credentials
+        # The instrumentation will automatically trace this
+        self._initialize_mcp_clients(
+            platforms,
+            google_analytics_credentials,
+            google_ads_credentials,
+            meta_ads_credentials
+        )
 
-        if current_trace:
-            init_span.end()
-
-        # Check if MCP server is configured
+        # Check if MCP servers are configured
         use_mcp_adapter = bool(self.mcp_param_list)
 
         if use_mcp_adapter:
-            # Use MCPServerAdapter with analytics-mcp server
-            mcp_params = self.mcp_param_list[0]
-            context_manager = MCPServerAdapter(mcp_params)
+            logger.info(f"🔧 Initializing {len(self.mcp_param_list)} MCP server(s)")
+
+            # Use CrewAI's official multi-server approach: pass list of server params
+            # MCPServerAdapter accepts either a single dict or a list of dicts
+            context_manager = MCPServerAdapter(self.mcp_param_list)
         else:
             # Fallback: Use custom MCP clients or no tools
-            logger.warning("⚠️  MCP server not configured, using custom MCP clients")
+            logger.warning("⚠️  No MCP servers configured, using custom MCP clients")
             from contextlib import nullcontext
             context_manager = nullcontext(enter_result=[])
 
         with context_manager as aggregated_tools:
-            logger.debug(f"🔧 Available tools: {[tool.name for tool in aggregated_tools] if aggregated_tools else 'None'}")
+            # Log loaded tools
+            if aggregated_tools:
+                logger.info(f"✅ Total tools loaded: {len(aggregated_tools)}")
+                logger.debug(f"🔧 Available tools: {[tool.name for tool in aggregated_tools]}")
+            else:
+                logger.warning("⚠️  No tools available")
 
             # Create agents
             master_agent = self.agents_factory.create_master_agent()
@@ -311,60 +385,98 @@ class AnalyticsCrew:
                 tasks.append(google_task)
                 specialist_tasks.append(google_task)
 
-            # Create synthesis task for master agent
-            synthesis_task = self.tasks_factory.create_synthesis_task(
-                agent=master_agent,
-                task_details=task_details,
-                context=specialist_tasks  # Master agent gets specialist outputs
-            )
-            tasks.append(synthesis_task)
+            # # Create synthesis task for master agent
+            # synthesis_task = self.tasks_factory.create_synthesis_task(
+            #     agent=master_agent,
+            #     task_details=task_details,
+            #     context=specialist_tasks  # Master agent gets specialist outputs
+            # )
+            # tasks.append(synthesis_task)
 
-            # Create and run crew
+            # Create callbacks for session recording
+            callbacks = CrewCallbacks(recorder)
+
+            # Record task starts
+            for i, task in enumerate(tasks):
+                agent = task.agent if hasattr(task, 'agent') else master_agent
+                callbacks.start_task(task, agent, i)
+
+            # Create and run crew with callbacks
+            logger.debug(f"Starting a crew with agents: {agents}, tasks: {tasks}, master_agent: {master_agent}")
             crew = Crew(
                 agents=agents,
                 tasks=tasks,
                 process=Process.hierarchical,
                 manager_agent=master_agent,
-                verbose=True
+                verbose=True,
+                planning=True,
+                # Note: CrewAI callbacks - task_callback called after each task completes
+                task_callback=callbacks.task_callback,
+                # step_callback=callbacks.step_callback,  # Uncomment if needed (can be verbose)
             )
 
-            # Track crew kickoff
-            current_trace = get_current_trace()
-            if current_trace:
-                kickoff_span = current_trace.span(
+            # Get Langfuse client for tracing
+            langfuse = LangfuseConfig.get_client()
+
+            # Use start_as_current_span as per Langfuse docs for CrewAI
+            # This enables automatic instrumentation to capture all crew operations
+            if langfuse:
+                span_context = langfuse.start_as_current_span(
                     name="crew_kickoff",
-                    metadata={
+                    input={
                         "num_agents": len(agents),
                         "num_tasks": len(tasks),
-                        "platforms": platforms
+                        "platforms": platforms,
+                        "session_id": session_id
                     }
                 )
+            else:
+                span_context = DummyContext()
 
             try:
                 logger.info(f"🚀 Starting crew execution with {len(agents)} agents and {len(tasks)} tasks")
-                result = crew.kickoff()
+
+                # Execute crew within Langfuse span - instrumentation captures everything
+                with span_context:
+                    result = crew.kickoff()
+
                 logger.info("✅ Crew execution completed successfully")
 
-                if current_trace:
-                    kickoff_span.end(output={"success": True, "result_length": len(str(result))})
+                # Save session recording
+                session_file = recorder.save_to_file()
+                session_summary = recorder.get_summary()
+
+                logger.info(f"📊 [AnalyticsCrew] Session summary: {session_summary['total_tasks']} tasks, "
+                           f"{session_summary['total_steps']} steps, {session_summary['duration_seconds']:.2f}s")
+
+                # Flush Langfuse to ensure traces are sent
+                if langfuse:
+                    try:
+                        langfuse.flush()
+                    except Exception:
+                        pass
 
                 return {
                     "success": True,
                     "result": result,
                     "platforms": platforms,
-                    "task_details": task_details
+                    "task_details": task_details,
+                    "session_id": session_id,
+                    "session_summary": session_summary,
+                    "session_file": session_file
                 }
 
             except Exception as e:
                 logger.error(f"❌ Crew execution failed: {e}")
-                if current_trace:
-                    kickoff_span.end(level="ERROR", status_message=str(e))
+                recorder.record_error(str(e), {"platforms": platforms})
+                recorder.save_to_file()
 
                 return {
                     "success": False,
                     "error": str(e),
                     "platforms": platforms,
-                    "task_details": task_details
+                    "task_details": task_details,
+                    "session_id": session_id
                 }
 
             finally:

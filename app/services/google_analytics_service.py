@@ -170,53 +170,28 @@ class GoogleAnalyticsService:
                 print(f"DEBUG: Deactivated asset {asset.id}: {asset.name}")
             session.commit()
             
-            # Check if digital asset already exists
-            statement = select(DigitalAsset).where(
-                and_(
-                    DigitalAsset.customer_id == customer_id,
-                    DigitalAsset.asset_type == AssetType.GA4,
-                    DigitalAsset.provider == "Google",
-                    DigitalAsset.external_id == property_id
-                )
+            # Create or update digital asset for this property
+            from app.services.digital_asset_service import upsert_digital_asset
+
+            digital_asset = upsert_digital_asset(
+                session=session,
+                customer_id=customer_id,
+                external_id=property_id,
+                asset_type=AssetType.GA4,
+                provider="Google",
+                name=property_name,
+                meta={
+                    "property_id": property_id,
+                    "property_name": property_name,
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "account_email": account_email,
+                    "is_demo": False,
+                    "created_via": "oauth_flow"
+                },
+                is_active=True
             )
-            digital_asset = session.exec(statement).first()
-            
-            if not digital_asset:
-                print(f"DEBUG: Creating new digital asset for property {property_id}")
-                # Create new digital asset with real property details
-                digital_asset = DigitalAsset(
-                    customer_id=customer_id,
-                    asset_type=AssetType.GA4,
-                    provider="Google",
-                    name=property_name,
-                    external_id=property_id,
-                    meta={
-                        "property_id": property_id,
-                        "property_name": property_name,
-                        "account_id": account_id,
-                        "account_name": account_name,
-                        "account_email": account_email,
-                        "is_demo": False,  # This is real data
-                        "created_via": "oauth_flow"
-                    },
-                    is_active=True
-                )
-                session.add(digital_asset)
-                session.commit()
-                session.refresh(digital_asset)
-            else:
-                print(f"DEBUG: Using existing digital asset {digital_asset.id} for property {property_id}")
-                # Activate this asset and update metadata if needed
-                digital_asset.is_active = True
-                if digital_asset.meta.get("property_name") != property_name:
-                    digital_asset.meta.update({
-                        "property_name": property_name,
-                        "account_id": account_id,
-                        "account_name": account_name,
-                        "account_email": account_email
-                    })
-                session.add(digital_asset)
-                session.commit()
+            print(f"DEBUG: Upserted digital asset {digital_asset.id} for property {property_id}")
             
             # Encrypt tokens
             access_token_enc = self._encrypt_token(access_token)

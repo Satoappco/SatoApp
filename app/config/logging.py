@@ -36,13 +36,16 @@ def setup_logging() -> None:
         "app.agents": log_level,
         "app.services": log_level,
         "app.api": log_level,
+        "app.api.v1": log_level,
+        "app.api.v1.routes": log_level,
         "uvicorn": logging.WARNING,
         "fastapi": logging.WARNING,
     }
-    
+
     for logger_name, level in loggers_config.items():
         logger = logging.getLogger(logger_name)
         logger.setLevel(level)
+        logger.propagate = True  # Ensure logs propagate to root logger
 
 
 def get_logger(name: str) -> logging.Logger:

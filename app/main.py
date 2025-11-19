@@ -35,25 +35,30 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     setup_logging()
-    
+
+    # Initialize file-based logging
+    from app.core.file_logger import initialize_file_logging
+    initialize_file_logging()
+    logger.info("✅ File-based logging initialized")
+
     # VALIDATE CRITICAL ENVIRONMENT VARIABLES
     settings = get_settings()
-    
+
     required_env_vars = {
         "GEMINI_API_KEY": settings.gemini_api_key,
         "DATABASE_URL": settings.database_url,
         "API_TOKEN": settings.api_token,
         "SECRET_KEY": settings.secret_key
     }
-    
+
     missing_vars = [var for var, value in required_env_vars.items() if not value]
     if missing_vars:
         error_msg = f"❌ Missing required environment variables: {', '.join(missing_vars)}"
         logger.error(error_msg)
         raise RuntimeError(error_msg)
-    
+
     logger.info("✅ All required environment variables are present")
-    
+
     init_database()
     yield
     # Shutdown
@@ -77,9 +82,12 @@ def create_app() -> FastAPI:
     async def log_requests(request: Request, call_next):
         # Log incoming API requests and responses
         start_time = time.time()
+        # Print directly to stdout for immediate visibility
+        # print(f"🌐 REQUEST: {request.method} {request.url.path} Query: {dict(request.query_params)}")
         logger.debug(f"📥 {request.method} {request.url.path} - Query: {dict(request.query_params)} - Client: {request.client.host if request.client else 'unknown'}")
         response = await call_next(request)
         process_time = time.time() - start_time
+        # print(f"🌐 RESPONSE: {request.method} {request.url.path} Status: {response.status_code} Time: {process_time:.3f}s")
         logger.debug(f"📤 {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
         return response
 

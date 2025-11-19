@@ -1,0 +1,13 @@
+[project]
+name = "mcp-google-analytics"
+version = "0.0.3"
+description = "MCP server for Google Analytics integration"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.6.0",
+    "httpx>=0.24.0",
+]
+
+[project.scripts]
+mcp-google-analytics = "mcp_google_analytics.__init__:main"

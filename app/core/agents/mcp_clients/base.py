@@ -96,9 +96,19 @@ class BaseMCPClient(ABC):
         current_trace = get_current_trace()
         tool_span = None
 
+        # Sanitize arguments for logging
+        sanitized_args = self._sanitize_arguments(arguments)
+
+        # Debug print for MCP call
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🔧 [MCP CALL] Tool: {tool_name}")
+        logger.info(f"📦 [MCP CALL] Client: {self.__class__.__name__}")
+        logger.info(f"📋 [MCP CALL] Arguments:")
+        for key, value in sanitized_args.items():
+            logger.info(f"   - {key}: {value}")
+        logger.info(f"{'='*80}\n")
+
         if current_trace:
-            # Sanitize arguments for logging
-            sanitized_args = self._sanitize_arguments(arguments)
             tool_span = current_trace.span(
                 name=f"mcp_tool_{tool_name}",
                 input={"tool": tool_name, "arguments": sanitized_args},
@@ -110,7 +120,37 @@ class BaseMCPClient(ABC):
             result = await self.session.call_tool(tool_name, arguments)
             duration_ms = (time.time() - start_time) * 1000
 
-            logger.debug(f"✅ MCP tool {tool_name} completed in {duration_ms:.2f}ms")
+            # Debug print for MCP response
+            logger.info(f"\n{'='*80}")
+            logger.info(f"✅ [MCP RESPONSE] Tool: {tool_name}")
+            logger.info(f"⏱️  [MCP RESPONSE] Duration: {duration_ms:.2f}ms")
+            logger.info(f"📊 [MCP RESPONSE] Result type: {type(result).__name__}")
+
+            # Log the content of the response
+            if hasattr(result, 'content'):
+                logger.info(f"📄 [MCP RESPONSE] Content:")
+                if isinstance(result.content, list):
+                    for idx, item in enumerate(result.content):
+                        logger.info(f"   [{idx}] Type: {type(item).__name__}")
+                        if hasattr(item, 'text'):
+                            # Truncate long text for readability
+                            text = item.text
+                            if len(text) > 500:
+                                logger.info(f"   [{idx}] Text (first 500 chars): {text[:500]}...")
+                            else:
+                                logger.info(f"   [{idx}] Text: {text}")
+                        elif hasattr(item, '__dict__'):
+                            logger.info(f"   [{idx}] Data: {item.__dict__}")
+                        else:
+                            logger.info(f"   [{idx}] Value: {item}")
+                else:
+                    logger.info(f"   {result.content}")
+            elif hasattr(result, '__dict__'):
+                logger.info(f"📄 [MCP RESPONSE] Result dict: {result.__dict__}")
+            else:
+                logger.info(f"📄 [MCP RESPONSE] Result: {result}")
+
+            logger.info(f"{'='*80}\n")
 
             if tool_span:
                 tool_span.end(
@@ -122,7 +162,14 @@ class BaseMCPClient(ABC):
 
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
-            logger.error(f"❌ MCP tool {tool_name} failed after {duration_ms:.2f}ms: {e}")
+
+            # Debug print for MCP error
+            logger.error(f"\n{'='*80}")
+            logger.error(f"❌ [MCP ERROR] Tool: {tool_name}")
+            logger.error(f"⏱️  [MCP ERROR] Duration: {duration_ms:.2f}ms")
+            logger.error(f"🚫 [MCP ERROR] Error type: {type(e).__name__}")
+            logger.error(f"💬 [MCP ERROR] Error message: {str(e)}")
+            logger.error(f"{'='*80}\n")
 
             if tool_span:
                 tool_span.end(

@@ -10,11 +10,12 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field, EmailStr
 
 from app.core.auth import get_current_user
-from app.models.users import Agency, Campaigner, Customer, CustomerStatus, UserRole
+from app.models.users import Agency, Campaigner, Customer, CustomerStatus, UserRole, CustomerCampaignerAssignment
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.models.analytics import KpiGoal, DigitalAsset, Connection, UserPropertySelection, KpiValue
 from app.config.database import get_session
 from app.config.logging import get_logger
+from app.services.customer_assignment_service import CustomerAssignmentService
 
 logger = get_logger(__name__)
 
@@ -69,16 +70,52 @@ async def get_customers(
     """
     try:
         with get_session() as session:
-            # Get only customers assigned to the current campaigner
+            # Get only customers assigned to the current campaigner via junction table
+            customer_ids = session.exec(
+                select(CustomerCampaignerAssignment.customer_id).where(
+                    and_(
+                        CustomerCampaignerAssignment.campaigner_id == current_user.id,
+                        CustomerCampaignerAssignment.is_active == True
+                    )
+                )
+            ).all()
+
+            if not customer_ids:
+                return {
+                    "success": True,
+                    "customers": [],
+                    "total": 0
+                }
+
+            # Get customers in current user's agency with the assigned IDs
             statement = select(Customer).where(
                 and_(
                     Customer.agency_id == current_user.agency_id,
-                    Customer.assigned_campaigner_id == current_user.id
+                    Customer.id.in_(customer_ids)
                 )
             ).order_by(Customer.created_at.desc())
-            
+
             customers = session.exec(statement).all()
-            
+
+            # Get all campaigner assignments for each customer
+            customer_campaigners = {}
+            for customer in customers:
+                assignments = CustomerAssignmentService.get_customer_assignments(
+                    session, customer.id, active_only=True
+                )
+                campaigners = []
+                for assignment in assignments:
+                    campaigner = session.get(Campaigner, assignment.campaigner_id)
+                    if campaigner:
+                        campaigners.append({
+                            "id": campaigner.id,
+                            "full_name": campaigner.full_name,
+                            "email": campaigner.email,
+                            "avatar_url": campaigner.avatar_url,
+                            "is_primary": assignment.is_primary
+                        })
+                customer_campaigners[customer.id] = campaigners
+
             return {
                 "success": True,
                 "customers": [
@@ -102,8 +139,8 @@ async def get_customers(
                         "is_active": customer.is_active,
                         "agency_id": customer.agency_id,
                         "agency_name": customer.agency_name,
-                        "assigned_campaigner_id": customer.assigned_campaigner_id,
-                        "campaigner_name": customer.campaigner_name,
+                        "assigned_campaigners": customer_campaigners.get(customer.id, []),
+                        "primary_campaigner_id": customer.primary_campaigner_id,
                         "created_at": customer.created_at.isoformat() if customer.created_at else None,
                         "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                     }
@@ -143,14 +180,24 @@ async def get_customer(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
                 )
-            
-            # Verify customer is assigned to current campaigner
-            if customer.assigned_campaigner_id != current_user.id:
+
+            # Verify customer is assigned to current campaigner via junction table
+            is_assigned = session.exec(
+                select(CustomerCampaignerAssignment).where(
+                    and_(
+                        CustomerCampaignerAssignment.customer_id == customer_id,
+                        CustomerCampaignerAssignment.campaigner_id == current_user.id,
+                        CustomerCampaignerAssignment.is_active == True
+                    )
+                )
+            ).first()
+
+            if not is_assigned:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied - customer not assigned to you"
                 )
-            
+
             # Get related RTM and Questions data
             rtm_entry = session.exec(
                 select(RTMTable).where(RTMTable.customer_id == customer_id)
@@ -159,7 +206,23 @@ async def get_customer(
             questions_entry = session.exec(
                 select(QuestionsTable).where(QuestionsTable.customer_id == customer_id)
             ).first()
-            
+
+            # Get all assigned campaigners for this customer
+            assignments = CustomerAssignmentService.get_customer_assignments(
+                session, customer.id, active_only=True
+            )
+            assigned_campaigners = []
+            for assignment in assignments:
+                campaigner = session.get(Campaigner, assignment.campaigner_id)
+                if campaigner:
+                    assigned_campaigners.append({
+                        "id": campaigner.id,
+                        "full_name": campaigner.full_name,
+                        "email": campaigner.email,
+                        "avatar_url": campaigner.avatar_url,
+                        "is_primary": assignment.is_primary
+                    })
+
             return {
                 "success": True,
                 "customer": {
@@ -182,9 +245,8 @@ async def get_customer(
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
                     "agency_name": customer.agency_name,
-                    "assigned_campaigner_id": customer.assigned_campaigner_id,
-                    "campaigner_name": customer.campaigner_name,
-                    "is_my_customer": customer.assigned_campaigner_id == current_user.id,
+                    "assigned_campaigners": assigned_campaigners,
+                    "primary_campaigner_id": customer.primary_campaigner_id,
                     "has_rtm_data": rtm_entry is not None,
                     "has_questions_data": questions_entry is not None,
                     "created_at": customer.created_at.isoformat() if customer.created_at else None,
@@ -215,11 +277,8 @@ async def create_customer(
             # Fetch agency name for denormalization
             agency = session.get(Agency, current_user.agency_id)
             agency_name = agency.name if agency else None
-            
-            # Campaigner name is already available from current_user
-            campaigner_name = current_user.full_name
-            
-            # Create customer - automatically assign to current campaigner
+
+            # Create customer (without assigned_campaigner_id - use junction table instead)
             new_customer = Customer(
                 agency_id=current_user.agency_id,
                 full_name=request.full_name,
@@ -234,16 +293,25 @@ async def create_customer(
                 llm_engine_preference=request.llm_engine_preference,
                 enable_meta=request.enable_meta,
                 enable_google=request.enable_google,
-                assigned_campaigner_id=current_user.id,  # Auto-assign to current campaigner
                 agency_name=agency_name,  # Denormalized agency name
-                campaigner_name=campaigner_name,  # Denormalized campaigner name
                 status=CustomerStatus.ACTIVE,
                 is_active=True
             )
-            
+
             session.add(new_customer)
             session.commit()
             session.refresh(new_customer)
+
+            # Create primary campaigner assignment via junction table
+            from app.models.users import AssignmentRole
+            CustomerAssignmentService.assign_campaigner(
+                session=session,
+                customer_id=new_customer.id,
+                campaigner_id=current_user.id,
+                is_primary=True,
+                role=AssignmentRole.PRIMARY,
+                assigned_by_id=current_user.id
+            )
             
             # Initialize RTM Table entry with composite_id
             composite_id = f"{current_user.agency_id}_{current_user.id}_{new_customer.id}"
@@ -260,15 +328,31 @@ async def create_customer(
             try:
                 from app.services.default_data_service import default_data_service
                 default_data_service.create_default_data_for_customer(
-                    new_customer.id, 
-                    current_user.agency_id, 
+                    new_customer.id,
+                    current_user.agency_id,
                     current_user.id
                 )
                 logger.info(f"✅ Created default data for new customer {new_customer.id}")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to create default data for customer {new_customer.id}: {str(e)}")
                 # Don't fail customer creation if default data fails
-            
+
+            # Get assigned campaigners for response
+            assignments = CustomerAssignmentService.get_customer_assignments(
+                session, new_customer.id, active_only=True
+            )
+            assigned_campaigners = []
+            for assignment in assignments:
+                campaigner = session.get(Campaigner, assignment.campaigner_id)
+                if campaigner:
+                    assigned_campaigners.append({
+                        "id": campaigner.id,
+                        "full_name": campaigner.full_name,
+                        "email": campaigner.email,
+                        "avatar_url": campaigner.avatar_url,
+                        "is_primary": assignment.is_primary
+                    })
+
             return {
                 "success": True,
                 "message": "Customer created successfully",
@@ -277,7 +361,8 @@ async def create_customer(
                     "full_name": new_customer.full_name,
                     "contact_email": new_customer.contact_email,
                     "phone": new_customer.phone,
-                    "assigned_campaigner_id": new_customer.assigned_campaigner_id,
+                    "assigned_campaigners": assigned_campaigners,
+                    "primary_campaigner_id": new_customer.primary_campaigner_id,
                     "status": new_customer.status,
                     "is_active": new_customer.is_active,
                     "created_at": new_customer.created_at.isoformat() if new_customer.created_at else None
@@ -319,38 +404,53 @@ async def update_customer(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer"
                 )
-            
-            # Verify customer is assigned to current campaigner
-            if customer.assigned_campaigner_id != current_user.id:
+
+            # Verify customer is assigned to current campaigner via junction table
+            is_assigned = session.exec(
+                select(CustomerCampaignerAssignment).where(
+                    and_(
+                        CustomerCampaignerAssignment.customer_id == customer_id,
+                        CustomerCampaignerAssignment.campaigner_id == current_user.id,
+                        CustomerCampaignerAssignment.is_active == True
+                    )
+                )
+            ).first()
+
+            if not is_assigned:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied - customer not assigned to you"
                 )
-            
-            # Remove assigned_campaigner_id from update data if present (not allowed to change)
-            update_data = request.dict(exclude_unset=True)
-            if 'assigned_campaigner_id' in update_data:
-                del update_data['assigned_campaigner_id']
-            
+
             # Update fields
+            update_data = request.dict(exclude_unset=True)
             for field, value in update_data.items():
                 setattr(customer, field, value)
-            
-            # Refresh denormalized data if campaigner assignment changed
-            if 'assigned_campaigner_id' in update_data:
-                if customer.assigned_campaigner_id:
-                    # Fetch campaigner name
-                    campaigner = session.get(Campaigner, customer.assigned_campaigner_id)
-                    customer.campaigner_name = campaigner.full_name if campaigner else None
-            
-            # Fetch agency name
+
+            # Refresh denormalized agency name
             agency = session.get(Agency, customer.agency_id)
             customer.agency_name = agency.name if agency else None
             
             session.add(customer)
             session.commit()
             session.refresh(customer)
-            
+
+            # Get assigned campaigners for response
+            assignments = CustomerAssignmentService.get_customer_assignments(
+                session, customer.id, active_only=True
+            )
+            assigned_campaigners = []
+            for assignment in assignments:
+                campaigner = session.get(Campaigner, assignment.campaigner_id)
+                if campaigner:
+                    assigned_campaigners.append({
+                        "id": campaigner.id,
+                        "full_name": campaigner.full_name,
+                        "email": campaigner.email,
+                        "avatar_url": campaigner.avatar_url,
+                        "is_primary": assignment.is_primary
+                    })
+
             return {
                 "success": True,
                 "message": "Customer updated successfully",
@@ -372,8 +472,8 @@ async def update_customer(
                     "is_active": customer.is_active,
                     "agency_id": customer.agency_id,
                     "agency_name": customer.agency_name,
-                    "assigned_campaigner_id": customer.assigned_campaigner_id,
-                    "campaigner_name": customer.campaigner_name,
+                    "assigned_campaigners": assigned_campaigners,
+                    "primary_campaigner_id": customer.primary_campaigner_id,
                     "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                 }
             }

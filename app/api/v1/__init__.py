@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from .routes import (
     agents,
     health,
-    # webhooks,
+    webhooks,
     # websocket,
     auth,
     google_analytics,
@@ -30,7 +30,11 @@ from .routes import (
     countries_currencies,
     settings,
     oauth_state,
-    campaign_sync
+    campaign_sync,
+    crew_sessions,
+    logs,
+    customer_assignments,
+    traces
 )
 from app.api.v1.routes.chat import router as chat_router
 
@@ -45,7 +49,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, tags=["authentication"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
-# api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 # api_router.include_router(websocket.router, tags=["websocket"])
 # api_router.include_router(crewai.router, tags=["crewai"])
 api_router.include_router(google_analytics.router, tags=["google-analytics"])
@@ -69,6 +73,10 @@ api_router.include_router(countries_currencies.router, prefix="/constants", tags
 api_router.include_router(settings.router, tags=["settings"])
 api_router.include_router(oauth_state.router, tags=["oauth-state"])
 api_router.include_router(campaign_sync.router, tags=["campaign-sync"])
+api_router.include_router(crew_sessions.router, tags=["crew-sessions"])
+api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
+api_router.include_router(customer_assignments.router, prefix="/customers", tags=["customer-assignments"])
+api_router.include_router(traces.router, tags=["traces"])
 
 # Conditionally include debug routes ONLY in development
 if os.getenv("ENVIRONMENT", "production") in ["development", "dev", "local"]:

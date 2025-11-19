@@ -90,7 +90,7 @@ class PostgresTool(BaseTool):
             secured_query = query
 
             logger.info(f"🔍 [PostgresTool] Executing query for campaigner {self.campaigner_id}")
-            logger.debug(f"📝 [PostgresTool] Query: {secured_query}...")
+            logger.debug(f"📝 [PostgresTool] Query: {secured_query}")
 
             # Execute query
             with get_db_connection() as session:

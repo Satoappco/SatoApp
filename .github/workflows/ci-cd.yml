@@ -1,0 +1,110 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pytest-xdist pytest-html factory-boy faker testcontainers[postgresql] responses freezegun
+
+    - name: Run linting
+      run: |
+        # Basic linting (would use flake8, black, mypy in real implementation)
+        python -m py_compile app/**/*.py
+
+    - name: Run unit tests
+      run: pytest tests/unit/ -v --cov=app --cov-report=xml --tb=short
+
+    - name: Run integration tests
+      run: pytest tests/integration/ -v --tb=short
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+    - name: Generate test report
+      run: pytest tests/ --html=reports/test-report.html --self-contained-html
+      if: always()
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: reports/
+
+  deploy-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+
+    steps:
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        echo "✅ Staging deployment completed"
+
+    - name: Send staging notification
+      if: success()
+      run: |
+        echo "📧 Sending staging deployment success notification"
+        # In real implementation, this would send email/Slack notification
+
+    - name: Send staging failure notification
+      if: failure()
+      run: |
+        echo "📧 Sending staging deployment failure notification"
+        # In real implementation, this would send email/Slack notification
+
+  deploy-production:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production environment..."
+        echo "✅ Production deployment completed"
+
+    - name: Send production notification
+      if: success()
+      run: |
+        echo "📧 Sending production deployment success notification"
+        # In real implementation, this would send email/Slack notification
+
+    - name: Send production failure notification
+      if: failure()
+      run: |
+        echo "📧 Sending production deployment failure notification"
+        # In real implementation, this would send email/Slack notification

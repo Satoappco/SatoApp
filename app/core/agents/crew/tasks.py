@@ -20,6 +20,10 @@ class AnalyticsTasks:
         date_range = task_details.get("date_range", {})
         campaigns = task_details.get("specific_campaigns")
 
+        # Get Facebook credentials with ad account ID
+        fb_credentials = task_details.get("meta_ads_credentials", {})
+        ad_account_id = fb_credentials.get("ad_account_id", "NOT_PROVIDED")
+
         # Build context information
         context_info = ""
         if context:
@@ -32,6 +36,9 @@ class AnalyticsTasks:
             if campaigner:
                 context_info += f"\n\nCampaigner Context:\n- Name: {campaigner.get('full_name')}\n- Email: {campaigner.get('email')}"
             context_info += f"\n\nResponse Language: {language}"
+
+        # Add account information
+        context_info += f"\n\nFacebook Ads Account:\n- Ad Account ID: {ad_account_id}"
 
         campaign_filter = ""
         if campaigns:
@@ -46,9 +53,11 @@ Analyze Facebook Ads data for the following:
 Time Period: {date_range.get('start')} to {date_range.get('end')}
 Metrics: {metrics}{campaign_filter}
 
+IMPORTANT: Use the Ad Account ID provided above when querying Facebook Ads data through MCP tools.
+
 Your tasks:
 1. Understand the user's question and what specific insights they need
-2. Fetch the relevant data from Facebook Ads using the MCP tools
+2. Use the Ad Account ID ({ad_account_id}) to fetch the relevant data from Facebook Ads using the MCP tools
 3. Calculate key performance indicators
 4. Identify trends and patterns in the data
 5. Compare performance across campaigns (if applicable)
@@ -75,7 +84,8 @@ Deliver a structured analysis with:
         return Task(
             description=description,
             expected_output=expected_output,
-            agent=agent
+            agent=agent,
+            async_execution=True # Will be executed asynchronously
         )
 
     @staticmethod
@@ -90,6 +100,14 @@ Deliver a structured analysis with:
         metrics = ", ".join(task_details.get("metrics", []))
         date_range = task_details.get("date_range", {})
 
+        # Get Google Analytics credentials with property ID
+        ga_credentials = task_details.get("google_analytics_credentials", {})
+        property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
+
+        # Get Google Ads credentials with customer ID
+        gads_credentials = task_details.get("google_ads_credentials", {})
+        customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
+
         # Build context information
         context_info = ""
         if context:
@@ -103,25 +121,34 @@ Deliver a structured analysis with:
                 context_info += f"\n\nCampaigner Context:\n- Name: {campaigner.get('full_name')}\n- Email: {campaigner.get('email')}"
             context_info += f"\n\nResponse Language: {language}"
 
+        # Add account information
+        context_info += f"\n\nGoogle Analytics Property:\n- Property ID: {property_id}"
+        if customer_id != "NOT_PROVIDED":
+            context_info += f"\n\nGoogle Ads Account:\n- Customer ID: {customer_id}"
+
         description = f"""User Question: {query}
 
 {context_info}
 
-Analyze Google Analytics data for the following:
+Analyze Google Analytics and/or Google Ads data for the following:
 
 Time Period: {date_range.get('start')} to {date_range.get('end')}
 Metrics: {metrics}
 
+IMPORTANT: Use the Property ID ({property_id}) when querying Google Analytics data through MCP tools.
+{f'IMPORTANT: Use the Customer ID ({customer_id}) when querying Google Ads data through MCP tools.' if customer_id != 'NOT_PROVIDED' else ''}
+
 Your tasks:
 1. Understand the user's question and what specific insights they need
-2. Fetch the relevant data from Google Analytics using the MCP tools
-3. Calculate key performance indicators
-4. Analyze user behavior and traffic patterns
-5. Examine conversion funnels and drop-off points
-6. Identify top traffic sources and landing pages
-7. Analyze user demographics and device usage
-8. Highlight any significant changes or trends
-9. Answer the user's specific question
+2. Use the Property ID ({property_id}) to fetch the relevant data from Google Analytics using the MCP tools
+{f'3. Use the Customer ID ({customer_id}) to fetch Google Ads data if needed' if customer_id != 'NOT_PROVIDED' else '3. Focus on Google Analytics data'}
+4. Calculate key performance indicators
+5. Analyze user behavior and traffic patterns
+6. Examine conversion funnels and drop-off points
+7. Identify top traffic sources and landing pages
+8. Analyze user demographics and device usage
+9. Highlight any significant changes or trends
+10. Answer the user's specific question
 
 Deliver a structured analysis with:
 - Direct answer to the user's question
@@ -143,7 +170,8 @@ Deliver a structured analysis with:
         return Task(
             description=description,
             expected_output=expected_output,
-            agent=agent
+            agent=agent,
+            async_execution=True # Will be executed asynchronously
         )
 
     @staticmethod
@@ -212,6 +240,6 @@ IMPORTANT: Make sure your response is in {task_context.get("language", "english"
             description=description,
             expected_output=expected_output,
             agent=agent,
-            async_execution=True,
+            async_execution=False,  # Synthesis task must be synchronous (final task)
             context=context  # This task depends on specialist tasks
         )

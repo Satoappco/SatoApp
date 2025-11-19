@@ -28,13 +28,16 @@ from . import customer_data
 from . import countries_currencies
 from . import oauth_state
 from . import campaign_sync
+from . import logs
+from . import customer_assignments
 
 __all__ = [
-    "agents", "health", "webhooks", "websocket", "auth", "google_analytics", 
-    "google_analytics_oauth", "google_ads", "google_ads_oauth", 
-    "facebook", "facebook_oauth", 
-    "facebook_page_oauth", "facebook_marketing_oauth", "admin", 
-    "agencies", "property_selections", "digital_assets", "campaigners", 
+    "agents", "health", "webhooks", "websocket", "auth", "google_analytics",
+    "google_analytics_oauth", "google_ads", "google_ads_oauth",
+    "facebook", "facebook_oauth",
+    "facebook_page_oauth", "facebook_marketing_oauth", "admin",
+    "agencies", "property_selections", "digital_assets", "campaigners",
     "customers", "crewai", "database_management", "customer_data",
-    "countries_currencies", "oauth_state", "campaign_sync"
+    "countries_currencies", "oauth_state", "campaign_sync", "logs",
+    "customer_assignments"
 ]

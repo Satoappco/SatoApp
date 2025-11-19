@@ -8,6 +8,12 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
+# Use campaigner_id from JWT state (already validated above)
+from app.models.users import Campaigner
+from app.config.database import get_session
+from sqlmodel import select
+from app.services.facebook_service import FacebookService
+        
 router = APIRouter(prefix="/facebook", tags=["facebook-oauth"])
 
 
@@ -121,8 +127,6 @@ async def handle_oauth_callback(
         )
     
     try:
-        from app.services.facebook_service import FacebookService
-        
         facebook_service = FacebookService()
         
         # Exchange code for tokens
@@ -133,10 +137,6 @@ async def handle_oauth_callback(
         
         print(f"DEBUG: Token exchange successful for user: {token_data['user_name']}")
         
-        # Use campaigner_id from JWT state (already validated above)
-        from app.models.users import Campaigner
-        from app.config.database import get_session
-        from sqlmodel import select
         
         with get_session() as session:
             # Get the campaigner who initiated this OAuth flow
@@ -253,21 +253,48 @@ async def create_facebook_connection(
                 
                 # Encrypt access token
                 access_token_enc = facebook_service._encrypt_token(request.access_token)
-                
+                token_hash = facebook_service._generate_token_hash(request.access_token)
+
                 # Calculate expiry time
                 expires_at = datetime.utcnow() + timedelta(seconds=request.expires_in)
-                
-                # Create connection
-                connection = Connection(
-                    digital_asset_id=digital_asset.id,
-                    customer_id=request.customer_id,
-                    campaigner_id=request.campaigner_id,
-                    auth_type=AuthType.OAUTH2,
-                    access_token_enc=access_token_enc,
-                    expires_at=expires_at,
-                    revoked=False,
-                    last_used_at=datetime.utcnow()
+
+                # Check for existing connection and update if found
+                from sqlmodel import and_
+                connection_statement = select(Connection).where(
+                    and_(
+                        Connection.digital_asset_id == digital_asset.id,
+                        Connection.campaigner_id == request.campaigner_id,
+                        Connection.auth_type == AuthType.OAUTH2
+                    )
                 )
+                connection = session.exec(connection_statement).first()
+
+                if connection:
+                    # Update existing connection
+                    print(f"DEBUG: Updating existing connection {connection.id} for asset {digital_asset.id}")
+                    connection.access_token_enc = access_token_enc
+                    connection.token_hash = token_hash
+                    connection.expires_at = expires_at
+                    connection.scopes = facebook_service.FACEBOOK_SCOPES
+                    connection.rotated_at = datetime.utcnow()
+                    connection.last_used_at = datetime.utcnow()
+                    connection.revoked = False  # Reactivate if it was revoked
+                else:
+                    # Create new connection
+                    print(f"DEBUG: Creating new connection for asset {digital_asset.id}")
+                    connection = Connection(
+                        digital_asset_id=digital_asset.id,
+                        customer_id=request.customer_id,
+                        campaigner_id=request.campaigner_id,
+                        auth_type=AuthType.OAUTH2,
+                        access_token_enc=access_token_enc,
+                        token_hash=token_hash,
+                        scopes=facebook_service.FACEBOOK_SCOPES,
+                        expires_at=expires_at,
+                        revoked=False,
+                        last_used_at=datetime.utcnow()
+                    )
+
                 session.add(connection)
                 session.commit()
                 session.refresh(connection)
@@ -305,6 +332,9 @@ async def create_facebook_connection(
             )
         
     except Exception as e:
+        print(f"❌ ERROR in create-facebook-connection: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return OAuthCallbackResponse(
             success=False,
             message=f"Failed to create Facebook connection: {str(e)}"
@@ -319,7 +349,12 @@ async def create_facebook_ads_connection(
     Create Facebook Ads connection for a specific ad account
     This is separate from Facebook Page connections
     """
-    
+
+    print(f"📥 CREATE-ADS-CONNECTION request received:")
+    print(f"   Ad Account: {request.ad_account_name} (ID: {request.ad_account_id})")
+    print(f"   Campaigner ID: {request.campaigner_id}, Customer ID: {request.customer_id}")
+    print(f"   Currency: {request.currency}, Timezone: {request.timezone}")
+
     try:
         from app.services.facebook_service import FacebookService
         from app.config.database import get_session
@@ -353,26 +388,57 @@ async def create_facebook_ads_connection(
             
             # Encrypt access token
             access_token_enc = facebook_service._encrypt_token(request.access_token)
-            
+            token_hash = facebook_service._generate_token_hash(request.access_token)
+
             # Calculate expiry time
             expires_at = datetime.utcnow() + timedelta(seconds=request.expires_in)
-            
-            # Create connection
-            connection = Connection(
-                digital_asset_id=digital_asset.id,
-                customer_id=request.customer_id,
-                campaigner_id=request.campaigner_id,
-                auth_type=AuthType.OAUTH2,
-                access_token_enc=access_token_enc,
-                expires_at=expires_at,
-                account_email=request.user_email,
-                revoked=False,
-                last_used_at=datetime.utcnow()
+
+            # Check for existing connection and update if found
+            from sqlmodel import and_
+            connection_statement = select(Connection).where(
+                and_(
+                    Connection.digital_asset_id == digital_asset.id,
+                    Connection.campaigner_id == request.campaigner_id,
+                    Connection.auth_type == AuthType.OAUTH2
+                )
             )
+            connection = session.exec(connection_statement).first()
+
+            if connection:
+                # Update existing connection
+                print(f"DEBUG: Updating existing connection {connection.id} for asset {digital_asset.id}")
+                connection.access_token_enc = access_token_enc
+                connection.token_hash = token_hash
+                connection.expires_at = expires_at
+                connection.account_email = request.user_email
+                connection.scopes = facebook_service.FACEBOOK_SCOPES
+                connection.rotated_at = datetime.utcnow()
+                connection.last_used_at = datetime.utcnow()
+                connection.revoked = False  # Reactivate if it was revoked
+            else:
+                # Create new connection
+                print(f"DEBUG: Creating new connection for asset {digital_asset.id}")
+                connection = Connection(
+                    digital_asset_id=digital_asset.id,
+                    customer_id=request.customer_id,
+                    campaigner_id=request.campaigner_id,
+                    auth_type=AuthType.OAUTH2,
+                    access_token_enc=access_token_enc,
+                    token_hash=token_hash,
+                    account_email=request.user_email,
+                    scopes=facebook_service.FACEBOOK_SCOPES,
+                    expires_at=expires_at,
+                    revoked=False,
+                    last_used_at=datetime.utcnow()
+                )
+
             session.add(connection)
             session.commit()
             session.refresh(connection)
-            
+
+            print(f"✅ SUCCESS: Created Facebook Ads connection for account {request.ad_account_name} (ID: {request.ad_account_id})")
+            print(f"   Connection ID: {connection.id}, Digital Asset ID: {digital_asset.id}")
+
             return OAuthCallbackResponse(
                 success=True,
                 message=f"Successfully connected Facebook Ads account: {request.ad_account_name}",
@@ -388,6 +454,9 @@ async def create_facebook_ads_connection(
             )
     
     except Exception as e:
+        print(f"❌ ERROR in create-ads-connection: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return OAuthCallbackResponse(
             success=False,
             message=f"Failed to create Facebook Ads connection: {str(e)}"
