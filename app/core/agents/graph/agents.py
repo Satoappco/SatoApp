@@ -747,29 +747,46 @@ IMPORTANT FILTERING TIPS:
 - match_type=1 means EXACT match, match_type=2 means CONTAINS
 
 DATE FORMATS - CRITICAL:
-Google Analytics API accepts ONLY these date formats:
+**Google Analytics API** accepts ONLY these date formats:
 - YYYY-MM-DD format: 2024-01-15
 - Relative formats: today, yesterday, 7daysAgo, 30daysAgo
 - NEVER use formats like this_week_mon_today or this_week_monday - these are INVALID
 - For this week queries, use 7daysAgo as start_date and today as end_date
 - For last week queries, use 14daysAgo as start_date and 7daysAgo as end_date
 
-ERROR HANDLING - This is CRITICAL:
-If a tool call fails with a validation error:
-1. Read the error message carefully to identify the issue
-2. Fix the parameter with the correct value based on the error
-3. Retry the tool call immediately with the corrected parameters
-4. Do NOT give up after one failed attempt - you have multiple iterations to get it right
+**Google Ads API (GAQL queries)** accepts ONLY:
+- YYYY-MM-DD format: '2024-01-15' (must be in quotes)
+- DO NOT use relative formats like '30daysAgo', 'yesterday', 'today'
+- For date ranges, calculate the actual dates from current date
+- Example: For last 30 days, if today is 2024-11-19, use dates.date BETWEEN '2024-10-20' AND '2024-11-19'
+- ALWAYS calculate actual YYYY-MM-DD dates before making Google Ads GAQL queries
 
-Common error examples and fixes:
-- "Field required: dimensions" → Add dimensions=["date"] and retry
-- "Invalid startDate: this_week_mon_today" → Use 7daysAgo instead and retry
-- "Field campaign is not a valid dimension. Did you mean campaignId?" → Use sessionCampaignName instead and retry
-- "Field source is not a valid dimension" → Use sessionSource instead and retry
-- "'float' object cannot be interpreted as an integer" → Already handled automatically
+ERROR HANDLING - THIS IS CRITICAL FOR SUCCESS:
+When a tool call fails with an error, you MUST analyze the error and retry with corrected parameters.
+You have up to 15 iterations - use them to debug and fix issues!
 
-The agent MUST retry with corrected parameters when receiving validation errors!
-You have 15 iterations to get it right - USE THEM!
+Common error patterns and how to fix them:
+1. Google Ads date format errors:
+   - Error: "BETWEEN operator must have exactly two values...in 'YYYY-MM-DD' format"
+   - Fix: Calculate actual dates (e.g., convert "30daysAgo" to actual date like '2024-10-20')
+   - Example correction: segments.date BETWEEN '2024-10-20' AND '2024-11-19'
+
+2. Google Analytics dimension errors:
+   - Error: "Field campaign is not valid. Did you mean campaignId?"
+   - Fix: Use sessionCampaignName instead of campaign
+   - Error: "Field source is not valid"
+   - Fix: Use sessionSource instead of source
+
+3. Missing required parameters:
+   - Error: "Field required: dimensions"
+   - Fix: Add dimensions=["date"] to your run_report call
+
+4. Date format errors:
+   - Error: "Invalid startDate: this_week_mon_today"
+   - Fix: Use 7daysAgo or calculate actual YYYY-MM-DD date
+
+IMPORTANT: After ANY tool error, read the error message carefully, understand what went wrong,
+fix the specific issue, and retry immediately. Don't give up after the first error!
 
 Remember: Use the tools available to you to fetch real data before providing insights."""
 
@@ -802,11 +819,12 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 agent=agent,
                 tools=tools,
                 verbose=True,
-                max_iterations=15,  # Increased to allow retries
+                max_iterations=15,  # Allow up to 15 tool calls (includes retries)
                 handle_parsing_errors=True,
+                handle_tool_error=True,  # Pass tool errors back to agent as observations for retry
                 return_intermediate_steps=True,  # Return steps for debugging
-                max_execution_time=120,  # 2 minute timeout
-                early_stopping_method="generate"  # Generate final answer even on errors
+                max_execution_time=180,  # 3 minute timeout (increased for retries)
+                early_stopping_method="generate"  # Generate final answer
             )
 
             # Execute agent
@@ -822,17 +840,23 @@ Remember: Use the tools available to you to fetch real data before providing ins
                         tool_name = action.tool if hasattr(action, 'tool') else str(action)
                         tool_input = action.tool_input if hasattr(action, 'tool_input') else {}
 
+                        # Check if observation contains an error
+                        observation_str = str(observation)
+                        is_error = isinstance(observation, Exception) or observation_str.startswith("Error:")
+
                         # Log tool usage
                         trace_service.add_tool_usage(
                             thread_id=thread_id,
                             tool_name=tool_name,
                             tool_input=str(tool_input),
-                            tool_output=str(observation)[:5000],  # Limit output size
-                            success=True,  # If we got here, the tool executed
+                            tool_output=observation_str[:5000],  # Limit output size
+                            success=not is_error,
+                            error=observation_str if is_error else None,
                             latency_ms=int((time.time() - tool_start_time) * 1000),
                             metadata={
                                 "step_index": i,
-                                "action_type": type(action).__name__
+                                "action_type": type(action).__name__,
+                                "retry_attempt": i  # Track which attempt this was
                             },
                             level=level
                         )
@@ -860,8 +884,9 @@ Remember: Use the tools available to you to fetch real data before providing ins
                                 verbose=True,
                                 max_iterations=15,
                                 handle_parsing_errors=True,
+                                handle_tool_error=True,  # Pass tool errors back to agent as observations for retry
                                 return_intermediate_steps=True,
-                                max_execution_time=120,
+                                max_execution_time=180,
                                 early_stopping_method="generate"
                             )
                             result = await agent_executor.ainvoke({"input": query})
