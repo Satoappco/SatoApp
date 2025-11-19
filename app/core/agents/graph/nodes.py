@@ -12,9 +12,11 @@ from .agents import get_agent
 from ..database.tools import DatabaseTool
 from app.models.users import Campaigner
 from app.services.agent_service import AgentService
+from app.services.chat_trace_service import ChatTraceService
 from app.config.langfuse_config import LangfuseConfig
 from app.core.observability import trace_context
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -747,6 +749,7 @@ class AgentExecutorNode:
         agent_name = state.get("next_agent")
         task = state.get("agent_task", {})
         trace = state.get("trace")  # Get session trace from state
+        thread_id = state.get("thread_id")  # Get thread_id for tracing
 
         logger.info(f"⚙️  [AgentExecutor] Executing agent: {agent_name}")
 
@@ -757,7 +760,23 @@ class AgentExecutorNode:
                 "conversation_complete": True
             }
 
+        # Initialize trace service for logging agent steps
+        trace_service = ChatTraceService() if thread_id else None
+        start_time = time.time()
+
         try:
+            # Log agent step start
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="agent_start",
+                    content=f"Starting execution of {agent_name}",
+                    agent_name=agent_name,
+                    metadata={
+                        "task": task,
+                        "timestamp": time.time()
+                    }
+                )
             # Get LangFuse client for creating generation within trace
             langfuse = LangfuseConfig.get_client()
 
@@ -784,6 +803,7 @@ class AgentExecutorNode:
             logger.info(f"🚀 [AgentExecutor] Executing {agent_name} with task...")
             logger.debug(f"📋 [AgentExecutor] Task details: {task}")
             result = agent.execute(task)
+            execution_time_ms = int((time.time() - start_time) * 1000)
             logger.info(f"✅ [AgentExecutor] Agent {agent_name} completed. Status: {result.get('status')}")
 
             # Check if agent returned error status
@@ -792,6 +812,20 @@ class AgentExecutorNode:
 
                 # Get user-friendly error message from result
                 error_message = result.get("result", result.get("message", "An error occurred"))
+
+                # Log agent error step
+                if trace_service and thread_id:
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="agent_error",
+                        content=f"Agent {agent_name} encountered an error: {error_message}",
+                        agent_name=agent_name,
+                        metadata={
+                            "error_message": error_message,
+                            "execution_time_ms": execution_time_ms,
+                            "timestamp": time.time()
+                        }
+                    )
 
                 # Update generation with error
                 if generation:
@@ -820,6 +854,21 @@ class AgentExecutorNode:
             except Exception:
                 logger.debug(f"💬 [AgentExecutor] Response: (non-string type: {type(response_message)})")
 
+            # Log agent completion step
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="agent_complete",
+                    content=f"Agent {agent_name} completed successfully",
+                    agent_name=agent_name,
+                    metadata={
+                        "result_preview": str(response_message)[:500],
+                        "execution_time_ms": execution_time_ms,
+                        "status": result.get("status"),
+                        "timestamp": time.time()
+                    }
+                )
+
             # Update generation with output
             if generation:
                 generation.update(
@@ -836,6 +885,21 @@ class AgentExecutorNode:
 
         except Exception as e:
             logger.error(f"❌ [AgentExecutor] Agent execution failed: {str(e)}", exc_info=True)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Log agent exception step
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="agent_exception",
+                    content=f"Agent {agent_name} raised exception: {str(e)}",
+                    agent_name=agent_name,
+                    metadata={
+                        "exception": str(e),
+                        "execution_time_ms": execution_time_ms,
+                        "timestamp": time.time()
+                    }
+                )
 
             # Update generation with error
             if generation:

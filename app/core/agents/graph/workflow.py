@@ -65,6 +65,7 @@ class ConversationWorkflow:
             "error": None,
             "campaigner": campaigner,
             "customer_id": customer_id,
+            "thread_id": thread_id,  # Pass thread_id for tracing
             "trace": trace  # Pass trace through state for nodes to use
         }
 

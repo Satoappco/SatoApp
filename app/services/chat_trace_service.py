@@ -156,19 +156,22 @@ class ChatTraceService:
         finally:
             self._close_session(session)
 
-    def get_conversation(self, thread_id: str) -> Optional[ChatTrace]:
+    def get_conversation(self, thread_id: str, session: Optional[Session] = None) -> Optional[ChatTrace]:
         """
         Get conversation record by thread_id.
 
         Args:
             thread_id: Thread identifier
+            session: Optional session to use (if not provided, creates new one)
 
         Returns:
             ChatTrace conversation record or None if not found
         """
-        session = self._get_session()
+        _session = session or self._get_session()
+        should_close = session is None and self._should_close_session
+
         try:
-            conversation = session.exec(
+            conversation = _session.exec(
                 select(ChatTrace).where(
                     and_(
                         ChatTrace.thread_id == thread_id,
@@ -178,7 +181,8 @@ class ChatTraceService:
             ).first()
             return conversation
         finally:
-            self._close_session(session)
+            if should_close:
+                _session.close()
 
     def update_conversation_data(
         self,
@@ -333,7 +337,7 @@ class ChatTraceService:
         """
         session = self._get_session()
         try:
-            conversation = self.get_conversation(thread_id)
+            conversation = self.get_conversation(thread_id, session=session)
             if not conversation:
                 print(f"⚠️ Conversation not found: {thread_id}")
                 return None
@@ -441,7 +445,7 @@ class ChatTraceService:
         """
         session = self._get_session()
         try:
-            conversation = self.get_conversation(thread_id)
+            conversation = self.get_conversation(thread_id, session=session)
             if not conversation:
                 print(f"⚠️ Conversation not found: {thread_id}")
                 return None
@@ -551,7 +555,7 @@ class ChatTraceService:
         """
         session = self._get_session()
         try:
-            conversation = self.get_conversation(thread_id)
+            conversation = self.get_conversation(thread_id, session=session)
             if not conversation:
                 print(f"⚠️ Conversation not found: {thread_id}")
                 return None
@@ -680,7 +684,7 @@ class ChatTraceService:
         """
         session = self._get_session()
         try:
-            conversation = self.get_conversation(thread_id)
+            conversation = self.get_conversation(thread_id, session=session)
             if not conversation:
                 print(f"⚠️ Conversation not found: {thread_id}")
                 return None
@@ -904,6 +908,7 @@ class ChatTraceService:
         if not LANGFUSE_AVAILABLE:
             return None
 
+        # Don't pass session here since we might need to update the conversation
         conversation = self.get_conversation(thread_id)
         if not conversation:
             return None
