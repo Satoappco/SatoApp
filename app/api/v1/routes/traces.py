@@ -6,14 +6,13 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
-from sqlmodel import Session, select, func, and_, or_
-from sqlalchemy import desc, outerjoin
+from sqlmodel import Session, select, func, and_
+from sqlalchemy import desc
 
 from app.models.chat_traces import ChatTrace, RecordType
 from app.config.database import get_session
 from app.core.auth import get_current_user
-from app.models.users import Campaigner
-from app.models.users import Customer
+from app.models.users import Campaigner, Customer
 
 router = APIRouter(prefix="/traces", tags=["traces"])
 
@@ -25,7 +24,7 @@ class TraceListItem(BaseModel):
     campaigner_id: int
     campaigner_name: Optional[str]
     customer_id: Optional[int]
-    customer_email: Optional[str]
+    customer_name: Optional[str]
     status: str
     started_at: Optional[str]
     completed_at: Optional[str]
@@ -114,18 +113,18 @@ async def list_traces(
         campaigner = session.get(Campaigner, conv.campaigner_id)
         campaigner_name = campaigner.full_name if campaigner else None
 
-        # Get customer email
-        customer_email = None
+        # Get customer name
+        customer_name = None
         if conv.customer_id:
             customer = session.get(Customer, conv.customer_id)
-            customer_email = customer.email if customer else None
+            customer_name = customer.full_name if customer else None
 
         traces.append(TraceListItem(
             thread_id=conv.thread_id,
             campaigner_id=conv.campaigner_id,
             campaigner_name=campaigner_name,
             customer_id=conv.customer_id,
-            customer_email=customer_email,
+            customer_name=customer_name,
             status=data.get("status", "unknown"),
             started_at=data.get("started_at"),
             completed_at=data.get("completed_at"),
@@ -219,10 +218,10 @@ async def get_trace_detail(
     campaigner = session.get(Campaigner, conversation.campaigner_id)
     campaigner_name = campaigner.full_name if campaigner else None
 
-    customer_email = None
+    customer_name = None
     if conversation.customer_id:
         customer = session.get(Customer, conversation.customer_id)
-        customer_email = customer.email if customer else None
+        customer_name = customer.full_name if customer else None
 
     # Build response
     return TraceDetailResponse(
@@ -232,7 +231,7 @@ async def get_trace_detail(
             "campaigner_id": conversation.campaigner_id,
             "campaigner_name": campaigner_name,
             "customer_id": conversation.customer_id,
-            "customer_email": customer_email,
+            "customer_name": customer_name,
             "langfuse_trace_url": conversation.langfuse_trace_url,
             "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
             "updated_at": conversation.updated_at.isoformat() if conversation.updated_at else None,

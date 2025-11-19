@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 from sqlmodel import Session, select, func
 from sqlalchemy import and_, or_
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.chat_traces import ChatTrace, RecordType
 from app.config.langfuse_config import LangfuseConfig
@@ -218,6 +219,9 @@ class ChatTraceService:
             # Mark as updated
             conversation.updated_at = datetime.utcnow()
 
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
+
             session.add(conversation)
             session.commit()
             session.refresh(conversation)
@@ -278,6 +282,9 @@ class ChatTraceService:
                 conversation.data["intent"] = final_intent
 
             conversation.updated_at = datetime.utcnow()
+
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
 
             session.add(conversation)
             session.commit()
@@ -399,6 +406,9 @@ class ChatTraceService:
                 conversation.data["total_tokens"] += tokens_used
             conversation.updated_at = datetime.utcnow()
 
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
+
             session.add(conversation)
             session.commit()
             session.refresh(message)
@@ -508,6 +518,9 @@ class ChatTraceService:
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
             conversation.updated_at = datetime.utcnow()
+
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
 
             session.add(conversation)
             session.commit()
@@ -623,6 +636,9 @@ class ChatTraceService:
             # Update conversation metrics
             conversation.data["tool_usage_count"] += 1
             conversation.updated_at = datetime.utcnow()
+
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
 
             session.add(conversation)
             session.commit()

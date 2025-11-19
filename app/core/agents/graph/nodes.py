@@ -364,6 +364,23 @@ if the user request is simple and can be answered without an agent, provide a di
         campaigner = state.get("campaigner", None)
         if campaigner is None:
             raise ValueError("Campaigner information is required in the state")
+
+        # Log chatbot system prompt
+        thread_id = state.get("thread_id")
+        if thread_id:
+            trace_service = ChatTraceService()
+            trace_service.add_agent_step(
+                thread_id=thread_id,
+                step_type="system_prompt",
+                content="Chatbot System Prompt",
+                agent_name="chatbot_orchestrator",
+                metadata={
+                    "system_prompt": self.formatted_system_prompt,
+                    "campaigner_id": campaigner.id if campaigner else None,
+                    "customer_id": state.get("customer_id")
+                }
+            )
+
         # Check if we're handling an agent error
         if state.get("agent_error"):
             logger.warning(f"⚠️  [ChatbotNode] Handling agent error: {state.get('agent_error')}")
@@ -763,6 +780,7 @@ class AgentExecutorNode:
         # Initialize trace service for logging agent steps
         trace_service = ChatTraceService() if thread_id else None
         start_time = time.time()
+        generation = None  # Initialize here to avoid UnboundLocalError
 
         try:
             # Log agent step start
@@ -773,15 +791,14 @@ class AgentExecutorNode:
                     content=f"Starting execution of {agent_name}",
                     agent_name=agent_name,
                     metadata={
-                        "task": task,
-                        "timestamp": time.time()
+                        "task": str(task),  # Convert to string to ensure JSON serialization
+                        "start_time": start_time
                     }
                 )
             # Get LangFuse client for creating generation within trace
             langfuse = LangfuseConfig.get_client()
 
             # Create a generation span within the session trace
-            generation = None
             if langfuse and trace:
                 generation = trace.generation(
                     name=f"agent_execution_{agent_name}",
@@ -800,9 +817,12 @@ class AgentExecutorNode:
             if hasattr(agent, 'set_trace'):
                 agent.set_trace(trace)
 
+            # Add thread_id to task for tracing inside the agent
+            task_with_trace = {**task, "thread_id": thread_id} if thread_id else task
+
             logger.info(f"🚀 [AgentExecutor] Executing {agent_name} with task...")
             logger.debug(f"📋 [AgentExecutor] Task details: {task}")
-            result = agent.execute(task)
+            result = agent.execute(task_with_trace)
             execution_time_ms = int((time.time() - start_time) * 1000)
             logger.info(f"✅ [AgentExecutor] Agent {agent_name} completed. Status: {result.get('status')}")
 
@@ -821,9 +841,9 @@ class AgentExecutorNode:
                         content=f"Agent {agent_name} encountered an error: {error_message}",
                         agent_name=agent_name,
                         metadata={
-                            "error_message": error_message,
+                            "error_message": str(error_message),
                             "execution_time_ms": execution_time_ms,
-                            "timestamp": time.time()
+                            "end_time": time.time()
                         }
                     )
 
@@ -864,8 +884,8 @@ class AgentExecutorNode:
                     metadata={
                         "result_preview": str(response_message)[:500],
                         "execution_time_ms": execution_time_ms,
-                        "status": result.get("status"),
-                        "timestamp": time.time()
+                        "status": str(result.get("status")),
+                        "end_time": time.time()
                     }
                 )
 
@@ -896,8 +916,9 @@ class AgentExecutorNode:
                     agent_name=agent_name,
                     metadata={
                         "exception": str(e),
+                        "exception_type": type(e).__name__,
                         "execution_time_ms": execution_time_ms,
-                        "timestamp": time.time()
+                        "end_time": time.time()
                     }
                 )
 

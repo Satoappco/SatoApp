@@ -11,6 +11,8 @@ from ..crew.crew import AnalyticsCrew
 from .sql_agent import SQLBasicInfoAgent
 from ..customer_credentials import CustomerCredentialManager
 from ..mcp_clients.mcp_registry import MCPSelector
+from app.services.chat_trace_service import ChatTraceService
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -574,6 +576,10 @@ class SingleAnalyticsAgent:
         campaigner_id = task.get("campaigner_id")
         context = task.get("context", {})
         language = context.get("language", "english")
+        thread_id = task.get("thread_id")  # Extract thread_id for tracing
+
+        # Initialize trace service if thread_id is available
+        trace_service = ChatTraceService() if thread_id else None
 
         # Auto-fetch customer platforms and credentials
         platforms = []
@@ -658,9 +664,8 @@ class SingleAnalyticsAgent:
             from datetime import datetime
             current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Create prompt template with context
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", f"""You are an expert marketing analytics agent with direct access to multiple advertising platforms.
+            # Build system prompt
+            system_prompt = f"""You are an expert marketing analytics agent with direct access to multiple advertising platforms.
 
 Current Date and Time: {current_datetime}
 
@@ -723,7 +728,26 @@ Common error examples and fixes:
 The agent MUST retry with corrected parameters when receiving validation errors!
 You have 15 iterations to get it right - USE THEM!
 
-Remember: Use the tools available to you to fetch real data before providing insights."""),
+Remember: Use the tools available to you to fetch real data before providing insights."""
+
+            # Log system prompt to traces
+            if trace_service and thread_id:
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="system_prompt",
+                    content="Analytics Agent System Prompt",
+                    agent_name="single_analytics_agent",
+                    metadata={
+                        "system_prompt": system_prompt,
+                        "platforms": platforms,
+                        "num_tools": len(tools),
+                        "query": query
+                    }
+                )
+
+            # Create prompt template
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
             ])
@@ -744,6 +768,30 @@ Remember: Use the tools available to you to fetch real data before providing ins
             # Execute agent
             try:
                 result = await agent_executor.ainvoke({"input": query})
+
+                # Log tool calls from intermediate_steps
+                if trace_service and thread_id and "intermediate_steps" in result:
+                    for i, (action, observation) in enumerate(result["intermediate_steps"]):
+                        tool_start_time = time.time()
+
+                        # Extract tool information
+                        tool_name = action.tool if hasattr(action, 'tool') else str(action)
+                        tool_input = action.tool_input if hasattr(action, 'tool_input') else {}
+
+                        # Log tool usage
+                        trace_service.add_tool_usage(
+                            thread_id=thread_id,
+                            tool_name=tool_name,
+                            tool_input=str(tool_input),
+                            tool_output=str(observation)[:5000],  # Limit output size
+                            success=True,  # If we got here, the tool executed
+                            latency_ms=int((time.time() - tool_start_time) * 1000),
+                            metadata={
+                                "step_index": i,
+                                "action_type": type(action).__name__
+                            }
+                        )
+
             except Exception as e:
                 # Check if this is a tool schema error
                 error_str = str(e)
