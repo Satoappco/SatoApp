@@ -299,6 +299,17 @@ IMPORTANT SQL WRITING RULES:
    WHERE camp.id = :campaigner_id
    ```
 
+   **For metrics table:**
+   - MUST join through digital_assets → customers → campaigners:
+   ```sql
+   FROM metrics m
+   JOIN digital_assets da ON da.id = m.platform_id
+   JOIN customers c ON c.id = da.customer_id
+   JOIN campaigners camp ON camp.agency_id = c.agency_id
+   WHERE camp.id = :campaigner_id
+   ```
+   - NOTE: metrics table contains only last 90 days of data
+
    **For user's customers table:**
    - Join directly with campaigners:
    ```sql

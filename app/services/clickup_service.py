@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from app.config.logging import get_logger
 from sqlmodel import Session, select
 from app.models.settings import AppSettings
-
+from app.config.settings import get_settings as get_app_settings
 logger = get_logger(__name__)
 
 
@@ -34,7 +34,8 @@ class ClickUpService:
                 return setting.value
             return default
 
-        self.auth_token = get_setting("clickup_auth_token", "")
+        app_settings = get_app_settings()
+        self.auth_token = app_settings.clickup_auth_token or get_setting("clickup_auth_token", "")
         self.dev_list_id = get_setting("clickup_dev_list_id", "901413553845")
         self.assignee_id = get_setting("clickup_assignee_id", 9014865885)
         self.attach_logs = get_setting("clickup_attach_logs", False)
@@ -187,7 +188,7 @@ User pressed DISLIKE button on a chat response that needs review.
         url = f"https://api.clickup.com/api/v2/list/{self.dev_list_id}/task"
 
         payload = {
-            "assignees": [self.assignee_id],
+            # "assignees": [self.assignee_id],
             "tags": tags,
             "name": task_name,
             "description": description
@@ -203,7 +204,7 @@ User pressed DISLIKE button on a chat response that needs review.
         response = requests.post(url, json=payload, headers=headers, timeout=10)
 
         if response.status_code not in (200, 201):
-            logger.error(f"❌ ClickUp API error: {response.status_code} - {response.text}")
+            logger.error(f"❌ ClickUp API error: [{headers}] {response.status_code} - {response.text}")
             return {}
 
         return response.json()

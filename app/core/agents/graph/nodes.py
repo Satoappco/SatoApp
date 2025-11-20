@@ -268,9 +268,8 @@ You cannot answer questions related to other users or campaigners.
   * kpi_values: Actual KPI measurements (campaign performance, metrics)
   * digital_assets: Digital assets info (Facebook pages, Google Analytics properties, etc.)
   * connections: OAuth connections and API credentials (connection status, expiration)
-  * rtm_table: Real-Time Marketing data
-  * questions_table: Questions and answers data
-  *(Note: this agent cannot access agencies or campaigners tables directly.)*
+  * metrics: Raw ad/ad group performance data from platforms (last 90 days only: CPA, CVR, CTR, CPC, clicks, impressions, spent, conversions, etc.)
+  *(Note: this agent cannot access agencies or campaigners tables directly. RTM features are not yet enabled and on hold for future implementation.)*
 
 - **analytics_crew** — gathers and analyzes data from all advertising platforms (Facebook Ads, Google Marketing, etc.)
 - **campaign_planning_crew** — plans new campaigns, creates digital assets, and deploys them to platforms
