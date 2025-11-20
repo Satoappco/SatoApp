@@ -765,11 +765,7 @@ class CampaignSyncService:
         
         try:
             with get_session() as session:
-                # Step 1: Calculate sync date (yesterday) - the date we're syncing
-                sync_date = (datetime.utcnow() - timedelta(days=1)).date()
-                logger.info(f"📅 Syncing metrics for date: {sync_date}")
-
-                # Step 2: Cleanup old metrics (older than 90 days)
+                # Step 1: Cleanup old metrics (older than 90 days)
                 cutoff_date = datetime.utcnow().date() - timedelta(days=90)
                 logger.info(f"🗑️  Cleaning up metrics older than {cutoff_date}")
 
@@ -791,6 +787,7 @@ class CampaignSyncService:
                 
                 logger.info(f"📊 Processing {len(customers)} customer(s)")
                 
+
                 # Step 3: For each customer
                 for customer in customers:
                     try:
@@ -868,20 +865,25 @@ class CampaignSyncService:
                                     })
                                     continue
                                 
-                                # Fetch and store metrics based on platform type (PREVIOUS DAY ONLY)
-                                if platform.provider == "Google Ads":
-                                    metrics_count = self._sync_google_ads_metrics(
-                                        session, platform, working_connection, sync_date
-                                    )
-                                    stats["metrics_upserted"] += metrics_count
-                                    logger.info(f"   ✅ Synced {metrics_count} Google Ads metrics for {sync_date}")
+                                for prev_days in range(0, 90):  # should be (0, 2)
+                                    # Step 1: Calculate sync date (yesterday) - the date we're syncing
+                                    sync_date = (datetime.utcnow() - timedelta(days=prev_days)).date()
+                                    logger.info(f"📅 Syncing metrics for date: {sync_date}")
 
-                                elif platform.provider == "Facebook":
-                                    metrics_count = self._sync_facebook_metrics(
-                                        session, platform, working_connection, sync_date
-                                    )
-                                    stats["metrics_upserted"] += metrics_count
-                                    logger.info(f"   ✅ Synced {metrics_count} Facebook metrics for {sync_date}")
+                                    # Fetch and store metrics based on platform type (PREVIOUS DAY ONLY)
+                                    if platform.provider == "Google Ads":
+                                        metrics_count = self._sync_google_ads_metrics(
+                                            session, platform, working_connection, sync_date
+                                        )
+                                        stats["metrics_upserted"] += metrics_count
+                                        logger.info(f"   ✅ Synced {metrics_count} Google Ads metrics for {sync_date}")
+
+                                    elif platform.provider == "Facebook":
+                                        metrics_count = self._sync_facebook_metrics(
+                                            session, platform, working_connection, sync_date
+                                        )
+                                        stats["metrics_upserted"] += metrics_count
+                                        logger.info(f"   ✅ Synced {metrics_count} Facebook metrics for {sync_date}")
                                 
                             except Exception as e:
                                 error_msg = f"Error syncing platform {platform.id}: {str(e)}"
