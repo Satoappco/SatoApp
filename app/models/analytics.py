@@ -3,7 +3,7 @@ Analytics and performance tracking models - CORRECTED VERSION
 Matches real business requirements for digital asset management
 """
 
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from typing import List, Optional
 from sqlmodel import SQLModel, Field, Column, JSON
@@ -289,3 +289,42 @@ class Audience(BaseModel, table=True):
     __table_args__ = {'extend_existing': True}
     
     audience_name: str = Field(max_length=255, unique=True)
+
+
+class Metrics(BaseModel, table=True):
+    """
+    Daily metrics for ads and ad groups from advertising platforms.
+    Stores raw performance data for the last 90 days.
+    """
+    __tablename__ = "metrics"
+
+    # Date and identification
+    metric_date: date = Field(index=True, description="Metric date")
+    item_id: str = Field(max_length=100, index=True, description="Ad ID or Ad Group ID from platform")
+    platform_id: int = Field(foreign_key="digital_assets.id", index=True, description="Digital asset (platform) ID")
+    item_type: str = Field(max_length=20, description="Type: 'ad' or 'ad_group'")
+
+    # Performance Metrics (all optional as not all platforms provide all metrics)
+    cpa: Optional[float] = Field(default=None, description="Cost Per Acquisition")
+    cvr: Optional[float] = Field(default=None, description="Conversion Rate (%)")
+    conv_val: Optional[float] = Field(default=None, description="Conversion Value")
+    ctr: Optional[float] = Field(default=None, description="Click-Through Rate (%)")
+    cpc: Optional[float] = Field(default=None, description="Cost Per Click")
+    clicks: Optional[int] = Field(default=None, description="Number of Clicks")
+    cpm: Optional[float] = Field(default=None, description="Cost Per 1000 Impressions")
+    impressions: Optional[int] = Field(default=None, description="Number of Impressions")
+    reach: Optional[int] = Field(default=None, description="Unique people reached")
+    frequency: Optional[float] = Field(default=None, description="Average impressions per person")
+    cpl: Optional[float] = Field(default=None, description="Cost Per Lead")
+    leads: Optional[int] = Field(default=None, description="Number of Leads")
+    spent: Optional[float] = Field(default=None, description="Total Spent")
+    conversions: Optional[int] = Field(default=None, description="Number of Conversions")
+
+    # Unique constraint: one record per (metric_date, item_id, platform_id)
+    __table_args__ = (
+        UniqueConstraint('metric_date', 'item_id', 'platform_id', name='uq_metrics_date_item_platform'),
+        Index('idx_metrics_date', 'metric_date'),
+        Index('idx_metrics_item_id', 'item_id'),
+        Index('idx_metrics_platform_id', 'platform_id'),
+        Index('idx_metrics_date_platform', 'metric_date', 'platform_id'),
+    )

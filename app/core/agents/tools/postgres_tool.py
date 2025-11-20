@@ -19,7 +19,7 @@ from .sql_validator import SQLValidator
 from ....models import (
     Customer,
     KpiGoal, KpiValue, DigitalAsset, Connection,
-    RTMTable, QuestionsTable
+    Metrics, RTMTable, QuestionsTable
 )
 
 logger = logging.getLogger(__name__)
@@ -43,13 +43,14 @@ class PostgresTool(BaseTool):
     - kpi_values: Actual KPI measurements
     - digital_assets: Digital assets (social media, analytics accounts, etc.)
     - connections: OAuth connections and API credentials
-    - rtm_table: RTM (Real-Time Marketing) data
-    - questions_table: Questions and answers data
+    - metrics: Raw ad/ad group performance data (last 90 days: CPA, CVR, CTR, CPC, clicks, impressions, spent, conversions, etc.)
 
     Security: All queries are automatically filtered by the campaigner's agency.
     The tool ONLY accepts SELECT queries - no INSERT, UPDATE, DELETE, or DDL.
     Input should be a valid SINGLE PostgreSQL SELECT query.
     Output will be a JSON array of result rows.
+
+    Note: RTM features are not yet enabled. questions_table is no longer available.
     """
 
     campaigner_id: int = PydanticField(description="ID of the authenticated campaigner")
@@ -189,8 +190,9 @@ class PostgresTool(BaseTool):
         - kpi_values
         - digital_assets
         - connections
-        - rtm_table
-        - questions_table
+        - metrics (last 90 days only)
+
+        Note: RTM features are not yet enabled. questions_table is no longer available.
 
         Returns:
             Dictionary with table schemas
@@ -198,15 +200,14 @@ class PostgresTool(BaseTool):
         schema_info = {}
 
         # Map of models to extract schema from (RESTRICTED LIST)
-        # Excludes agencies and campaigners tables
+        # Excludes agencies and campaigners tables, rtm_table, and questions_table
         models = {
             "customers": Customer,
             "kpi_goals": KpiGoal,
             "kpi_values": KpiValue,
             "digital_assets": DigitalAsset,
             "connections": Connection,
-            "rtm_table": RTMTable,
-            "questions_table": QuestionsTable,
+            "metrics": Metrics,
         }
 
         for table_name, model_class in models.items():
@@ -221,9 +222,9 @@ class PostgresTool(BaseTool):
                 "customers_to_campaigner": "customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "digital_assets_to_campaigner": "digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "rtm_table_to_campaigner": "rtm_table access requires proper filtering",
-                "questions_table_to_campaigner": "questions_table access requires proper filtering"
-            }
+                "metrics_to_campaigner": "metrics.platform_id → digital_assets.id → digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id"
+            },
+            "note": "metrics table contains only last 90 days of data"
         }
 
         return schema_info
@@ -296,6 +297,10 @@ class PostgresTool(BaseTool):
         elif table_name in ["digital_assets", "connections"]:
             schema["security"] = f"MUST join: {table_name} → customers → campaigners"
             schema["example_join"] = f"FROM {table_name} da JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
+        elif table_name == "metrics":
+            schema["security"] = "MUST join: metrics → digital_assets → customers → campaigners"
+            schema["example_join"] = "FROM metrics m JOIN digital_assets da ON da.id = m.platform_id JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
+            schema["data_retention"] = "Only last 90 days of data available"
 
         return schema
 

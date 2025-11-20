@@ -46,10 +46,12 @@ class CustomerCredentialManager:
                     provider = asset.provider.lower() if asset.provider else ""
 
                     # Map asset types to platforms
-                    if asset_type_str in ["GA4", "GOOGLE_ADS", "GOOGLE_ADS_CAPS"]:
+                    if asset_type_str.upper() in ["GA4", "GOOGLE_ADS", "GOOGLE_ADS_CAPS"]:
                         platform_set.add("google")
-                    elif asset_type_str in ["FACEBOOK_ADS", "FACEBOOK_ADS_CAPS"] or "facebook" in provider or "meta" in provider:
+                    elif asset_type_str.upper() in ["FACEBOOK_ADS", "FACEBOOK_ADS_CAPS"] or "facebook" in provider or "meta" in provider:
                         platform_set.add("facebook")
+                    else:
+                        logger.warning(f"⚠️  [CredentialManager] Unknown asset type '{asset_type_str}' for customer {customer_id}")
 
                 platforms = list(platform_set)
                 logger.info(f"📊 [CredentialManager] Customer {customer_id} platforms: {platforms}")
