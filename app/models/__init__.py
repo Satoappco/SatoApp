@@ -13,22 +13,26 @@ from .analytics import (
     AssetType, AuthType, Audience
 )
 from .customer_data import RTMTable, QuestionsTable
+from .chat_feedback import ChatFeedback, FeedbackType
 
 __all__ = [
     # Base
     "BaseModel",
-    
+
     # Users and related models
     "Campaigner", "Agency", "Customer", "CampaignerSession", "InviteToken",
     "UserRole", "UserStatus", "CustomerType", "CustomerStatus", "ClientType",
-    
+
     # Agents
-    "AgentConfig", "RoutingRule", 
-    
+    "AgentConfig", "RoutingRule",
+
     # Analytics and assets
     "DigitalAsset", "Connection", "KpiGoal", "KpiValue", "UserPropertySelection", "KpiCatalog", "KpiSettings",
     "AssetType", "AuthType", "Audience",
-    
+
     # Customer data tables
-    "RTMTable", "QuestionsTable"
+    "RTMTable", "QuestionsTable",
+
+    # Chat feedback
+    "ChatFeedback", "FeedbackType"
 ]
