@@ -37,6 +37,7 @@ class ClickUpService:
         app_settings = get_app_settings()
         self.auth_token = app_settings.clickup_auth_token or get_setting("clickup_auth_token", "")
         self.dev_list_id = get_setting("clickup_dev_list_id", "901413553845")
+        self.workspace_id = get_setting("clickup_workspace_id", "9014865885")
         self.assignee_id = get_setting("clickup_assignee_id", 9014865885)
         self.attach_logs = get_setting("clickup_attach_logs", False)
 
@@ -208,6 +209,31 @@ User pressed DISLIKE button on a chat response that needs review.
             return {}
 
         return response.json()
+
+    def send_message(self, message: str, channel_id: str = "6-901413553845-8") -> bool:
+        """Send a message to a ClickUp channel."""
+        url = f"https://api.clickup.com/api/v3/workspaces/{self.workspace_id}/chat/channels/{channel_id}/messages"
+
+        payload = {
+            "type": "message",
+            "content_format": "text/md",
+            "content": message
+        }
+
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "Authorization": self.auth_token
+        }
+
+        logger.debug(f"📤 Sending message to ClickUp channel {channel_id}: {message}")
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+
+        if response.status_code not in (200, 201):
+            logger.error(f"❌ ClickUp API error sending message: [{headers}] {response.status_code} - {response.text}")
+            return False
+
+        return True
 
     def _attach_logs(self, task_id: str, start_time: datetime, end_time: datetime):
         """

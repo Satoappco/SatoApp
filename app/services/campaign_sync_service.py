@@ -903,12 +903,17 @@ class CampaignSyncService:
         duration = (datetime.utcnow() - start_time).total_seconds()
         stats["duration_seconds"] = round(duration, 2)
         
-        logger.info(f"✅ Sync completed in {duration:.2f}s")
-        logger.info(f"   Customers: {stats['customers_processed']}")
-        logger.info(f"   Platforms: {stats['platforms_processed']}")
-        logger.info(f"   Metrics: {stats['metrics_upserted']}")
-        logger.info(f"   Errors: {stats['errors_count']}")
-        logger.info(f"   Connection failures: {len(stats['connection_failures'])}")
+        finish_msg = f"""✅ Sync completed in {duration:.2f}s
+   Customers: {stats['customers_processed']}
+   Platforms: {stats['platforms_processed']}
+   Metrics: {stats['metrics_upserted']}
+   Errors: {stats['errors_count']}
+   Connection failures: {len(stats['connection_failures'])}"""
+        logger.info(finish_msg)
+
+        with get_session() as session:
+            ClickUpService(session).send_message(finish_msg)
+        
         
         return stats
     
@@ -952,6 +957,7 @@ class CampaignSyncService:
             description = f"""# Connection Failed - Auto Sync
 
 **Customer**: {customer.full_name} (ID: {customer.id})
+**Platform name**: {platform.name}
 **Platform**: {platform.provider}
 **Asset**: {platform.name} (ID: {platform.id})
 
@@ -970,7 +976,7 @@ class CampaignSyncService:
 """
             
             result = clickup_service.create_task(
-                task_name=f"No connection to digital asset: {platform.name} for {customer.full_name}",
+                task_name=f"No connection to digital asset: {platform.provider} for {customer.full_name}",
                 description=description,
                 tags=["bug", "connection_failed", "auto_sync"]
             )
