@@ -528,8 +528,17 @@ async def delete_customer(
             connections = session.exec(
                 select(Connection).where(Connection.customer_id == customer_id)
             ).all()
+            # Track digital asset IDs to check for orphans after deletion
+            digital_asset_ids = set()
             for connection in connections:
+                digital_asset_ids.add(connection.digital_asset_id)
                 session.delete(connection)
+            session.commit()
+
+            # Check for and delete orphaned digital assets
+            from app.services.digital_asset_service import delete_orphaned_digital_asset
+            for asset_id in digital_asset_ids:
+                delete_orphaned_digital_asset(session, asset_id)
             
             # Digital Assets
             digital_assets = session.exec(

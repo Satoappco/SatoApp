@@ -914,20 +914,20 @@ class GoogleAnalyticsService:
         """Get user connections for webhook processing"""
         return await self.get_user_ga_connections(campaigner_id)
     
-    async def revoke_ga_connection(self, connection_id: int) -> bool:
-        """Revoke a GA connection - marks as revoked in DB and revokes with Google"""
-        
+    async def revoke_ga_connection(self, connection_id: int) -> dict:
+        """Revoke a GA connection - deletes from DB and revokes with Google"""
+
         with get_session() as session:
             statement = select(Connection).where(Connection.id == connection_id)
             connection = session.exec(statement).first()
-            
+
             if not connection:
-                return False
-            
+                return {"success": False, "message": "Connection not found"}
+
             # First, revoke the token with Google
             try:
                 access_token = self._decrypt_token(connection.access_token_enc)
-                
+
                 # Revoke the token with Google OAuth2
                 revoke_url = "https://oauth2.googleapis.com/revoke"
                 response = requests.post(
@@ -935,26 +935,33 @@ class GoogleAnalyticsService:
                     params={'token': access_token},
                     headers={'content-type': 'application/x-www-form-urlencoded'}
                 )
-                
+
                 # Google returns 200 for successful revocation
                 if response.status_code == 200:
                     print(f"Successfully revoked token with Google for connection {connection_id}")
                 else:
                     print(f"Warning: Google revocation returned status {response.status_code} for connection {connection_id}")
-                    # Continue anyway to mark as revoked in our DB
-                    
+                    # Continue anyway to delete from our DB
+
             except Exception as e:
                 print(f"Error revoking token with Google for connection {connection_id}: {str(e)}")
-                # Continue anyway to mark as revoked in our DB
-            
-            # Mark as revoked in our database
-            connection.revoked = True
-            connection.rotated_at = datetime.utcnow()
-            
-            session.add(connection)
+                # Continue anyway to delete from our DB
+
+            # Store the digital asset ID before deleting the connection
+            digital_asset_id = connection.digital_asset_id
+
+            # Delete the connection from our database
+            session.delete(connection)
             session.commit()
-            
-            return True
+
+            # Check if the digital asset should be deleted (no remaining connections)
+            from app.services.digital_asset_service import delete_orphaned_digital_asset
+            asset_deleted = delete_orphaned_digital_asset(session, digital_asset_id)
+
+            return {
+                "success": True,
+                "asset_deleted": asset_deleted
+            }
     
     # Google Ads functionality integrated into this service
     async def get_google_ads_accounts(self, connection_id: int) -> List[Dict[str, Any]]:

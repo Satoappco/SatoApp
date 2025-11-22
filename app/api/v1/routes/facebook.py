@@ -166,14 +166,24 @@ async def revoke_facebook_connection(
                     
             except Exception as e:
                 print(f"Error revoking token with Facebook for connection {connection_id}: {str(e)}")
-                # Continue anyway to mark as revoked in our DB
-            
-            # Mark connection as revoked in our database
-            connection.revoked = True
-            session.add(connection)
+                # Continue anyway to delete from our DB
+
+            # Store the digital asset ID before deleting the connection
+            digital_asset_id = connection.digital_asset_id
+
+            # Delete the connection from our database
+            session.delete(connection)
             session.commit()
-            
-            return {"message": "Facebook connection revoked successfully"}
+
+            # Check if the digital asset should be deleted (no remaining connections)
+            from app.services.digital_asset_service import delete_orphaned_digital_asset
+            asset_deleted = delete_orphaned_digital_asset(session, digital_asset_id)
+
+            message = "Facebook connection deleted successfully"
+            if asset_deleted:
+                message += " and associated digital asset was removed (no other connections)"
+
+            return {"message": message}
     
     except HTTPException:
         raise
