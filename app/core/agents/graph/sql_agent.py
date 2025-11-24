@@ -76,6 +76,8 @@ class SQLBasicInfoAgent:
         campaigner_id = task.get("campaigner_id")
         context = task.get("context", {})
         customer_id = task.get("customer_id")
+        thread_id = task.get("thread_id")  # Extract thread_id for tracing
+        level = task.get("level", 1)  # Extract level for hierarchy tracking
 
         logger.info(f"🤖 [SQLBasicInfoAgent] Processing query for campaigner: {campaigner_id}")
         logger.debug(f"📝 [SQLBasicInfoAgent] Query: '{query[:100]}...'")
@@ -90,8 +92,12 @@ class SQLBasicInfoAgent:
             }
 
         try:
-            # Create PostgresTool instance
-            postgres_tool = PostgresTool(campaigner_id=campaigner_id)
+            # Create PostgresTool instance with tracing support
+            postgres_tool = PostgresTool(
+                campaigner_id=campaigner_id,
+                thread_id=thread_id,
+                level=level
+            )
 
             # Get schema information
             schema_info = postgres_tool.get_schema_info()
@@ -298,6 +304,17 @@ IMPORTANT SQL WRITING RULES:
    JOIN campaigners camp ON camp.agency_id = c.agency_id
    WHERE camp.id = :campaigner_id
    ```
+
+   **For metrics table:**
+   - MUST join through digital_assets → customers → campaigners:
+   ```sql
+   FROM metrics m
+   JOIN digital_assets da ON da.id = m.platform_id
+   JOIN customers c ON c.id = da.customer_id
+   JOIN campaigners camp ON camp.agency_id = c.agency_id
+   WHERE camp.id = :campaigner_id
+   ```
+   - NOTE: metrics table contains only last 90 days of data
 
    **For user's customers table:**
    - Join directly with campaigners:

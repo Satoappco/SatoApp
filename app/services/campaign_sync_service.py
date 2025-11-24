@@ -6,10 +6,11 @@ Fetches current campaign metrics and updates KPI Values
 import os
 import re
 import json
+import logging
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, Any, Optional, List
-from sqlmodel import select, and_, or_
+from sqlmodel import select, and_, or_, Session
 
 from app.config.database import get_session
 from app.models.analytics import KpiGoal, KpiValue, Connection, DigitalAsset, AssetType
@@ -732,3 +733,709 @@ class CampaignSyncService:
             "duration_seconds": round(duration, 2)
         }
 
+
+    def sync_metrics_new(self, customer_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        New metrics sync flow: Syncs raw metrics from platforms into metrics table.
+
+        For each ad/ad_group:
+        - Checks if data exists for every day in the past 90 days
+        - Fetches metrics for missing days
+        - Always updates yesterday and today (even if they exist)
+
+        Args:
+            customer_id: Optional customer ID to sync only one customer
+
+        Returns:
+            Dict with sync results and stats
+        """
+        from datetime import timedelta
+        from app.models.analytics import Metrics
+        from app.models.users import Customer
+        from app.services.clickup_service import ClickUpService
+        from app.config import get_settings
+        
+        start_time = datetime.utcnow()
+        logger = logging.getLogger(__name__)
+        
+        stats = {
+            "success": True,
+            "customers_processed": 0,
+            "platforms_processed": 0,
+            "metrics_upserted": 0,
+            "errors_count": 0,
+            "error_details": [],
+            "connection_failures": []
+        }
+        
+        try:
+            with get_session() as session:
+                # Step 1: Cleanup old metrics (older than 90 days)
+                cutoff_date = datetime.utcnow().date() - timedelta(days=90)
+                logger.info(f"🗑️  Cleaning up metrics older than {cutoff_date}")
+
+                deleted_count = session.exec(
+                    select(Metrics).where(Metrics.metric_date < cutoff_date)
+                ).all()
+                for old_metric in deleted_count:
+                    session.delete(old_metric)
+                session.commit()
+                logger.info(f"✅ Deleted {len(deleted_count)} old metric records")
+                
+                # Step 2: Get customers to sync
+                if customer_id:
+                    customers = [session.get(Customer, customer_id)]
+                    if not customers[0]:
+                        return {"success": False, "error": f"Customer {customer_id} not found"}
+                else:
+                    customers = session.exec(select(Customer)).all()
+                
+                logger.info(f"📊 Processing {len(customers)} customer(s)")
+                
+
+                # Step 3: For each customer
+                for customer in customers:
+                    try:
+                        logger.info(f"👤 Processing customer: {customer.full_name} (ID: {customer.id})")
+                        stats["customers_processed"] += 1
+                        
+                        # Get all Google Ads and Facebook Ads digital assets
+                        platforms = session.exec(
+                            select(DigitalAsset).where(
+                                and_(
+                                    DigitalAsset.customer_id == customer.id,
+                                    or_(
+                                        DigitalAsset.provider == "Google Ads",
+                                        DigitalAsset.provider == "Facebook"
+                                    ),
+                                    DigitalAsset.is_active == True
+                                )
+                            )
+                        ).all()
+                        
+                        if not platforms:
+                            logger.info(f"   ⚠️  No active advertising platforms found for customer {customer.id}")
+                            continue
+                        
+                        logger.info(f"   📱 Found {len(platforms)} platform(s)")
+                        
+                        # Step 4: For each platform
+                        for platform in platforms:
+                            try:
+                                logger.info(f"   🔄 Syncing platform: {platform.provider} - {platform.name}")
+                                stats["platforms_processed"] += 1
+                                
+                                # Get all connections for this platform (try newest first)
+                                connections = session.exec(
+                                    select(Connection).where(
+                                        and_(
+                                            Connection.digital_asset_id == platform.id,
+                                            Connection.revoked == False
+                                        )
+                                    ).order_by(Connection.updated_at.desc())
+                                ).all()
+                                
+                                if not connections:
+                                    logger.warning(f"   ⚠️  No connections found for platform {platform.id}")
+                                    self._create_connection_failure_bug(
+                                        session, customer, platform, "No connections available"
+                                    )
+                                    stats["connection_failures"].append({
+                                        "customer_id": customer.id,
+                                        "platform_id": platform.id,
+                                        "reason": "No connections"
+                                    })
+                                    continue
+                                
+                                # Try each connection until we find a working one
+                                working_connection = None
+                                for connection in connections:
+                                    if self._validate_connection(connection, session):
+                                        working_connection = connection
+                                        logger.info(f"   ✅ Found working connection")
+                                        break
+                                    else:
+                                        logger.debug(f"   ❌ Connection {connection.id} failed validation")
+                                
+                                # If no working connection, create ClickUp bug
+                                if not working_connection:
+                                    logger.error(f"   ❌ All {len(connections)} connection(s) failed for platform {platform.id}")
+                                    self._create_connection_failure_bug(
+                                        session, customer, platform, f"All {len(connections)} connections failed validation"
+                                    )
+                                    stats["connection_failures"].append({
+                                        "customer_id": customer.id,
+                                        "platform_id": platform.id,
+                                        "reason": f"All {len(connections)} connections failed"
+                                    })
+                                    continue
+
+                                # Get dates to sync (missing dates + yesterday + today)
+                                dates_to_sync = self._get_dates_to_sync(session, platform.id)
+
+                                if not dates_to_sync:
+                                    logger.info(f"   ✅ No dates to sync for platform {platform.id}")
+                                    continue
+
+                                # Fetch and store metrics based on platform type
+                                if platform.provider == "Google Ads":
+                                    metrics_count = self._sync_google_ads_metrics(
+                                        session, platform, working_connection, dates_to_sync
+                                    )
+                                    stats["metrics_upserted"] += metrics_count
+                                    logger.info(f"   ✅ Synced {metrics_count} Google Ads metrics for {len(dates_to_sync)} dates")
+
+                                elif platform.provider == "Facebook":
+                                    metrics_count = self._sync_facebook_metrics(
+                                        session, platform, working_connection, dates_to_sync
+                                    )
+                                    stats["metrics_upserted"] += metrics_count
+                                    logger.info(f"   ✅ Synced {metrics_count} Facebook metrics for {len(dates_to_sync)} dates")
+                                
+                            except Exception as e:
+                                error_msg = f"Error syncing platform {platform.id}: {str(e)}"
+                                logger.error(f"   ❌ {error_msg}")
+                                stats["errors_count"] += 1
+                                stats["error_details"].append(error_msg)
+                                
+                    except Exception as e:
+                        error_msg = f"Error processing customer {customer.id}: {str(e)}"
+                        logger.error(f"❌ {error_msg}")
+                        stats["errors_count"] += 1
+                        stats["error_details"].append(error_msg)
+                
+        except Exception as e:
+            logger.error(f"❌ Fatal error in sync_metrics_new: {str(e)}", exc_info=True)
+            stats["success"] = False
+            stats["error_details"].append(f"Fatal error: {str(e)}")
+        
+        duration = (datetime.utcnow() - start_time).total_seconds()
+        stats["duration_seconds"] = round(duration, 2)
+        
+        finish_msg = f"""✅ Sync completed in {duration:.2f}s
+   Customers: {stats['customers_processed']}
+   Platforms: {stats['platforms_processed']}
+   Metrics: {stats['metrics_upserted']}
+   Errors: {stats['errors_count']}
+   Connection failures: {len(stats['connection_failures'])}"""
+        logger.info(finish_msg)
+
+        with get_session() as session:
+            ClickUpService(session).send_message(finish_msg)
+        
+        
+        return stats
+    
+    def _get_dates_to_sync(
+        self,
+        session: Session,
+        platform_id: int
+    ) -> List[date]:
+        """
+        Get list of dates to sync for a platform.
+
+        Returns dates that:
+        1. Are missing for any ad/ad_group in the past 90 days
+        2. Always includes yesterday and today
+
+        Args:
+            session: Database session
+            platform_id: Platform (digital asset) ID
+
+        Returns:
+            List of dates to sync
+        """
+        from app.models.analytics import Metrics
+        from datetime import timedelta
+
+        logger = logging.getLogger(__name__)
+
+        # Calculate date ranges
+        today = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
+        start_date = today - timedelta(days=90)
+
+        # Get all unique ads/ad_groups for this platform
+        all_items = session.exec(
+            select(Metrics.item_id).where(
+                Metrics.platform_id == platform_id
+            ).distinct()
+        ).all()
+
+        if not all_items:
+            # No existing metrics, sync all 90 days
+            logger.info(f"   📅 No existing metrics found. Will sync all {90} days")
+            return [start_date + timedelta(days=i) for i in range(91)]
+
+        logger.info(f"   📊 Found {len(all_items)} unique ads/ad_groups")
+
+        # Find missing dates for each ad/ad_group
+        missing_dates_set = set()
+
+        for item_id in all_items:
+            # Get all dates that exist for this item
+            existing_dates = session.exec(
+                select(Metrics.metric_date).where(
+                    and_(
+                        Metrics.platform_id == platform_id,
+                        Metrics.item_id == item_id,
+                        Metrics.metric_date >= start_date
+                    )
+                )
+            ).all()
+
+            existing_dates_set = set(existing_dates)
+
+            # Find missing dates
+            all_dates = {start_date + timedelta(days=i) for i in range(91)}
+            missing_for_item = all_dates - existing_dates_set
+
+            if missing_for_item:
+                logger.debug(f"      Item {item_id}: {len(missing_for_item)} missing dates")
+                missing_dates_set.update(missing_for_item)
+
+        # Always include yesterday and today
+        dates_to_sync = missing_dates_set | {yesterday, today}
+
+        # Convert to sorted list
+        sorted_dates = sorted(dates_to_sync)
+
+        logger.info(f"   📅 Will sync {len(sorted_dates)} dates ({len(missing_dates_set)} missing + yesterday/today)")
+
+        return sorted_dates
+
+    def _validate_connection(self, connection: Connection, session: Session) -> bool:
+        """
+        Validate and refresh connection if needed.
+        
+        Returns:
+            True if connection is valid and working, False otherwise
+        """
+        try:
+            # Check if token is expired
+            if connection.expires_at and connection.expires_at < datetime.utcnow():
+                # Try to refresh token
+                # TODO: Implement token refresh logic
+                return False
+            
+            # For now, assume non-revoked connections are valid
+            return not connection.revoked
+            
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Error validating connection: {e}")
+            return False
+    
+    def _create_connection_failure_bug(
+        self, 
+        session: Session, 
+        customer, 
+        platform: DigitalAsset, 
+        reason: str
+    ):
+        """Create a ClickUp bug task for connection failure."""
+        try:
+            from app.services.clickup_service import ClickUpService
+            from app.config import get_settings
+            
+            clickup_service = ClickUpService(session)
+            settings = get_settings()
+            frontend_url = settings.frontend_url or "http://localhost:3000"
+            
+            description = f"""# Connection Failed - Auto Sync
+
+**Customer**: {customer.full_name} (ID: {customer.id})
+**Platform name**: {platform.name}
+**Platform**: {platform.provider}
+**Asset**: {platform.name} (ID: {platform.id})
+
+## Problem
+{reason}
+
+## Action Required
+1. Navigate to customer's digital assets page
+2. Re-authenticate the {platform.provider} connection
+3. Verify OAuth scopes are correct
+4. Test connection
+
+## Links
+- Customer: {frontend_url}/customers/{customer.id}
+- Asset Details: Platform ID {platform.id}
+"""
+            
+            result = clickup_service.create_task(
+                task_name=f"No connection to digital asset: {platform.provider} for {customer.full_name}",
+                description=description,
+                tags=["bug", "connection_failed", "auto_sync"]
+            )
+            
+            if result.get("success"):
+                logging.getLogger(__name__).info(f"   📋 Created ClickUp bug: {result.get('task_url')}")
+            else:
+                logging.getLogger(__name__).error(f"   ❌ Failed to create ClickUp bug: {result.get('error')}")
+                
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Error creating ClickUp bug: {e}")
+    
+    def _sync_google_ads_metrics(
+        self,
+        session: Session,
+        platform: DigitalAsset,
+        connection: Connection,
+        sync_dates: List[date]
+    ) -> int:
+        """
+        Sync Google Ads metrics for all campaigns/ad groups/ads for multiple dates.
+
+        Args:
+            session: Database session
+            platform: Digital asset (Google Ads account)
+            connection: Working connection with valid tokens
+            sync_dates: List of dates to fetch metrics for
+
+        Returns:
+            Number of metrics records upserted
+        """
+        from app.models.analytics import Metrics
+        from sqlalchemy.dialects.postgresql import insert
+
+        logger = logging.getLogger(__name__)
+        metrics_count = 0
+
+        try:
+            # Decrypt refresh token
+            refresh_token = self.google_ads_service._decrypt_token(connection.refresh_token_enc)
+
+            # Get developer token
+            developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
+            if not developer_token:
+                logger.error("   ❌ Google Ads developer token not configured")
+                return 0
+
+            # Create Google Ads client
+            from google.ads.googleads.client import GoogleAdsClient
+
+            client = GoogleAdsClient.load_from_dict({
+                "developer_token": developer_token,
+                "client_id": get_google_client_id(),
+                "client_secret": get_google_client_secret(),
+                "refresh_token": refresh_token,
+                "use_proto_plus": True
+            })
+
+            ga_service = client.get_service("GoogleAdsService")
+            customer_id = platform.external_id
+
+            # Convert dates to string format for query
+            min_date = min(sync_dates).strftime('%Y-%m-%d')
+            max_date = max(sync_dates).strftime('%Y-%m-%d')
+
+            # Query to get all campaigns with metrics for the date range
+            query = f"""
+                SELECT
+                    campaign.id,
+                    campaign.name,
+                    ad_group.id,
+                    ad_group.name,
+                    ad_group_ad.ad.id,
+                    segments.date,
+                    metrics.impressions,
+                    metrics.clicks,
+                    metrics.cost_micros,
+                    metrics.conversions,
+                    metrics.conversions_value,
+                    metrics.ctr,
+                    metrics.average_cpc,
+                    metrics.average_cpm
+                FROM ad_group_ad
+                WHERE segments.date BETWEEN '{min_date}' AND '{max_date}'
+                AND campaign.status != 'REMOVED'
+                AND ad_group.status != 'REMOVED'
+                AND ad_group_ad.status != 'REMOVED'
+            """
+
+            logger.info(f"   📊 Fetching Google Ads metrics for {len(sync_dates)} dates ({min_date} to {max_date})...")
+            response = ga_service.search(customer_id=customer_id, query=query)
+
+            # Convert sync_dates to set for faster lookup
+            sync_dates_set = set(sync_dates)
+
+            # Process each ad and upsert to metrics table
+            for row in response:
+                # Get the date for this row
+                metric_date_str = row.segments.date
+                # Parse date string 'YYYY-MM-DD' to date object
+                year, month, day = map(int, metric_date_str.split('-'))
+                metric_date = date(year, month, day)
+
+                # Skip if this date is not in our sync list
+                if metric_date not in sync_dates_set:
+                    continue
+                try:
+                    # Calculate derived metrics
+                    clicks = row.metrics.clicks
+                    cost_micros = row.metrics.cost_micros
+                    conversions = row.metrics.conversions
+                    impressions = row.metrics.impressions
+
+                    # Convert cost from micros to currency
+                    cost = cost_micros / 1_000_000 if cost_micros else 0
+
+                    # Calculate CPA (cost per acquisition)
+                    cpa = cost / conversions if conversions > 0 else None
+
+                    # CVR (conversion rate) - already in percentage
+                    cvr = (conversions / clicks * 100) if clicks > 0 else None
+
+                    # Create metrics record
+                    metric_data = {
+                        "metric_date": metric_date,
+                        "item_id": str(row.ad_group_ad.ad.id),
+                        "platform_id": platform.id,
+                        "item_type": "ad",
+                        "cpa": cpa,
+                        "cvr": cvr,
+                        "conv_val": row.metrics.conversions_value if hasattr(row.metrics, 'conversions_value') else None,
+                        "ctr": row.metrics.ctr * 100 if hasattr(row.metrics, 'ctr') else None,  # Convert to %
+                        "cpc": row.metrics.average_cpc / 1_000_000 if hasattr(row.metrics, 'average_cpc') else None,  # Convert from micros
+                        "clicks": clicks,
+                        "cpm": row.metrics.average_cpm / 1_000_000 if hasattr(row.metrics, 'average_cpm') else None,  # Convert from micros
+                        "impressions": impressions,
+                        "spent": cost,
+                        "conversions": int(conversions),
+                        "reach": None,  # Google Ads doesn't provide reach for search ads
+                        "frequency": None,  # Google Ads doesn't provide frequency for search ads
+                        "cpl": None,  # Would need to be calculated from form submissions
+                        "leads": None,  # Would need to be tracked separately
+                    }
+
+                    # Upsert using PostgreSQL INSERT ... ON CONFLICT
+                    stmt = insert(Metrics).values(**metric_data)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=['metric_date', 'item_id', 'platform_id'],
+                        set_=metric_data
+                    )
+                    session.exec(stmt)
+                    metrics_count += 1
+
+                except Exception as row_error:
+                    logger.warning(f"   ⚠️  Error processing ad {row.ad_group_ad.ad.id}: {row_error}")
+                    continue
+
+            session.commit()
+            logger.info(f"   ✅ Processed {metrics_count} Google Ads records")
+            return metrics_count
+
+        except Exception as e:
+            logger.error(f"   ❌ Error syncing Google Ads metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return 0
+    
+    def _sync_facebook_metrics(
+        self,
+        session: Session,
+        platform: DigitalAsset,
+        connection: Connection,
+        sync_dates: List[date]
+    ) -> int:
+        """
+        Sync Facebook Ads metrics for all campaigns/ad sets/ads for multiple dates.
+
+        Args:
+            session: Database session
+            platform: Digital asset (Facebook Ads account)
+            connection: Working connection with valid tokens
+            sync_dates: List of dates to fetch metrics for
+
+        Returns:
+            Number of metrics records upserted
+        """
+        from app.models.analytics import Metrics
+        from sqlalchemy.dialects.postgresql import insert
+        import requests
+
+        logger = logging.getLogger(__name__)
+        metrics_count = 0
+
+        try:
+            # Decrypt access token
+            if isinstance(connection.access_token_enc, str):
+                access_token = self.facebook_service._decrypt_token(connection.access_token_enc.encode('utf-8'))
+            else:
+                access_token = self.facebook_service._decrypt_token(connection.access_token_enc)
+
+            # Get ad account ID
+            ad_account_id = platform.external_id
+            if not ad_account_id or not ad_account_id.startswith('act_'):
+                if isinstance(platform.meta, dict):
+                    ad_account_id = platform.meta.get('ad_account_id')
+
+            if not ad_account_id or not ad_account_id.startswith('act_'):
+                logger.error(f"   ❌ No valid ad account ID for platform {platform.id}")
+                return 0
+
+            # Format date range for Facebook API (YYYY-MM-DD)
+            min_date_str = min(sync_dates).strftime('%Y-%m-%d')
+            max_date_str = max(sync_dates).strftime('%Y-%m-%d')
+            api_version = self.facebook_service.api_version
+            base_url = f"https://graph.facebook.com/{api_version}"
+
+            # Facebook Ads metrics we want to fetch
+            # Note: ad_id and ad_name are REQUIRED for insights endpoint
+            # date_start and date_stop are required to get breakdowns by date
+            fields = [
+                'ad_id',  # REQUIRED - the ad ID
+                'ad_name',  # Ad name for reference
+                'date_start',  # Date of the metrics
+                'date_stop',  # Date of the metrics (same as date_start for daily)
+                'impressions',
+                'clicks',
+                'spend',
+                'actions',  # Contains conversions
+                'action_values',  # Contains conversion values
+                'ctr',
+                'cpc',
+                'cpm',
+                'reach',
+                'frequency'
+            ]
+
+            # Query to get all ads with insights (metrics) for the date range
+            # Facebook requires using the /insights endpoint for metrics
+            # time_increment=1 gives daily breakdowns
+            url = f"{base_url}/{ad_account_id}/insights"
+            params = {
+                'access_token': access_token,
+                'fields': ','.join(fields),
+                'time_range': json.dumps({
+                    'since': min_date_str,
+                    'until': max_date_str
+                }),
+                'time_increment': 1,  # Daily breakdowns
+                'level': 'ad',  # Get ad-level metrics
+                'limit': 500  # Max per page
+            }
+
+            # Convert sync_dates to set for faster lookup
+            sync_dates_set = set(sync_dates)
+
+            logger.info(f"   📊 Fetching Facebook Ads metrics for {len(sync_dates)} dates ({min_date_str} to {max_date_str})...")
+
+            # Paginate through all ads
+            while url:
+                response = requests.get(url, params=params if params else None)
+                response.raise_for_status()
+                data = response.json()
+
+                for insight in data.get('data', []):
+                    try:
+                        # Insights endpoint returns ad_id and ad_name fields
+                        ad_id = insight.get('ad_id')
+                        if not ad_id:
+                            logger.warning("   ⚠️  No ad_id in insight, skipping")
+                            continue
+
+                        # Get the date for this insight (from date_start field)
+                        date_start_str = insight.get('date_start')
+                        if not date_start_str:
+                            logger.warning(f"   ⚠️  No date_start in insight for ad {ad_id}, skipping")
+                            continue
+
+                        # Parse date string 'YYYY-MM-DD' to date object
+                        year, month, day = map(int, date_start_str.split('-'))
+                        metric_date = date(year, month, day)
+
+                        # Skip if this date is not in our sync list
+                        if metric_date not in sync_dates_set:
+                            continue
+
+                        # Extract actions (conversions)
+                        conversions = 0
+                        conv_val = 0
+                        leads = 0
+
+                        if 'actions' in insight:
+                            for action in insight['actions']:
+                                if action['action_type'] == 'offsite_conversion.fb_pixel_purchase':
+                                    conversions += int(action['value'])
+                                elif action['action_type'] == 'lead':
+                                    leads += int(action['value'])
+
+                        if 'action_values' in insight:
+                            for action_value in insight['action_values']:
+                                if action_value['action_type'] == 'offsite_conversion.fb_pixel_purchase':
+                                    conv_val += float(action_value['value'])
+
+                        # Calculate derived metrics
+                        clicks = int(insight.get('clicks', 0))
+                        spend = float(insight.get('spend', 0))
+                        impressions = int(insight.get('impressions', 0))
+
+                        # CPA (cost per acquisition)
+                        cpa = spend / conversions if conversions > 0 else None
+
+                        # CVR (conversion rate)
+                        cvr = (conversions / clicks * 100) if clicks > 0 else None
+
+                        # CPL (cost per lead)
+                        cpl = spend / leads if leads > 0 else None
+
+                        # Create metrics record
+                        metric_data = {
+                            "metric_date": metric_date,
+                            "item_id": str(ad_id),
+                            "platform_id": platform.id,
+                            "item_type": "ad",
+                            "cpa": cpa,
+                            "cvr": cvr,
+                            "conv_val": conv_val if conv_val > 0 else None,
+                            "ctr": float(insight.get('ctr', 0)),  # Already in percentage from Facebook
+                            "cpc": float(insight.get('cpc', 0)) if 'cpc' in insight else None,
+                            "clicks": clicks,
+                            "cpm": float(insight.get('cpm', 0)) if 'cpm' in insight else None,
+                            "impressions": impressions,
+                            "reach": int(insight.get('reach', 0)) if 'reach' in insight else None,
+                            "frequency": float(insight.get('frequency', 0)) if 'frequency' in insight else None,
+                            "cpl": cpl,
+                            "leads": leads if leads > 0 else None,
+                            "spent": spend,
+                            "conversions": conversions if conversions > 0 else None,
+                        }
+
+                        # Upsert using PostgreSQL INSERT ... ON CONFLICT
+                        stmt = insert(Metrics).values(**metric_data)
+                        stmt = stmt.on_conflict_do_update(
+                            index_elements=['metric_date', 'item_id', 'platform_id'],
+                            set_=metric_data
+                        )
+                        session.exec(stmt)
+                        metrics_count += 1
+
+                    except Exception as row_error:
+                        logger.warning(f"   ⚠️  Error processing insight for ad {insight.get('ad_id')}: {row_error}")
+                        continue
+
+                # Check for next page
+                url = data.get('paging', {}).get('next')
+                params = None  # Next URL already has params
+
+            session.commit()
+            logger.info(f"   ✅ Processed {metrics_count} Facebook Ads records")
+            return metrics_count
+
+        except requests.exceptions.HTTPError as http_err:
+            logger.error(f"   ❌ HTTP error fetching Facebook metrics: {http_err}")
+            if hasattr(http_err.response, 'text'):
+                logger.error(f"   Response: {http_err.response.text}")
+                # Try to parse error for better debugging
+                try:
+                    error_data = http_err.response.json()
+                    logger.error(f"   Error details: {error_data}")
+                except:
+                    pass
+            return 0
+        except Exception as e:
+            logger.error(f"   ❌ Error syncing Facebook metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return 0

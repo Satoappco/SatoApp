@@ -217,7 +217,22 @@ class GoogleAdsService:
             print(f"   Account: {account_name} ({account_id})")
             print(f"   User: {campaigner_id}")
             print(f"   Expires at: {expires_at}")
-            
+
+            # Sync metrics for the last 90 days for new asset
+            # Note: sync_metrics_new will automatically detect this is a new asset and sync all 90 days
+            try:
+                from app.services.campaign_sync_service import CampaignSyncService
+                print(f"🔄 Starting metrics sync for new Google Ads connection...")
+                sync_service = CampaignSyncService()
+                sync_result = sync_service.sync_metrics_new(customer_id=customer_id)
+                if sync_result.get("success"):
+                    print(f"✅ Metrics sync completed: {sync_result.get('metrics_upserted', 0)} metrics synced")
+                else:
+                    print(f"⚠️ Metrics sync completed with errors: {sync_result.get('error_details', [])}")
+            except Exception as sync_error:
+                print(f"⚠️ Failed to sync metrics for new connection: {sync_error}")
+                # Don't fail the connection creation if metrics sync fails
+
             return {
                 "success": True,
                 "connection_id": connection.id,

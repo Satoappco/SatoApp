@@ -267,24 +267,97 @@ async def get_sync_status(
         from app.config.database import get_session
         from app.models.analytics import KpiValue
         from sqlmodel import select, desc
-        
+
         with get_session() as session:
             # Get most recently updated KPI value as indicator of last sync
             latest_kpi_value = session.exec(
                 select(KpiValue).order_by(desc(KpiValue.updated_at))
             ).first()
-            
+
             last_sync = latest_kpi_value.updated_at.isoformat() if latest_kpi_value else None
-        
+
         return SyncStatusResponse(
             last_sync=last_sync,
             next_scheduled_sync="Daily at 2:00 AM (Jerusalem time)"
         )
-    
+
     except Exception as e:
         print(f"❌ Error getting sync status: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get status: {str(e)}"
+        )
+
+
+class MetricsSyncResponse(BaseModel):
+    """Response model for metrics sync"""
+    success: bool
+    message: str
+    customers_processed: int
+    platforms_processed: int
+    metrics_upserted: int
+    errors_count: int
+    connection_failures: int
+    error_details: list
+    duration_seconds: Optional[float] = None
+
+
+@router.post("/campaign-sync/sync-metrics", response_model=MetricsSyncResponse)
+async def sync_metrics(
+    customer_id: Optional[int] = None,
+    current_user: Campaigner = Depends(get_current_user)
+):
+    """
+    New metrics-based sync flow.
+    Syncs raw metrics from Google Ads and Facebook Ads platforms into metrics table.
+
+    **Features:**
+    - Automatic cleanup of metrics older than 90 days
+    - ClickUp bug creation for connection failures
+    - Per-customer or all-customers sync
+
+    **Query Parameters:**
+    - `customer_id` (optional): Sync only specific customer
+
+    **Returns:**
+    - Sync statistics and any errors encountered
+    """
+    try:
+        # Verify customer access if customer_id provided
+        if customer_id:
+            from app.config.database import get_session
+            from app.models.users import Customer
+            from sqlmodel import select
+
+            with get_session() as session:
+                customer = session.get(Customer, customer_id)
+                if not customer or customer.agency_id != current_user.agency_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Customer not found or access denied"
+                    )
+
+        # Run new metrics sync
+        result = sync_service.sync_metrics_new(customer_id=customer_id)
+
+        return MetricsSyncResponse(
+            success=result["success"],
+            message=f"Metrics sync completed by {current_user.email}",
+            customers_processed=result["customers_processed"],
+            platforms_processed=result["platforms_processed"],
+            metrics_upserted=result["metrics_upserted"],
+            errors_count=result["errors_count"],
+            connection_failures=len(result.get("connection_failures", [])),
+            error_details=result.get("error_details", [])[:10],  # Limit to 10 errors
+            duration_seconds=result.get("duration_seconds")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in metrics sync: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Metrics sync failed: {str(e)}"
         )
 

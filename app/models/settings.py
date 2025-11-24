@@ -252,6 +252,46 @@ DEFAULT_SETTINGS = [
         "is_editable": True,
         "requires_restart": True
     },
+    {
+        "key": "clickup_auth_token",
+        "value": "pk_88468272_YH33675SJRRV7HK1MDLG23181J72NJ1E",
+        "value_type": "string",
+        "category": "integration",
+        "description": "ClickUp API Authorization Token",
+        "is_secret": True,
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "clickup_dev_list_id",
+        "value": "901413553845",
+        "value_type": "string",
+        "category": "integration",
+        "description": "ClickUp List ID for validation tasks",
+        "is_secret": False,
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "clickup_assignee_id",
+        "value": "9014865885",
+        "value_type": "int",
+        "category": "integration",
+        "description": "ClickUp User ID to assign validation tasks",
+        "is_secret": False,
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "clickup_attach_logs",
+        "value": "false",
+        "value_type": "bool",
+        "category": "integration",
+        "description": "Attach log files to ClickUp validation tasks",
+        "is_secret": False,
+        "is_editable": True,
+        "requires_restart": False
+    },
 
     # Monitoring settings
     {

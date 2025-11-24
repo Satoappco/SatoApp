@@ -109,3 +109,31 @@ def get_digital_asset(
         )
     )
     return session.exec(statement).first()
+
+
+def delete_orphaned_digital_asset(session: Session, digital_asset_id: int) -> bool:
+    """
+    Delete a digital asset if it has no connections.
+
+    Args:
+        session: Database session
+        digital_asset_id: ID of the digital asset to check
+
+    Returns:
+        bool: True if the asset was deleted, False otherwise
+    """
+    from app.models.analytics import Connection
+
+    # Check if the digital asset has any remaining connections
+    statement = select(Connection).where(Connection.digital_asset_id == digital_asset_id)
+    remaining_connections = session.exec(statement).first()
+
+    if remaining_connections is None:
+        # No connections remain, delete the digital asset
+        asset = session.get(DigitalAsset, digital_asset_id)
+        if asset:
+            session.delete(asset)
+            session.commit()
+            return True
+
+    return False

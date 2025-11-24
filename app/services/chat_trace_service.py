@@ -569,6 +569,119 @@ class ChatTraceService:
         finally:
             self._close_session(session)
 
+    def add_chatbot_initialization(
+        self,
+        thread_id: str,
+        chatbot_name: str,
+        llm_model: str,
+        system_prompt: str,
+        metadata: Optional[Dict] = None,
+        level: int = 0
+    ) -> Optional[ChatTrace]:
+        """
+        Add a chatbot/agent initialization step to a conversation.
+
+        Args:
+            thread_id: Thread identifier
+            chatbot_name: Name of the chatbot/agent being initialized
+            llm_model: LLM model name (e.g., "gpt-4o-mini", "gemini-2.5-flash")
+            system_prompt: Full system prompt after formatting
+            metadata: Optional metadata dictionary
+            level: Hierarchy level for nested agents (default: 0)
+
+        Returns:
+            Created ChatTrace agent_step record or None if conversation not found
+        """
+        session = self._get_session()
+        try:
+            conversation = self.get_conversation(thread_id, session=session)
+            if not conversation:
+                print(f"⚠️ Conversation not found: {thread_id}")
+                return None
+
+            # Get sequence number
+            step_count = session.exec(
+                select(func.count(ChatTrace.id)).where(
+                    and_(
+                        ChatTrace.thread_id == thread_id,
+                        ChatTrace.record_type == RecordType.AGENT_STEP
+                    )
+                )
+            ).one()
+
+            # Create Langfuse span
+            langfuse_span_id = None
+            if LANGFUSE_AVAILABLE and conversation.langfuse_trace_id:
+                try:
+                    langfuse = LangfuseConfig.get_client()
+                    if langfuse:
+                        trace = self._get_langfuse_trace(conversation.langfuse_trace_id)
+                        if trace:
+                            span = trace.span(
+                                name=f"initialization_{chatbot_name}",
+                                input={"chatbot_name": chatbot_name, "llm_model": llm_model},
+                                metadata={
+                                    "system_prompt": system_prompt,
+                                    "llm_model": llm_model,
+                                    **(metadata or {})
+                                }
+                            )
+                            langfuse_span_id = span.id if hasattr(span, 'id') else None
+                except Exception as e:
+                    print(f"⚠️ Failed to create Langfuse span: {e}")
+
+            # Build content summary
+            prompt_preview = system_prompt[:500] + "..." if len(system_prompt) > 500 else system_prompt
+            content = f"**Initialized {chatbot_name}**\n\n**LLM Model:** {llm_model}\n\n**System Prompt:**\n```\n{prompt_preview}\n```"
+
+            # Create agent step record
+            step_data = {
+                "step_type": "initialization",
+                "content": content,
+                "agent_name": chatbot_name,
+                "level": level,
+                "extra_metadata": {
+                    "llm_model": llm_model,
+                    "system_prompt": system_prompt,  # Full prompt in metadata
+                    "system_prompt_length": len(system_prompt),
+                    **(metadata or {})
+                }
+            }
+
+            step = ChatTrace(
+                thread_id=thread_id,
+                record_type=RecordType.AGENT_STEP,
+                campaigner_id=conversation.campaigner_id,
+                customer_id=conversation.customer_id,
+                data=step_data,
+                langfuse_span_id=langfuse_span_id,
+                sequence_number=step_count
+            )
+
+            session.add(step)
+
+            # Update conversation metrics
+            conversation.data["agent_step_count"] += 1
+            conversation.updated_at = datetime.utcnow()
+
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
+
+            session.add(conversation)
+            session.commit()
+            session.refresh(step)
+
+            print(f"✅ Added chatbot initialization: thread_id={thread_id}, chatbot={chatbot_name}, id={step.id}")
+
+            return step
+
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Failed to add chatbot initialization: {e}")
+            raise
+        finally:
+            self._close_session(session)
+
     # ===== Tool Usage Recording =====
 
     def add_tool_usage(

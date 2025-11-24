@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
     
+    # ClickUp Configuration
+    clickup_auth_token: Optional[str] = None
+    
     # OAuth State Signing
     oauth_state_secret: str = "oauth-state-secret-key-change-in-production"
     

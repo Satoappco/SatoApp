@@ -35,6 +35,8 @@ class ChatResponse(BaseModel):
     needs_clarification: bool = Field(..., description="Whether user clarification is needed")
     ready_for_analysis: bool = Field(..., description="Whether ready to run analytics")
     intent: Optional[Dict[str, Any]] = Field(None, description="Extracted user intent")
+    user_message_id: Optional[int] = Field(None, description="ID of the user message in chat_traces")
+    assistant_message_id: Optional[int] = Field(None, description="ID of the assistant message in chat_traces")
 
     class Config:
         json_schema_extra = {
@@ -47,7 +49,9 @@ class ChatResponse(BaseModel):
                     "platforms": ["facebook"],
                     "date_range_start": "2025-09-01",
                     "date_range_end": "2025-09-30"
-                }
+                },
+                "user_message_id": 123,
+                "assistant_message_id": 124
             }
         }
 

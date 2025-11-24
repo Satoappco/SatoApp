@@ -91,11 +91,12 @@ async def chat(
 
     try:
         # Add user message to trace
-        trace_service.add_message(
+        user_message_record = trace_service.add_message(
             thread_id=thread_id,
             role="user",
             content=request.message
         )
+        user_message_id = user_message_record.id if user_message_record else None
 
         # Get conversation workflow for this thread (with campaigner_id)
         logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
@@ -134,11 +135,12 @@ async def chat(
             logger.info(f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'")
 
         # Add assistant message to trace
-        trace_service.add_message(
+        assistant_message_record = trace_service.add_message(
             thread_id=thread_id,
             role="assistant",
             content=assistant_message or "I'm processing your request..."
         )
+        assistant_message_id = assistant_message_record.id if assistant_message_record else None
 
         # Build intent dict
         intent = {
@@ -183,7 +185,9 @@ async def chat(
             thread_id=thread_id,
             needs_clarification=needs_clarification,
             ready_for_analysis=ready_for_analysis,
-            intent=intent if any(intent.values()) else None
+            intent=intent if any(intent.values()) else None,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id
         )
 
         return response
@@ -249,11 +253,12 @@ async def stream_chat(
             )
 
             # Add user message to trace
-            trace_service.add_message(
+            user_message_record = trace_service.add_message(
                 thread_id=thread_id,
                 role="user",
                 content=request.message
             )
+            user_message_id = user_message_record.id if user_message_record else None
 
             # Get conversation workflow for this thread (with campaigner_id and customer_id)
             workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
@@ -289,14 +294,19 @@ async def stream_chat(
                     yield f"data: {json.dumps({'metadata': final_metadata})}\n\n"
 
             # Add assistant message to trace after streaming completes
-            trace_service.add_message(
+            assistant_message_record = trace_service.add_message(
                 thread_id=thread_id,
                 role="assistant",
                 content=full_response or "I'm processing your request..."
             )
+            assistant_message_id = assistant_message_record.id if assistant_message_record else None
 
             # Update conversation intent if we have final metadata
             if final_metadata:
+                # Add message IDs to final metadata
+                final_metadata["user_message_id"] = user_message_id
+                final_metadata["assistant_message_id"] = assistant_message_id
+
                 trace_service.update_intent(
                     thread_id=thread_id,
                     intent=final_metadata["intent"],
@@ -311,6 +321,9 @@ async def stream_chat(
                         status="completed",
                         final_intent=final_metadata["intent"]
                     )
+
+                # Send final metadata with message IDs
+                yield f"data: {json.dumps({'message_ids': {'user_message_id': user_message_id, 'assistant_message_id': assistant_message_id}})}\n\n"
 
             # Flush Langfuse traces
             trace_service.flush_langfuse()

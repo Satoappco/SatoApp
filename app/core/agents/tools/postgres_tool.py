@@ -19,8 +19,10 @@ from .sql_validator import SQLValidator
 from ....models import (
     Customer,
     KpiGoal, KpiValue, DigitalAsset, Connection,
-    RTMTable, QuestionsTable
+    Metrics, RTMTable, QuestionsTable
 )
+from app.services.chat_trace_service import ChatTraceService
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +45,19 @@ class PostgresTool(BaseTool):
     - kpi_values: Actual KPI measurements
     - digital_assets: Digital assets (social media, analytics accounts, etc.)
     - connections: OAuth connections and API credentials
-    - rtm_table: RTM (Real-Time Marketing) data
-    - questions_table: Questions and answers data
+    - metrics: Raw ad/ad group performance data (last 90 days: CPA, CVR, CTR, CPC, clicks, impressions, spent, conversions, etc.)
 
     Security: All queries are automatically filtered by the campaigner's agency.
     The tool ONLY accepts SELECT queries - no INSERT, UPDATE, DELETE, or DDL.
     Input should be a valid SINGLE PostgreSQL SELECT query.
     Output will be a JSON array of result rows.
+
+    Note: RTM features are not yet enabled. questions_table is no longer available.
     """
 
     campaigner_id: int = PydanticField(description="ID of the authenticated campaigner")
+    thread_id: Optional[str] = PydanticField(default=None, description="Thread ID for tracing")
+    level: int = PydanticField(default=1, description="Hierarchy level for tracing")
 
     def _run(self, query: str) -> str:
         """Execute a SQL query and return results.
@@ -92,6 +97,9 @@ class PostgresTool(BaseTool):
             logger.info(f"🔍 [PostgresTool] Executing query for campaigner {self.campaigner_id}")
             logger.debug(f"📝 [PostgresTool] Query: {secured_query}")
 
+            # Track query execution time
+            start_time = time.time()
+
             # Execute query
             with get_db_connection() as session:
                 result = session.execute(text(secured_query), {"campaigner_id": self.campaigner_id})
@@ -106,21 +114,69 @@ class PostgresTool(BaseTool):
 
                 logger.info(f"✅ [PostgresTool] Query returned {len(results)} rows")
 
+                # Calculate latency
+                latency_ms = int((time.time() - start_time) * 1000)
+
                 # Format as JSON
                 import json
-                return json.dumps({
+                output = json.dumps({
                     "success": True,
                     "row_count": len(results),
                     "data": results
                 }, default=str)  # default=str handles datetime serialization
 
+                # Trace tool usage if thread_id is available
+                if self.thread_id:
+                    try:
+                        trace_service = ChatTraceService()
+                        trace_service.add_tool_usage(
+                            thread_id=self.thread_id,
+                            tool_name="postgres_query",
+                            tool_input=secured_query[:1000],  # Limit input size
+                            tool_output=output[:5000],  # Limit output size
+                            success=True,
+                            latency_ms=latency_ms,
+                            metadata={
+                                "campaigner_id": self.campaigner_id,
+                                "row_count": len(results),
+                                "query_length": len(secured_query)
+                            },
+                            level=self.level
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️  [PostgresTool] Failed to trace tool usage: {e}")
+
+                return output
+
         except Exception as e:
             logger.error(f"❌ [PostgresTool] Query failed: {str(e)}", exc_info=True)
             import json
-            return json.dumps({
+            error_output = json.dumps({
                 "success": False,
                 "error": str(e)
             })
+
+            # Trace tool usage failure if thread_id is available
+            if self.thread_id:
+                try:
+                    trace_service = ChatTraceService()
+                    trace_service.add_tool_usage(
+                        thread_id=self.thread_id,
+                        tool_name="postgres_query",
+                        tool_input=query[:1000],  # Limit input size
+                        tool_output=error_output,
+                        success=False,
+                        error=str(e),
+                        metadata={
+                            "campaigner_id": self.campaigner_id,
+                            "error_type": type(e).__name__
+                        },
+                        level=self.level
+                    )
+                except Exception as trace_error:
+                    logger.warning(f"⚠️  [PostgresTool] Failed to trace tool error: {trace_error}")
+
+            return error_output
 
     async def _arun(self, query: str) -> str:
         """Async version - not implemented, falls back to sync."""
@@ -189,8 +245,9 @@ class PostgresTool(BaseTool):
         - kpi_values
         - digital_assets
         - connections
-        - rtm_table
-        - questions_table
+        - metrics (last 90 days only)
+
+        Note: RTM features are not yet enabled. questions_table is no longer available.
 
         Returns:
             Dictionary with table schemas
@@ -198,15 +255,14 @@ class PostgresTool(BaseTool):
         schema_info = {}
 
         # Map of models to extract schema from (RESTRICTED LIST)
-        # Excludes agencies and campaigners tables
+        # Excludes agencies and campaigners tables, rtm_table, and questions_table
         models = {
             "customers": Customer,
             "kpi_goals": KpiGoal,
             "kpi_values": KpiValue,
             "digital_assets": DigitalAsset,
             "connections": Connection,
-            "rtm_table": RTMTable,
-            "questions_table": QuestionsTable,
+            "metrics": Metrics,
         }
 
         for table_name, model_class in models.items():
@@ -221,9 +277,9 @@ class PostgresTool(BaseTool):
                 "customers_to_campaigner": "customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "digital_assets_to_campaigner": "digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "rtm_table_to_campaigner": "rtm_table access requires proper filtering",
-                "questions_table_to_campaigner": "questions_table access requires proper filtering"
-            }
+                "metrics_to_campaigner": "metrics.platform_id → digital_assets.id → digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id"
+            },
+            "note": "metrics table contains only last 90 days of data"
         }
 
         return schema_info
@@ -296,6 +352,10 @@ class PostgresTool(BaseTool):
         elif table_name in ["digital_assets", "connections"]:
             schema["security"] = f"MUST join: {table_name} → customers → campaigners"
             schema["example_join"] = f"FROM {table_name} da JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
+        elif table_name == "metrics":
+            schema["security"] = "MUST join: metrics → digital_assets → customers → campaigners"
+            schema["example_join"] = "FROM metrics m JOIN digital_assets da ON da.id = m.platform_id JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
+            schema["data_retention"] = "Only last 90 days of data available"
 
         return schema
 

@@ -338,14 +338,17 @@ async def revoke_ga_connection(
                     detail="Connection not found"
                 )
         
-        success = await ga_service.revoke_ga_connection(connection_id)
-        
-        if success:
-            return {"message": "Connection revoked successfully"}
+        result = await ga_service.revoke_ga_connection(connection_id)
+
+        if result.get("success"):
+            message = "Connection deleted successfully"
+            if result.get("asset_deleted"):
+                message += " and associated digital asset was removed (no other connections)"
+            return {"message": message}
         else:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to revoke connection"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result.get("message", "Failed to delete connection")
             )
     
     except HTTPException:
