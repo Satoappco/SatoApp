@@ -10,7 +10,8 @@ import os
 import logging
 
 from .state import GraphState
-from .nodes import ChatbotNode, AgentExecutorNode, ErrorHandlerNode
+from .nodes import AgentExecutorNode, ErrorHandlerNode
+from .chatbot_agent import ChatbotNode
 from app.core.agents.database.connection import get_database_url
 from app.models.users import Campaigner
 from app.services.chat_trace_service import ChatTraceService
