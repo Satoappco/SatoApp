@@ -240,6 +240,10 @@ async def stream_chat(
             #     except (ValueError, TypeError):
             #         logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
 
+            # Get conversation workflow for this thread (with campaigner_id and customer_id)
+            workflow = app_state.get_conversation_workflow(current_user, thread_id) #, customer_id)
+            customer_id = workflow.customer_id
+            
             # Create conversation with ChatTraceService
             conversation, trace = trace_service.create_conversation(
                 thread_id=thread_id,
@@ -260,9 +264,6 @@ async def stream_chat(
             )
             user_message_id = user_message_record.id if user_message_record else None
 
-            # Get conversation workflow for this thread (with campaigner_id and customer_id)
-            workflow = app_state.get_conversation_workflow(current_user, thread_id) #, customer_id)
-            customer_id = workflow.customer_id
 
             # Stream message through workflow
             logger.debug(f"📡 [Stream] Starting real-time streaming...")

@@ -102,10 +102,12 @@ Deliver a structured analysis with:
 
         # Get Google Analytics credentials with property ID
         ga_credentials = task_details.get("google_analytics_credentials", {})
+        ga_credentials = ga_credentials or {}
         property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
 
         # Get Google Ads credentials with customer ID
         gads_credentials = task_details.get("google_ads_credentials", {})
+        gads_credentials = gads_credentials or {}
         customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
 
         # Build context information
