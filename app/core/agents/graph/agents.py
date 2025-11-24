@@ -809,6 +809,30 @@ fix the specific issue, and retry immediately. Don't give up after the first err
 
 Remember: Use the tools available to you to fetch real data before providing insights."""
 
+            # Log agent initialization with LLM and system prompt
+            if trace_service and thread_id:
+                # Get LLM model name
+                llm_model_name = "unknown"
+                if hasattr(self.llm, 'model_name'):
+                    llm_model_name = self.llm.model_name
+                elif hasattr(self.llm, 'model'):
+                    llm_model_name = self.llm.model
+
+                trace_service.add_chatbot_initialization(
+                    thread_id=thread_id,
+                    chatbot_name="single_analytics_agent",
+                    llm_model=llm_model_name,
+                    system_prompt=system_prompt,
+                    metadata={
+                        "platforms": platforms,
+                        "num_tools": len(tools),
+                        "customer_id": customer_id,
+                        "language": language,
+                        "query": query
+                    },
+                    level=level
+                )
+
             # Log agent start with key parameters
             if trace_service and thread_id:
                 params_summary = f"""**Query:** {query}

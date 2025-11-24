@@ -21,6 +21,8 @@ from ....models import (
     KpiGoal, KpiValue, DigitalAsset, Connection,
     Metrics, RTMTable, QuestionsTable
 )
+from app.services.chat_trace_service import ChatTraceService
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,8 @@ class PostgresTool(BaseTool):
     """
 
     campaigner_id: int = PydanticField(description="ID of the authenticated campaigner")
+    thread_id: Optional[str] = PydanticField(default=None, description="Thread ID for tracing")
+    level: int = PydanticField(default=1, description="Hierarchy level for tracing")
 
     def _run(self, query: str) -> str:
         """Execute a SQL query and return results.
@@ -93,6 +97,9 @@ class PostgresTool(BaseTool):
             logger.info(f"🔍 [PostgresTool] Executing query for campaigner {self.campaigner_id}")
             logger.debug(f"📝 [PostgresTool] Query: {secured_query}")
 
+            # Track query execution time
+            start_time = time.time()
+
             # Execute query
             with get_db_connection() as session:
                 result = session.execute(text(secured_query), {"campaigner_id": self.campaigner_id})
@@ -107,21 +114,69 @@ class PostgresTool(BaseTool):
 
                 logger.info(f"✅ [PostgresTool] Query returned {len(results)} rows")
 
+                # Calculate latency
+                latency_ms = int((time.time() - start_time) * 1000)
+
                 # Format as JSON
                 import json
-                return json.dumps({
+                output = json.dumps({
                     "success": True,
                     "row_count": len(results),
                     "data": results
                 }, default=str)  # default=str handles datetime serialization
 
+                # Trace tool usage if thread_id is available
+                if self.thread_id:
+                    try:
+                        trace_service = ChatTraceService()
+                        trace_service.add_tool_usage(
+                            thread_id=self.thread_id,
+                            tool_name="postgres_query",
+                            tool_input=secured_query[:1000],  # Limit input size
+                            tool_output=output[:5000],  # Limit output size
+                            success=True,
+                            latency_ms=latency_ms,
+                            metadata={
+                                "campaigner_id": self.campaigner_id,
+                                "row_count": len(results),
+                                "query_length": len(secured_query)
+                            },
+                            level=self.level
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️  [PostgresTool] Failed to trace tool usage: {e}")
+
+                return output
+
         except Exception as e:
             logger.error(f"❌ [PostgresTool] Query failed: {str(e)}", exc_info=True)
             import json
-            return json.dumps({
+            error_output = json.dumps({
                 "success": False,
                 "error": str(e)
             })
+
+            # Trace tool usage failure if thread_id is available
+            if self.thread_id:
+                try:
+                    trace_service = ChatTraceService()
+                    trace_service.add_tool_usage(
+                        thread_id=self.thread_id,
+                        tool_name="postgres_query",
+                        tool_input=query[:1000],  # Limit input size
+                        tool_output=error_output,
+                        success=False,
+                        error=str(e),
+                        metadata={
+                            "campaigner_id": self.campaigner_id,
+                            "error_type": type(e).__name__
+                        },
+                        level=self.level
+                    )
+                except Exception as trace_error:
+                    logger.warning(f"⚠️  [PostgresTool] Failed to trace tool error: {trace_error}")
+
+            return error_output
 
     async def _arun(self, query: str) -> str:
         """Async version - not implemented, falls back to sync."""

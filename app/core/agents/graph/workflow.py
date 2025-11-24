@@ -13,6 +13,7 @@ from .state import GraphState
 from .nodes import ChatbotNode, AgentExecutorNode, ErrorHandlerNode
 from app.core.agents.database.connection import get_database_url
 from app.models.users import Campaigner
+from app.services.chat_trace_service import ChatTraceService
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +75,33 @@ class ConversationWorkflow:
         #     api_key=os.getenv("OPENAI_API_KEY")
         # )
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-        logger.debug(f"🤖 [Workflow] LLM initialized: gpt-4o-mini")
+        llm_model_name = "gemini-2.5-flash"  # Extract model name
+        logger.debug(f"🤖 [Workflow] LLM initialized: {llm_model_name}")
 
         # Initialize nodes
         self.chatbot_node = ChatbotNode(self.llm, self.conversation_state)
         self.agent_executor_node = AgentExecutorNode(self.llm)
         self.error_handler_node = ErrorHandlerNode()
         logger.debug("📦 [Workflow] Nodes initialized")
+
+        # Trace chatbot initialization with system prompt
+        try:
+            trace_service = ChatTraceService()
+            trace_service.add_chatbot_initialization(
+                thread_id=thread_id,
+                chatbot_name="chatbot_orchestrator",
+                llm_model=llm_model_name,
+                system_prompt=self.chatbot_node.formatted_system_prompt,
+                metadata={
+                    "campaigner_id": campaigner.id,
+                    "customer_id": customer_id,
+                    "supports_streaming": self.chatbot_node.supports_streaming
+                },
+                level=0
+            )
+            logger.debug("✅ [Workflow] Chatbot initialization traced")
+        except Exception as e:
+            logger.warning(f"⚠️  [Workflow] Failed to trace chatbot initialization: {e}")
 
         # Build and compile graph
         self.graph = self._build_graph()

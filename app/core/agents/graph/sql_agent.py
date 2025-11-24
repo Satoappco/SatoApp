@@ -76,6 +76,8 @@ class SQLBasicInfoAgent:
         campaigner_id = task.get("campaigner_id")
         context = task.get("context", {})
         customer_id = task.get("customer_id")
+        thread_id = task.get("thread_id")  # Extract thread_id for tracing
+        level = task.get("level", 1)  # Extract level for hierarchy tracking
 
         logger.info(f"🤖 [SQLBasicInfoAgent] Processing query for campaigner: {campaigner_id}")
         logger.debug(f"📝 [SQLBasicInfoAgent] Query: '{query[:100]}...'")
@@ -90,8 +92,12 @@ class SQLBasicInfoAgent:
             }
 
         try:
-            # Create PostgresTool instance
-            postgres_tool = PostgresTool(campaigner_id=campaigner_id)
+            # Create PostgresTool instance with tracing support
+            postgres_tool = PostgresTool(
+                campaigner_id=campaigner_id,
+                thread_id=thread_id,
+                level=level
+            )
 
             # Get schema information
             schema_info = postgres_tool.get_schema_info()
