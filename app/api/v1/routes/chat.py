@@ -232,13 +232,13 @@ async def stream_chat(
             thread_id = request.thread_id or str(uuid.uuid4())
             logger.info(f"📡 [Stream] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
 
-            # Parse customer_id if provided
-            customer_id = None
-            if request.customer_id:
-                try:
-                    customer_id = int(request.customer_id)
-                except (ValueError, TypeError):
-                    logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
+            # # Parse customer_id if provided
+            # customer_id = None
+            # if request.customer_id:
+            #     try:
+            #         customer_id = int(request.customer_id)
+            #     except (ValueError, TypeError):
+            #         logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
 
             # Create conversation with ChatTraceService
             conversation, trace = trace_service.create_conversation(
@@ -261,7 +261,8 @@ async def stream_chat(
             user_message_id = user_message_record.id if user_message_record else None
 
             # Get conversation workflow for this thread (with campaigner_id and customer_id)
-            workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
+            workflow = app_state.get_conversation_workflow(current_user, thread_id) #, customer_id)
+            customer_id = workflow.customer_id
 
             # Stream message through workflow
             logger.debug(f"📡 [Stream] Starting real-time streaming...")
@@ -281,6 +282,7 @@ async def stream_chat(
                     # Final metadata with state
                     final_metadata = {
                         "thread_id": thread_id,
+                        "user_message_id" : user_message_id,
                         "needs_clarification": chunk.get("needs_clarification", False),
                         "ready_for_analysis": chunk.get("ready_for_crew", False),
                         "intent": {
@@ -304,7 +306,6 @@ async def stream_chat(
             # Update conversation intent if we have final metadata
             if final_metadata:
                 # Add message IDs to final metadata
-                final_metadata["user_message_id"] = user_message_id
                 final_metadata["assistant_message_id"] = assistant_message_id
 
                 trace_service.update_intent(

@@ -770,8 +770,9 @@ class CampaignSyncService:
         
         try:
             with get_session() as session:
-                # Step 1: Cleanup old metrics (older than 90 days)
-                cutoff_date = datetime.utcnow().date() - timedelta(days=90)
+                days_back_to_take = get_settings().metrics_sync_days_back or 365
+                # Step 1: Cleanup old metrics
+                cutoff_date = datetime.utcnow().date() - timedelta(days=days_back_to_take)
                 logger.info(f"🗑️  Cleaning up metrics older than {cutoff_date}")
 
                 deleted_count = session.exec(
