@@ -342,9 +342,22 @@ class AnalyticsCrew:
             context_manager = nullcontext(enter_result=[])
 
         with context_manager as aggregated_tools:
+            # Add calculator tool to aggregated tools
+            from app.core.agents.tools.calculator_tool import CalculatorTool
+            calculator = CalculatorTool()
+
+            # Ensure aggregated_tools is a list
+            if aggregated_tools is None:
+                aggregated_tools = []
+            elif not isinstance(aggregated_tools, list):
+                aggregated_tools = list(aggregated_tools)
+
+            # Add calculator to the tools list
+            aggregated_tools.append(calculator)
+
             # Log loaded tools
             if aggregated_tools:
-                logger.info(f"✅ Total tools loaded: {len(aggregated_tools)}")
+                logger.info(f"✅ Total tools loaded: {len(aggregated_tools)} (including calculator)")
                 logger.debug(f"🔧 Available tools: {[tool.name for tool in aggregated_tools]}")
             else:
                 logger.warning("⚠️  No tools available")
