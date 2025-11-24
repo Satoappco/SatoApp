@@ -737,10 +737,15 @@ class CampaignSyncService:
     def sync_metrics_new(self, customer_id: Optional[int] = None) -> Dict[str, Any]:
         """
         New metrics sync flow: Syncs raw metrics from platforms into metrics table.
-        
+
+        For each ad/ad_group:
+        - Checks if data exists for every day in the past 90 days
+        - Fetches metrics for missing days
+        - Always updates yesterday and today (even if they exist)
+
         Args:
             customer_id: Optional customer ID to sync only one customer
-            
+
         Returns:
             Dict with sync results and stats
         """
@@ -864,26 +869,28 @@ class CampaignSyncService:
                                         "reason": f"All {len(connections)} connections failed"
                                     })
                                     continue
-                                
-                                for prev_days in range(0, 90):  # should be (0, 2)
-                                    # Step 1: Calculate sync date (yesterday) - the date we're syncing
-                                    sync_date = (datetime.utcnow() - timedelta(days=prev_days)).date()
-                                    logger.info(f"📅 Syncing metrics for date: {sync_date}")
 
-                                    # Fetch and store metrics based on platform type (PREVIOUS DAY ONLY)
-                                    if platform.provider == "Google Ads":
-                                        metrics_count = self._sync_google_ads_metrics(
-                                            session, platform, working_connection, sync_date
-                                        )
-                                        stats["metrics_upserted"] += metrics_count
-                                        logger.info(f"   ✅ Synced {metrics_count} Google Ads metrics for {sync_date}")
+                                # Get dates to sync (missing dates + yesterday + today)
+                                dates_to_sync = self._get_dates_to_sync(session, platform.id)
 
-                                    elif platform.provider == "Facebook":
-                                        metrics_count = self._sync_facebook_metrics(
-                                            session, platform, working_connection, sync_date
-                                        )
-                                        stats["metrics_upserted"] += metrics_count
-                                        logger.info(f"   ✅ Synced {metrics_count} Facebook metrics for {sync_date}")
+                                if not dates_to_sync:
+                                    logger.info(f"   ✅ No dates to sync for platform {platform.id}")
+                                    continue
+
+                                # Fetch and store metrics based on platform type
+                                if platform.provider == "Google Ads":
+                                    metrics_count = self._sync_google_ads_metrics(
+                                        session, platform, working_connection, dates_to_sync
+                                    )
+                                    stats["metrics_upserted"] += metrics_count
+                                    logger.info(f"   ✅ Synced {metrics_count} Google Ads metrics for {len(dates_to_sync)} dates")
+
+                                elif platform.provider == "Facebook":
+                                    metrics_count = self._sync_facebook_metrics(
+                                        session, platform, working_connection, dates_to_sync
+                                    )
+                                    stats["metrics_upserted"] += metrics_count
+                                    logger.info(f"   ✅ Synced {metrics_count} Facebook metrics for {len(dates_to_sync)} dates")
                                 
                             except Exception as e:
                                 error_msg = f"Error syncing platform {platform.id}: {str(e)}"
@@ -919,6 +926,84 @@ class CampaignSyncService:
         
         return stats
     
+    def _get_dates_to_sync(
+        self,
+        session: Session,
+        platform_id: int
+    ) -> List[date]:
+        """
+        Get list of dates to sync for a platform.
+
+        Returns dates that:
+        1. Are missing for any ad/ad_group in the past 90 days
+        2. Always includes yesterday and today
+
+        Args:
+            session: Database session
+            platform_id: Platform (digital asset) ID
+
+        Returns:
+            List of dates to sync
+        """
+        from app.models.analytics import Metrics
+        from datetime import timedelta
+
+        logger = logging.getLogger(__name__)
+
+        # Calculate date ranges
+        today = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
+        start_date = today - timedelta(days=90)
+
+        # Get all unique ads/ad_groups for this platform
+        all_items = session.exec(
+            select(Metrics.item_id).where(
+                Metrics.platform_id == platform_id
+            ).distinct()
+        ).all()
+
+        if not all_items:
+            # No existing metrics, sync all 90 days
+            logger.info(f"   📅 No existing metrics found. Will sync all {90} days")
+            return [start_date + timedelta(days=i) for i in range(91)]
+
+        logger.info(f"   📊 Found {len(all_items)} unique ads/ad_groups")
+
+        # Find missing dates for each ad/ad_group
+        missing_dates_set = set()
+
+        for item_id in all_items:
+            # Get all dates that exist for this item
+            existing_dates = session.exec(
+                select(Metrics.metric_date).where(
+                    and_(
+                        Metrics.platform_id == platform_id,
+                        Metrics.item_id == item_id,
+                        Metrics.metric_date >= start_date
+                    )
+                )
+            ).all()
+
+            existing_dates_set = set(existing_dates)
+
+            # Find missing dates
+            all_dates = {start_date + timedelta(days=i) for i in range(91)}
+            missing_for_item = all_dates - existing_dates_set
+
+            if missing_for_item:
+                logger.debug(f"      Item {item_id}: {len(missing_for_item)} missing dates")
+                missing_dates_set.update(missing_for_item)
+
+        # Always include yesterday and today
+        dates_to_sync = missing_dates_set | {yesterday, today}
+
+        # Convert to sorted list
+        sorted_dates = sorted(dates_to_sync)
+
+        logger.info(f"   📅 Will sync {len(sorted_dates)} dates ({len(missing_dates_set)} missing + yesterday/today)")
+
+        return sorted_dates
+
     def _validate_connection(self, connection: Connection, session: Session) -> bool:
         """
         Validate and refresh connection if needed.
@@ -996,16 +1081,16 @@ class CampaignSyncService:
         session: Session,
         platform: DigitalAsset,
         connection: Connection,
-        sync_date: date
+        sync_dates: List[date]
     ) -> int:
         """
-        Sync Google Ads metrics for all campaigns/ad groups/ads for a specific date.
+        Sync Google Ads metrics for all campaigns/ad groups/ads for multiple dates.
 
         Args:
             session: Database session
             platform: Digital asset (Google Ads account)
             connection: Working connection with valid tokens
-            sync_date: The date to fetch metrics for (typically yesterday)
+            sync_dates: List of dates to fetch metrics for
 
         Returns:
             Number of metrics records upserted
@@ -1040,7 +1125,11 @@ class CampaignSyncService:
             ga_service = client.get_service("GoogleAdsService")
             customer_id = platform.external_id
 
-            # Query to get all campaigns with metrics for the specific date
+            # Convert dates to string format for query
+            min_date = min(sync_dates).strftime('%Y-%m-%d')
+            max_date = max(sync_dates).strftime('%Y-%m-%d')
+
+            # Query to get all campaigns with metrics for the date range
             query = f"""
                 SELECT
                     campaign.id,
@@ -1048,6 +1137,7 @@ class CampaignSyncService:
                     ad_group.id,
                     ad_group.name,
                     ad_group_ad.ad.id,
+                    segments.date,
                     metrics.impressions,
                     metrics.clicks,
                     metrics.cost_micros,
@@ -1057,17 +1147,29 @@ class CampaignSyncService:
                     metrics.average_cpc,
                     metrics.average_cpm
                 FROM ad_group_ad
-                WHERE segments.date = '{sync_date}'
+                WHERE segments.date BETWEEN '{min_date}' AND '{max_date}'
                 AND campaign.status != 'REMOVED'
                 AND ad_group.status != 'REMOVED'
                 AND ad_group_ad.status != 'REMOVED'
             """
 
-            logger.info(f"   📊 Fetching Google Ads metrics for {sync_date}...")
+            logger.info(f"   📊 Fetching Google Ads metrics for {len(sync_dates)} dates ({min_date} to {max_date})...")
             response = ga_service.search(customer_id=customer_id, query=query)
+
+            # Convert sync_dates to set for faster lookup
+            sync_dates_set = set(sync_dates)
 
             # Process each ad and upsert to metrics table
             for row in response:
+                # Get the date for this row
+                metric_date_str = row.segments.date
+                # Parse date string 'YYYY-MM-DD' to date object
+                year, month, day = map(int, metric_date_str.split('-'))
+                metric_date = date(year, month, day)
+
+                # Skip if this date is not in our sync list
+                if metric_date not in sync_dates_set:
+                    continue
                 try:
                     # Calculate derived metrics
                     clicks = row.metrics.clicks
@@ -1086,7 +1188,7 @@ class CampaignSyncService:
 
                     # Create metrics record
                     metric_data = {
-                        "metric_date": sync_date,
+                        "metric_date": metric_date,
                         "item_id": str(row.ad_group_ad.ad.id),
                         "platform_id": platform.id,
                         "item_type": "ad",
@@ -1134,16 +1236,16 @@ class CampaignSyncService:
         session: Session,
         platform: DigitalAsset,
         connection: Connection,
-        sync_date: date
+        sync_dates: List[date]
     ) -> int:
         """
-        Sync Facebook Ads metrics for all campaigns/ad sets/ads for a specific date.
+        Sync Facebook Ads metrics for all campaigns/ad sets/ads for multiple dates.
 
         Args:
             session: Database session
             platform: Digital asset (Facebook Ads account)
             connection: Working connection with valid tokens
-            sync_date: The date to fetch metrics for (typically yesterday)
+            sync_dates: List of dates to fetch metrics for
 
         Returns:
             Number of metrics records upserted
@@ -1172,16 +1274,20 @@ class CampaignSyncService:
                 logger.error(f"   ❌ No valid ad account ID for platform {platform.id}")
                 return 0
 
-            # Format date for Facebook API (YYYY-MM-DD)
-            date_str = sync_date.strftime('%Y-%m-%d')
+            # Format date range for Facebook API (YYYY-MM-DD)
+            min_date_str = min(sync_dates).strftime('%Y-%m-%d')
+            max_date_str = max(sync_dates).strftime('%Y-%m-%d')
             api_version = self.facebook_service.api_version
             base_url = f"https://graph.facebook.com/{api_version}"
 
             # Facebook Ads metrics we want to fetch
             # Note: ad_id and ad_name are REQUIRED for insights endpoint
+            # date_start and date_stop are required to get breakdowns by date
             fields = [
                 'ad_id',  # REQUIRED - the ad ID
                 'ad_name',  # Ad name for reference
+                'date_start',  # Date of the metrics
+                'date_stop',  # Date of the metrics (same as date_start for daily)
                 'impressions',
                 'clicks',
                 'spend',
@@ -1194,21 +1300,26 @@ class CampaignSyncService:
                 'frequency'
             ]
 
-            # Query to get all ads with insights (metrics) for the specific date
+            # Query to get all ads with insights (metrics) for the date range
             # Facebook requires using the /insights endpoint for metrics
+            # time_increment=1 gives daily breakdowns
             url = f"{base_url}/{ad_account_id}/insights"
             params = {
                 'access_token': access_token,
                 'fields': ','.join(fields),
                 'time_range': json.dumps({
-                    'since': date_str,
-                    'until': date_str
+                    'since': min_date_str,
+                    'until': max_date_str
                 }),
+                'time_increment': 1,  # Daily breakdowns
                 'level': 'ad',  # Get ad-level metrics
                 'limit': 500  # Max per page
             }
 
-            logger.info(f"   📊 Fetching Facebook Ads metrics for {sync_date}...")
+            # Convert sync_dates to set for faster lookup
+            sync_dates_set = set(sync_dates)
+
+            logger.info(f"   📊 Fetching Facebook Ads metrics for {len(sync_dates)} dates ({min_date_str} to {max_date_str})...")
 
             # Paginate through all ads
             while url:
@@ -1222,6 +1333,20 @@ class CampaignSyncService:
                         ad_id = insight.get('ad_id')
                         if not ad_id:
                             logger.warning("   ⚠️  No ad_id in insight, skipping")
+                            continue
+
+                        # Get the date for this insight (from date_start field)
+                        date_start_str = insight.get('date_start')
+                        if not date_start_str:
+                            logger.warning(f"   ⚠️  No date_start in insight for ad {ad_id}, skipping")
+                            continue
+
+                        # Parse date string 'YYYY-MM-DD' to date object
+                        year, month, day = map(int, date_start_str.split('-'))
+                        metric_date = date(year, month, day)
+
+                        # Skip if this date is not in our sync list
+                        if metric_date not in sync_dates_set:
                             continue
 
                         # Extract actions (conversions)
@@ -1257,7 +1382,7 @@ class CampaignSyncService:
 
                         # Create metrics record
                         metric_data = {
-                            "metric_date": sync_date,
+                            "metric_date": metric_date,
                             "item_id": str(ad_id),
                             "platform_id": platform.id,
                             "item_type": "ad",
