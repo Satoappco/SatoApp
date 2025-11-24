@@ -35,7 +35,8 @@ from .routes import (
     logs,
     customer_assignments,
     traces,
-    chat_feedback
+    chat_feedback,
+    metrics
 )
 from app.api.v1.routes.chat import router as chat_router
 
@@ -79,6 +80,7 @@ api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
 api_router.include_router(customer_assignments.router, prefix="/customers", tags=["customer-assignments"])
 api_router.include_router(traces.router, tags=["traces"])
 api_router.include_router(chat_feedback.router, prefix="/chat", tags=["chat-feedback"])
+api_router.include_router(metrics.router, tags=["metrics"])
 
 # Conditionally include debug routes ONLY in development
 if os.getenv("ENVIRONMENT", "production") in ["development", "dev", "local"]:
