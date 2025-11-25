@@ -30,52 +30,6 @@ class AnalyticsCrewPlaceholder:
         self.analytics_crew = AnalyticsCrew()
         self.credential_manager = CustomerCredentialManager()
 
-    def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
-        """Fetch customer's enabled platforms from digital_assets table.
-
-        Args:
-            customer_id: Customer ID
-
-        Returns:
-            List of platform names (e.g., ["google", "facebook"])
-        """
-        return self.credential_manager.fetch_customer_platforms(customer_id)
-
-    def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-        """Fetch customer's Google Analytics refresh token and property ID.
-
-        Args:
-            customer_id: Customer ID
-
-        Returns:
-            Dictionary with 'refresh_token', 'property_id', 'client_id', 'client_secret' or None
-        """
-        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
-
-    def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-        """Fetch customer's Google Ads credentials.
-
-        Args:
-            customer_id: Customer ID
-            campaigner_id: Campaigner ID
-
-        Returns:
-            Dictionary with 'refresh_token', 'customer_id', 'client_id', 'client_secret' or None
-        """
-        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
-
-    def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-        """Fetch customer's Facebook/Meta Ads access token.
-
-        Args:
-            customer_id: Customer ID
-            campaigner_id: Campaigner ID
-
-        Returns:
-            Dictionary with 'access_token', 'ad_account_id' or None
-        """
-        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
-
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an analytics task using the AnalyticsCrew.
 
@@ -97,29 +51,15 @@ class AnalyticsCrewPlaceholder:
         customer_id = task.get("customer_id")
         campaigner_id = task.get("campaigner_id")
 
-        # IMPORTANT: Auto-fetch customer platforms and tokens from database
-        # This is hardcoded logic that LLM cannot control
-        platforms = []
-        google_analytics_credentials = None
-
         if customer_id:
             logger.info(f"🔍 [AnalyticsCrew] Auto-fetching data for customer {customer_id}")
-
-            # Fetch customer's platforms from digital_assets table
-            platforms = self._fetch_customer_platforms(customer_id)
+            # Fetch customer's platforms and credentials from digital_assets table
+            credentials = self.credential_manager.fetch_all_credentials(customer_id, campaigner_id)
+            platforms = credentials.get("platforms", [])
             logger.info(f"✅ [AnalyticsCrew] Fetched platforms: {platforms}")
-
-            # Fetch Google Analytics credentials if Google platform is enabled
-            if "google" in platforms:
-                google_analytics_credentials = self._fetch_google_analytics_token(customer_id, campaigner_id)
-                if google_analytics_credentials:
-                    logger.info(f"✅ [AnalyticsCrew] Fetched Google Analytics credentials")
-                    logger.debug(f"   Property ID: {google_analytics_credentials.get('property_id')}")
-                else:
-                    logger.warning(f"⚠️  [AnalyticsCrew] No Google Analytics credentials found for customer {customer_id}")
         else:
-            logger.warning("⚠️  [AnalyticsCrew] No customer_id provided, using fallback platforms")
-            platforms = task.get("platforms", ["google"])
+            logger.warning("⚠️  [AnalyticsCrew] No customer_id provided, using NO platforms")
+            platforms = task.get("platforms", [])
 
         # Build task details for AnalyticsCrew
         task_details = {
@@ -132,7 +72,9 @@ class AnalyticsCrewPlaceholder:
             "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
             "specific_campaigns": task.get("specific_campaigns", None),
             # Pass credentials for MCP configuration
-            "google_analytics_credentials": google_analytics_credentials
+            "google_analytics_credentials": credentials["google_analytics"],
+            "google_ads_credentials": credentials["google_ads"],
+            "meta_ads_credentials": credentials["meta_ads"],
         }
 
         logger.info(f"🚀 [AnalyticsCrew] Executing with platforms: {platforms}")

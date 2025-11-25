@@ -39,21 +39,21 @@ class SingleAnalyticsAgent:
         self.mcp_client: Optional[MCPClient] = None
         self.credential_manager = CustomerCredentialManager()
 
-    def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
-        """Fetch customer's enabled platforms from digital_assets table."""
-        return self.credential_manager.fetch_customer_platforms(customer_id)
+    # def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
+    #     """Fetch customer's enabled platforms from digital_assets table."""
+    #     return self.credential_manager.fetch_customer_platforms(customer_id)
 
-    def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-        """Fetch customer's Google Analytics refresh token and property ID."""
-        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
+    # def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+    #     """Fetch customer's Google Analytics refresh token and property ID."""
+    #     return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
 
-    def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-        """Fetch customer's Google Ads credentials."""
-        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
+    # def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+    #     """Fetch customer's Google Ads credentials."""
+    #     return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
 
-    def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-        """Fetch customer's Facebook/Meta Ads access token."""
-        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
+    # def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+    #     """Fetch customer's Facebook/Meta Ads access token."""
+    #     return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
     async def _initialize_mcp_clients(self, task_details: Dict[str, Any], thread_id: Optional[str] = None, level: int = 1):
         """Initialize and connect MultiServerMCPClient using MCP registry.
@@ -412,33 +412,16 @@ class SingleAnalyticsAgent:
         # Initialize trace service if thread_id is available
         trace_service = ChatTraceService() if thread_id else None
 
-        # Auto-fetch customer platforms and credentials
-        platforms = []
-        google_analytics_credentials = None
-        google_ads_credentials = None
-        meta_ads_credentials = None
-
         if customer_id:
-            logger.info(f"🔍 [SingleAnalyticsAgent] Auto-fetching data for customer {customer_id}")
-            platforms = self._fetch_customer_platforms(customer_id)
-            logger.info(f"✅ [SingleAnalyticsAgent] Fetched platforms: {platforms}")
-
-            if "google" in platforms:
-                google_analytics_credentials = self._fetch_google_analytics_token(customer_id, campaigner_id)
-                if google_analytics_credentials:
-                    logger.info(f"✅ [SingleAnalyticsAgent] Fetched Google Analytics credentials")
-
-                google_ads_credentials = self._fetch_google_ads_token(customer_id, campaigner_id)
-                if google_ads_credentials:
-                    logger.info(f"✅ [SingleAnalyticsAgent] Fetched Google Ads credentials")
-
-            if "facebook" in platforms:
-                meta_ads_credentials = self._fetch_meta_ads_token(customer_id, campaigner_id)
-                if meta_ads_credentials:
-                    logger.info(f"✅ [SingleAnalyticsAgent] Fetched Facebook Ads credentials")
+            credentials = self.credential_manager.fetch_all_credentials(customer_id, campaigner_id)
         else:
             logger.warning("⚠️  [SingleAnalyticsAgent] No customer_id provided")
-            platforms = task.get("platforms", ["google"])
+            credentials = {
+                "platforms": task.get("platforms", []),
+                "google_analytics": None,
+                "google_ads": None,
+                "meta_ads": None
+            }
 
         # Build task details
         task_details = {
@@ -446,12 +429,12 @@ class SingleAnalyticsAgent:
             "context": context,
             "campaigner_id": campaigner_id,
             "customer_id": customer_id,
-            "platforms": platforms,
+            "platforms": credentials["platforms"],
             "metrics": task.get("metrics", ["impressions", "clicks", "conversions", "spend"]),
             "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
-            "google_analytics_credentials": google_analytics_credentials,
-            "google_ads_credentials": google_ads_credentials,
-            "meta_ads_credentials": meta_ads_credentials,
+            "google_analytics_credentials": credentials["google_analytics"],
+            "google_ads_credentials": credentials["google_ads"],
+            "meta_ads_credentials": credentials["meta_ads"],
         }
 
         # Initialize and connect MCP clients
@@ -466,7 +449,7 @@ class SingleAnalyticsAgent:
                 "result": f"I encountered a configuration error: {error_msg}",
                 "message": error_msg,
                 "agent": "single_analytics_agent",
-                "platforms": platforms,
+                "platforms": credentials["platforms"],
                 "task_received": task
             }
 
@@ -482,11 +465,11 @@ class SingleAnalyticsAgent:
                     "result": f"I'm unable to access the analytics tools right now: {error_msg}",
                     "message": error_msg,
                     "agent": "single_analytics_agent",
-                    "platforms": platforms,
+                    "platforms": credentials["platforms"],
                     "task_received": task
                 }
 
-            logger.info(f"🚀 [SingleAnalyticsAgent] Executing with {len(tools)} tools from platforms: {platforms}")
+            logger.info(f"🚀 [SingleAnalyticsAgent] Executing with {len(tools)} tools from platforms: {credentials['platforms']}")
 
             # Log MCP initialization with tools list (combined)
             if trace_service and thread_id:
@@ -655,7 +638,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                     llm_model=llm_model_name,
                     system_prompt=system_prompt,
                     metadata={
-                        "platforms": platforms,
+                        "platforms": credentials["platforms"],
                         "num_tools": len(tools),
                         "customer_id": customer_id,
                         "language": language,
@@ -668,7 +651,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
             if trace_service and thread_id:
                 params_summary = f"""**Query:** {query}
 
-**Platforms:** {', '.join(platforms)}
+**Platforms:** {', '.join(credentials['platforms'])}
 
 **Customer ID:** {customer_id}
 
@@ -682,7 +665,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                     content=f"Starting Analytics Agent execution\n\n{params_summary}",
                     agent_name="single_analytics_agent",
                     metadata={
-                        "platforms": platforms,
+                        "platforms": credentials["platforms"],
                         "num_tools": len(tools),
                         "query": query,
                         "customer_id": customer_id,
@@ -810,7 +793,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 "status": "completed",
                 "result": result.get("output"),
                 "agent": "single_analytics_agent",
-                "platforms": platforms,
+                "platforms": credentials["platforms"],
                 "task_details": task_details
             }
 
@@ -861,7 +844,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 "error_type": error_type,
                 "traceback": traceback_str,  # Include traceback in response
                 "agent": "single_analytics_agent",
-                "platforms": platforms,
+                "platforms": credentials["platforms"],
                 "task_received": task
             }
 
@@ -878,12 +861,10 @@ Remember: Use the tools available to you to fetch real data before providing ins
 
         # Add platform-specific credentials
         if "google" in platforms:
-            ga_credentials = task_details.get("google_analytics_credentials", {})
-            ga_credentials = ga_credentials or {}
+            ga_credentials = task_details.get("google_analytics_credentials", {}) or {}
             property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
 
-            gads_credentials = task_details.get("google_ads_credentials", {})
-            gads_credentials = gads_credentials or {}
+            gads_credentials = task_details.get("google_ads_credentials", {}) or {}
             customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
 
             if property_id != "NOT_PROVIDED":
@@ -892,9 +873,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 context_parts.append(f"Google Ads Customer ID: {customer_id}")
 
         if "facebook" in platforms:
-            fb_credentials = task_details.get("meta_ads_credentials", {})
-            if not fb_credentials:
-                fb_credentials = {}
+            fb_credentials = task_details.get("meta_ads_credentials", {}) or {}
             ad_account_id = fb_credentials.get("ad_account_id", "NOT_PROVIDED")
             if ad_account_id != "NOT_PROVIDED":
                 context_parts.append(f"Facebook Ads Account ID: {ad_account_id}")
