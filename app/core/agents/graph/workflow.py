@@ -262,8 +262,45 @@ class ConversationWorkflow:
             Chunks of the assistant's response as they are generated
         """
 
+        # Yield progress: Starting workflow
+        try:
+            trace_service = ChatTraceService()
+            trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type="progress",
+                content="Analyzing your request with conversational AI...",
+                agent_name="workflow",
+                metadata={
+                    "progress_stage": "workflow_start",
+                    "message_length": len(message)
+                },
+                level=0
+            )
+            yield {"type": "progress", "message": "Analyzing your request..."}
+        except Exception as e:
+            logger.warning(f"⚠️  [Workflow] Failed to trace workflow start: {e}")
+
         #TODO: fix
         result = self.process_message(message)
+
+        # Yield progress: Workflow completed
+        try:
+            trace_service = ChatTraceService()
+            trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type="progress",
+                content="Request analysis complete, preparing response...",
+                agent_name="workflow",
+                metadata={
+                    "progress_stage": "workflow_complete",
+                    "needs_clarification": result.get("needs_clarification", False),
+                    "ready_for_crew": result.get("ready_for_crew", False)
+                },
+                level=0
+            )
+            yield {"type": "progress", "message": "Preparing your response..."}
+        except Exception as e:
+            logger.warning(f"⚠️  [Workflow] Failed to trace workflow completion: {e}")
 
         # Extract response message
         messages = result.get("messages", [])

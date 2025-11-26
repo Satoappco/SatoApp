@@ -67,6 +67,23 @@ class AgentExecutorNode:
             # Add thread_id and level to task for tracing inside the agent
             task_with_trace = {**task, "thread_id": thread_id, "level": current_level} if thread_id else task
 
+            # Trace: Starting agent execution
+            if trace_service and thread_id:
+                try:
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="progress",
+                        content=f"Executing {agent_name} agent to process your request...",
+                        agent_name=agent_name,
+                        metadata={
+                            "progress_stage": "agent_execution_start",
+                            "task_type": task.get("type", "unknown")
+                        },
+                        level=current_level
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️  [AgentExecutor] Failed to trace agent execution start: {e}")
+
             logger.info(f"🚀 [AgentExecutor] Executing {agent_name} with task...")
             logger.debug(f"📋 [AgentExecutor] Task details: {task}")
             result = agent.execute(task_with_trace)

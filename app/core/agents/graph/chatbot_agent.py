@@ -427,7 +427,6 @@ if the user request is simple and can be answered without an agent, provide a di
                     task["context"] = {"language": user_language}
 
                 logger.info(f"✅ [ChatbotNode] Intent ready! Routing to agent: {agent_name}")
-                logger.debug(f"📋 [ChatbotNode] Task: customer_id={task.get('customer_id')}, campaigner_id={task.get('campaigner_id')}")
                 logger.debug(f"📋 [ChatbotNode] Full task: {task}")
 
                 return {

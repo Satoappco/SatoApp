@@ -1,16 +1,21 @@
 """Calculator tool for performing mathematical operations."""
 
 import logging
-from typing import Optional
-from langchain.tools import BaseTool
-from pydantic import Field
+from typing import Optional, Type
+from crewai.tools import BaseTool as CrewAIBaseTool
+from pydantic import BaseModel, Field
 import ast
 import operator
 
 logger = logging.getLogger(__name__)
 
 
-class CalculatorTool(BaseTool):
+class CalculatorInput(BaseModel):
+    """Input schema for CalculatorTool."""
+    expression: str = Field(..., description="Mathematical expression to evaluate")
+
+
+class CalculatorTool(CrewAIBaseTool):
     """Tool for performing mathematical calculations.
 
     This tool can evaluate mathematical expressions safely using Python's
@@ -44,6 +49,8 @@ class CalculatorTool(BaseTool):
     Returns the calculated result as a string.
     """
 
+    args_schema: Type[BaseModel] = CalculatorInput
+
     # Thread ID for tracing (optional)
     thread_id: Optional[str] = Field(default=None, description="Thread ID for tracing")
     level: int = Field(default=1, description="Hierarchy level for tracing")
@@ -60,11 +67,12 @@ class CalculatorTool(BaseTool):
         ast.USub: operator.neg,  # Unary minus
     }
 
-    def _run(self, expression: str) -> str:
+    def _run(self, expression: str, **kwargs) -> str:
         """Execute a mathematical calculation.
 
         Args:
             expression: Mathematical expression string
+            **kwargs: Additional arguments (ignored)
 
         Returns:
             String containing the calculation result or error message

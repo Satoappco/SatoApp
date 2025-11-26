@@ -79,8 +79,8 @@ Deliver a structured analysis with:
 - Campaign performance comparison
 - Audience insights
 - 3-5 actionable insights with recommendations
-- Data formatted as JSON with structured insights"""
-
+"""
+#- Data formatted as JSON with structured insights
         return Task(
             description=description,
             expected_output=expected_output,
@@ -109,6 +109,7 @@ Deliver a structured analysis with:
         gads_credentials = task_details.get("google_ads_credentials", {})
         gads_credentials = gads_credentials or {}
         customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
+        account_id = gads_credentials.get("account_id", "NOT_PROVIDED")
 
         # Build context information
         context_info = ""
@@ -124,9 +125,13 @@ Deliver a structured analysis with:
             context_info += f"\n\nResponse Language: {language}"
 
         # Add account information
-        context_info += f"\n\nGoogle Analytics Property:\n- Property ID: {property_id}"
-        if customer_id != "NOT_PROVIDED":
-            context_info += f"\n\nGoogle Ads Account:\n- Customer ID: {customer_id}"
+
+        if property_id and property_id != "NOT_PROVIDED":
+            context_info += f"\n\nGoogle Analytics Property:\n- Property ID: {property_id}"
+        if account_id and account_id != "NOT_PROVIDED":
+            context_info += f"\n\nGoogle Ads Account:\n- Account ID: {account_id}"
+        if customer_id and customer_id != "NOT_PROVIDED":
+            context_info += f"\n- Customer ID: {customer_id}"
 
         description = f"""User Question: {query}
 
@@ -137,13 +142,13 @@ Analyze Google Analytics and/or Google Ads data for the following:
 Time Period: {date_range.get('start')} to {date_range.get('end')}
 Metrics: {metrics}
 
-IMPORTANT: Use the Property ID ({property_id}) when querying Google Analytics data through MCP tools.
-{f'IMPORTANT: Use the Customer ID ({customer_id}) when querying Google Ads data through MCP tools.' if customer_id != 'NOT_PROVIDED' else ''}
+IMPORTANT: Use the Property ID when querying Google Analytics data through MCP tools.
+IMPORTANT: Use the Customer ID when querying Google Ads data through MCP tools.
 
 Your tasks:
 1. Understand the user's question and what specific insights they need
-2. Use the Property ID ({property_id}) to fetch the relevant data from Google Analytics using the MCP tools
-{f'3. Use the Customer ID ({customer_id}) to fetch Google Ads data if needed' if customer_id != 'NOT_PROVIDED' else '3. Focus on Google Analytics data'}
+2. Use the Property ID to fetch the relevant data from Google Analytics using the MCP tools.
+3. Use the Customer ID / Account ID to fetch Google Ads data if needed.
 4. Calculate key performance indicators
 5. Analyze user behavior and traffic patterns
 6. Examine conversion funnels and drop-off points
@@ -167,7 +172,8 @@ Deliver a structured analysis with:
 - User behavior insights
 - Conversion funnel analysis
 - 3-5 actionable insights with recommendations
-- Data formatted as JSON with structured insights"""
+"""
+# - Data formatted as JSON with structured insights
 
         return Task(
             description=description,
@@ -236,8 +242,8 @@ IMPORTANT: Make sure your response is in {task_context.get("language", "english"
 - Prioritized recommendations (top 5)
 - Marketing performance scorecard
 - Detailed action plan
-- Data formatted as structured JSON"""
-
+"""
+#- Data formatted as structured JSON
         return Task(
             description=description,
             expected_output=expected_output,

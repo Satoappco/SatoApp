@@ -682,6 +682,160 @@ class ChatTraceService:
         finally:
             self._close_session(session)
 
+    def add_crew_agent_initialization(
+        self,
+        thread_id: str,
+        agent_name: str,
+        agent_role: str,
+        agent_goal: str,
+        agent_backstory: str,
+        llm_model: str,
+        tools: Optional[List[str]] = None,
+        allow_delegation: bool = False,
+        task_description: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        level: int = 0
+    ) -> Optional[ChatTrace]:
+        """
+        Add a CrewAI agent initialization step to a conversation.
+
+        Args:
+            thread_id: Thread identifier
+            agent_name: Name of the agent (e.g., "master_agent", "google_specialist")
+            agent_role: Agent's role description
+            agent_goal: Agent's goal description
+            agent_backstory: Agent's backstory description
+            llm_model: LLM model name (e.g., "gemini/gemini-2.5-flash")
+            tools: List of tool names available to this agent
+            allow_delegation: Whether agent can delegate to others
+            task_description: Optional task description assigned to this agent
+            metadata: Optional metadata dictionary
+            level: Hierarchy level for nested agents (default: 0)
+
+        Returns:
+            Created ChatTrace agent_step record or None if conversation not found
+        """
+        session = self._get_session()
+        try:
+            conversation = self.get_conversation(thread_id, session=session)
+            if not conversation:
+                print(f"⚠️ Conversation not found: {thread_id}")
+                return None
+
+            # Get sequence number
+            step_count = session.exec(
+                select(func.count(ChatTrace.id)).where(
+                    and_(
+                        ChatTrace.thread_id == thread_id,
+                        ChatTrace.record_type == RecordType.AGENT_STEP
+                    )
+                )
+            ).one()
+
+            # Create Langfuse span
+            langfuse_span_id = None
+            if LANGFUSE_AVAILABLE and conversation.langfuse_trace_id:
+                try:
+                    langfuse = LangfuseConfig.get_client()
+                    if langfuse:
+                        trace = self._get_langfuse_trace(conversation.langfuse_trace_id)
+                        if trace:
+                            span = trace.span(
+                                name=f"crew_agent_init_{agent_name}",
+                                input={
+                                    "agent_name": agent_name,
+                                    "agent_role": agent_role,
+                                    "llm_model": llm_model
+                                },
+                                metadata={
+                                    "agent_goal": agent_goal,
+                                    "agent_backstory": agent_backstory,
+                                    "tools": tools,
+                                    "allow_delegation": allow_delegation,
+                                    "task_description": task_description,
+                                    **(metadata or {})
+                                }
+                            )
+                            langfuse_span_id = span.id if hasattr(span, 'id') else None
+                except Exception as e:
+                    print(f"⚠️ Failed to create Langfuse span: {e}")
+
+            # Build content summary
+            tools_list = ", ".join(tools) if tools else "None"
+            delegation_status = "✓ Can delegate" if allow_delegation else "✗ Cannot delegate"
+
+            content = f"""**🤖 Crew Agent Initialized: {agent_name}**
+
+**Role:** {agent_role}
+
+**Goal:** {agent_goal}
+
+**Backstory:** {agent_backstory[:300]}{"..." if len(agent_backstory) > 300 else ""}
+
+**LLM Model:** {llm_model}
+
+**Tools:** {tools_list}
+
+**Delegation:** {delegation_status}
+"""
+
+            if task_description:
+                content += f"\n**Assigned Task:** {task_description[:200]}{'...' if len(task_description) > 200 else ''}"
+
+            # Create agent step record
+            step_data = {
+                "step_type": "crew_agent_initialization",
+                "content": content,
+                "agent_name": agent_name,
+                "agent_role": agent_role,
+                "level": level,
+                "extra_metadata": {
+                    "agent_role": agent_role,
+                    "agent_goal": agent_goal,
+                    "agent_backstory": agent_backstory,
+                    "llm_model": llm_model,
+                    "tools": tools or [],
+                    "tool_count": len(tools) if tools else 0,
+                    "allow_delegation": allow_delegation,
+                    "task_description": task_description,
+                    **(metadata or {})
+                }
+            }
+
+            step = ChatTrace(
+                thread_id=thread_id,
+                record_type=RecordType.AGENT_STEP,
+                campaigner_id=conversation.campaigner_id,
+                customer_id=conversation.customer_id,
+                data=step_data,
+                langfuse_span_id=langfuse_span_id,
+                sequence_number=step_count
+            )
+
+            session.add(step)
+
+            # Update conversation metrics
+            conversation.data["agent_step_count"] += 1
+            conversation.updated_at = datetime.utcnow()
+
+            # Mark data as modified for SQLAlchemy to detect the change
+            flag_modified(conversation, "data")
+
+            session.add(conversation)
+            session.commit()
+            session.refresh(step)
+
+            print(f"✅ Added crew agent initialization: thread_id={thread_id}, agent={agent_name}, id={step.id}")
+
+            return step
+
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Failed to add crew agent initialization: {e}")
+            raise
+        finally:
+            self._close_session(session)
+
     # ===== Tool Usage Recording =====
 
     def add_tool_usage(
@@ -1131,3 +1285,170 @@ class ChatTraceService:
                 print("✅ Flushed Langfuse traces")
         except Exception as e:
             print(f"⚠️ Failed to flush Langfuse: {e}")
+
+
+class CrewCallbacks:
+    """
+    Callback handlers for CrewAI execution.
+
+    This class provides callbacks for CrewAI's execution lifecycle, capturing:
+    - Task starts and completions
+    - Agent steps (thoughts, actions, delegations, tool usage)
+    - All events are traced through ChatTraceService for PostgreSQL + Langfuse recording
+
+    Usage:
+        callbacks = CrewCallbacks(thread_id="thread-123", level=1)
+        crew = Crew(
+            agents=agents,
+            tasks=tasks,
+            task_callback=callbacks.task_callback,
+            step_callback=callbacks.step_callback
+        )
+    """
+
+    def __init__(self, thread_id: str, level: int = 1, session: Optional[Session] = None):
+        """
+        Initialize CrewAI callbacks.
+
+        Args:
+            thread_id: Thread ID for tracing (required)
+            level: Hierarchy level for tracing (default: 1)
+            session: Optional SQLModel session for database operations
+        """
+        self.thread_id = thread_id
+        self.level = level
+        self.current_task_index = -1
+        self.trace_service = ChatTraceService(session=session)
+
+        import logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"✅ [CrewCallbacks] Initialized for thread {thread_id}")
+
+    def task_callback(self, task_output):
+        """
+        Called when a task completes.
+
+        Args:
+            task_output: TaskOutput from CrewAI
+        """
+        try:
+            # Extract task information
+            description = getattr(task_output.description, 'description', str(task_output.description))
+            agent_role = getattr(task_output.agent, 'role', 'Unknown')
+            output = str(task_output.raw) if hasattr(task_output, 'raw') else str(task_output)
+
+            # Trace task completion
+            self.trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type="task_complete",
+                content=f"Task completed by {agent_role}: {output[:500]}...",
+                agent_name=agent_role,
+                agent_role=agent_role,
+                task_index=self.current_task_index,
+                task_description=description,
+                metadata={
+                    "output_length": len(output),
+                    "output_preview": output[:200]
+                },
+                level=self.level
+            )
+
+            self.logger.info(f"✅ [CrewCallbacks] Task {self.current_task_index} completed: {description[:50]}...")
+
+        except Exception as e:
+            self.logger.error(f"❌ [CrewCallbacks] Error in task_callback: {e}")
+            # Record error in trace
+            try:
+                self.trace_service.add_agent_step(
+                    thread_id=self.thread_id,
+                    step_type="error",
+                    content=f"Task callback error: {str(e)}",
+                    metadata={"error_type": type(e).__name__},
+                    level=self.level
+                )
+            except:
+                pass  # Avoid cascading errors
+
+    def step_callback(self, step_output):
+        """
+        Called after each agent step.
+
+        Args:
+            step_output: Step output from CrewAI
+        """
+        try:
+            # Extract step information
+            step_type = "action" if hasattr(step_output, 'action') else "thought"
+            content = str(step_output)
+
+            # Check if this is a delegation
+            is_delegation = "delegate" in content.lower() or "delegating" in content.lower()
+            if is_delegation:
+                step_type = "delegation"
+
+            # Check if this is a tool usage
+            is_tool_usage = hasattr(step_output, 'tool') or "using tool" in content.lower()
+            if is_tool_usage:
+                step_type = "tool_usage"
+
+            # Extract agent info if available
+            agent_name = None
+            agent_role = None
+            if hasattr(step_output, 'agent'):
+                agent_role = getattr(step_output.agent, 'role', None)
+                agent_name = agent_role
+
+            # Trace step
+            self.trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type=step_type,
+                content=content[:1000],  # Limit content size
+                agent_name=agent_name,
+                agent_role=agent_role,
+                task_index=self.current_task_index,
+                metadata={
+                    "content_length": len(content),
+                    "is_delegation": is_delegation,
+                    "is_tool_usage": is_tool_usage
+                },
+                level=self.level
+            )
+
+            self.logger.debug(f"🧠 [CrewCallbacks] Step traced: {step_type}")
+
+        except Exception as e:
+            self.logger.error(f"❌ [CrewCallbacks] Error in step_callback: {e}")
+
+    def start_task(self, task, agent, task_index: int):
+        """
+        Manually called before task starts.
+
+        Args:
+            task: Task object from CrewAI
+            agent: Agent object from CrewAI
+            task_index: Task index
+        """
+        try:
+            self.current_task_index = task_index
+            description = task.description if hasattr(task, 'description') else str(task)
+            agent_role = agent.role if hasattr(agent, 'role') else 'Unknown'
+
+            # Trace task start
+            self.trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type="task_start",
+                content=f"Starting task assigned to {agent_role}: {description[:500]}...",
+                agent_name=agent_role,
+                agent_role=agent_role,
+                task_index=task_index,
+                task_description=description,
+                metadata={
+                    "description_length": len(description)
+                },
+                level=self.level
+            )
+
+            self.logger.info(f"📝 [CrewCallbacks] Task {task_index} started by {agent_role}")
+
+        except Exception as e:
+            self.logger.error(f"❌ [CrewCallbacks] Error in start_task: {e}")

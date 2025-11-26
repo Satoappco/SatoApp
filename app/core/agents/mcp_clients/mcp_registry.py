@@ -279,13 +279,14 @@ class MCPSelector:
         """
         # Map platforms to services
         services = []
-        if "google" in platforms or "both" in platforms:
+        if "google_analytics" in platforms or "google" in platforms or "both" in platforms:
             if google_analytics_credentials:
                 services.append("google_analytics")
+        if "google_ads" in platforms or "google" in platforms or "both" in platforms:
             if google_ads_credentials:
                 services.append("google_ads")
 
-        if "facebook" in platforms or "both" in platforms:
+        if "facebook_ads" in platforms or "facebook" in platforms or "both" in platforms:
             if meta_ads_credentials:
                 services.append("meta_ads")
 
