@@ -56,76 +56,71 @@ class SingleAnalyticsAgent:
     #     return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
     async def _initialize_mcp_clients(self, task_details: Dict[str, Any], thread_id: Optional[str] = None, level: int = 1):
-        """Initialize and connect MultiServerMCPClient using MCP registry.
+        """Initialize and connect MultiServerMCPClient using MCP Client Manager.
 
         Args:
             task_details: Task details containing platforms and credentials
             thread_id: Optional thread ID for logging
             level: Hierarchy level for logging (default: 1)
         """
+        from app.core.agents.mcp_clients.mcp_client_manager import MCPClientManager
+
         platforms = task_details.get("platforms", [])
         ga_credentials = task_details.get("google_analytics_credentials")
         gads_credentials = task_details.get("google_ads_credentials")
         meta_credentials = task_details.get("meta_ads_credentials")
+        campaigner_id = task_details.get("campaigner_id")
 
-        # Build server parameters using MCP registry
-        server_params_list = MCPSelector.build_all_server_params(
-            platforms=platforms,
-            google_analytics_credentials=ga_credentials,
-            google_ads_credentials=gads_credentials,
-            meta_ads_credentials=meta_credentials
-        )
-
-        if not server_params_list:
-            logger.warning("⚠️  [SingleAnalyticsAgent] No MCP servers configured")
+        if not campaigner_id:
+            logger.warning("⚠️  [SingleAnalyticsAgent] No campaigner_id provided, skipping MCP initialization")
             return
 
-        # Convert StdioServerParameters to MultiServerMCPClient format
-        servers = {}
-        for idx, params in enumerate(server_params_list):
-            # Use service name as key (extract from working directory or use index)
-            server_name = f"server_{idx}"
-            if params.cwd:
-                # Extract service name from working directory path
-                # e.g., /path/to/mcps/google_ads_mcp -> google_ads
-                from pathlib import Path
-                cwd_path = Path(params.cwd)
-                server_name = cwd_path.name.replace("-", "_")
-
-            servers[server_name] = {
-                "command": params.command,
-                "args": params.args,
-                "env": params.env or {},
-                "transport": "stdio"  # All MCP servers use stdio transport
+        # 🆕 Use centralized MCP Client Manager
+        # This automatically handles: token refresh → initialization → validation
+        self.mcp_manager = MCPClientManager(
+            campaigner_id=campaigner_id,
+            platforms=platforms,
+            credentials={
+                'google_analytics': ga_credentials,
+                'google_ads': gads_credentials,
+                'facebook': meta_credentials
             }
+        )
 
-        # Create MultiServerMCPClient (initializes on creation, no connect() needed)
-        if servers:
-            try:
-                self.mcp_client = MCPClient(servers)
-                logger.info(f"✅ [SingleAnalyticsAgent] Initialized {len(servers)} MCP servers: {list(servers.keys())}")
+        # Initialize (includes token refresh and validation)
+        success = await self.mcp_manager.initialize()
 
-                # Store MCP details for later logging (will be logged with tools)
-                self._mcp_servers_info = {
-                    "servers": servers,
-                    "platforms": platforms,
-                    "thread_id": thread_id,
-                    "level": level
-                }
+        if success:
+            self.mcp_client = self.mcp_manager.get_clients()
+            self.mcp_validation_results = self.mcp_manager.get_validation_results()
 
-            except Exception as e:
-                logger.error(f"❌ [SingleAnalyticsAgent] Failed to initialize MCP client: {e}")
-                import traceback
-                logger.error(f"   Traceback: {traceback.format_exc()}")
-                self.mcp_client = None
+            logger.info(f"✅ [SingleAnalyticsAgent] MCP clients initialized successfully")
+
+            # Store MCP details for later logging
+            self._mcp_servers_info = {
+                "platforms": platforms,
+                "thread_id": thread_id,
+                "level": level,
+                "validation_results": self.mcp_validation_results
+            }
         else:
-            logger.warning("⚠️  [SingleAnalyticsAgent] No MCP servers configured")
+            logger.error(f"❌ [SingleAnalyticsAgent] Failed to initialize MCP clients")
+            self.mcp_client = None
 
     async def _disconnect_mcp_clients(self):
         """Disconnect MultiServerMCPClient."""
-        if self.mcp_client:
+        if hasattr(self, 'mcp_manager') and self.mcp_manager:
             try:
-                # MultiServerMCPClient doesn't have disconnect(), cleanup happens automatically
+                await self.mcp_manager.cleanup()
+                logger.info("✅ [SingleAnalyticsAgent] MCP client cleanup complete")
+            except Exception as e:
+                logger.error(f"❌ [SingleAnalyticsAgent] Error during MCP cleanup: {e}")
+            finally:
+                self.mcp_client = None
+                self.mcp_manager = None
+        elif self.mcp_client:
+            # Fallback for old initialization method
+            try:
                 logger.info("✅ [SingleAnalyticsAgent] MCP client cleanup complete")
             except Exception as e:
                 logger.error(f"❌ [SingleAnalyticsAgent] Error during MCP cleanup: {e}")
@@ -471,67 +466,56 @@ class SingleAnalyticsAgent:
 
             logger.info(f"🚀 [SingleAnalyticsAgent] Executing with {len(tools)} tools from platforms: {credentials['platforms']}")
 
-            # Log MCP initialization with tools list (combined)
+            # Log MCP initialization with tools list and validation results
             if trace_service and thread_id:
-                # Build MCP servers summary
                 mcp_info = getattr(self, '_mcp_servers_info', None)
+
+                # Build tools list content
+                tools_list = "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
+                content = f"**Loaded {len(tools)} Tools:**\n{tools_list}"
+
+                # Add validation results if available
+                if mcp_info and 'validation_results' in mcp_info:
+                    validation_results = mcp_info['validation_results']
+                    if validation_results:
+                        content += "\n\n**MCP Validation Results:**\n"
+                        for result in validation_results:
+                            status_emoji = "✅" if result.status.value == "success" else "❌"
+                            content += f"{status_emoji} {result.server}: {result.status.value}"
+                            if result.message:
+                                content += f" - {result.message}"
+                            if result.duration_ms:
+                                content += f" ({result.duration_ms}ms)"
+                            content += "\n"
+
+                metadata = {
+                    "num_tools": len(tools),
+                    "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)]
+                }
+
                 if mcp_info:
-                    servers = mcp_info['servers']
-                    server_names = list(servers.keys())
+                    metadata["platforms"] = mcp_info.get('platforms', [])
 
-                    # Build combined content
-                    content = f"**Initialized {len(servers)} MCP Server(s):**\n"
-                    content += f"{', '.join(server_names)}\n\n"
-
-                    # Add tools list
-                    content += f"**Loaded {len(tools)} Tools:**\n"
-                    content += "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
-
-                    # Build detailed metadata with server configurations
-                    mcp_details = {}
-                    for server_name, server_config in servers.items():
-                        server_info = {
-                            "command": server_config['command'],
-                            "args": server_config.get('args', [])
-                        }
-                        # Sanitize environment variables
-                        env_vars = server_config.get('env', {})
-                        if env_vars:
-                            server_info["env"] = {
-                                key: "***REDACTED***" if any(s in key.lower() for s in ['token', 'secret', 'key', 'password']) else value
-                                for key, value in env_vars.items()
+                    # Add validation results to metadata
+                    if 'validation_results' in mcp_info:
+                        metadata["validation_results"] = [
+                            {
+                                "server": r.server,
+                                "status": r.status.value,
+                                "message": r.message,
+                                "duration_ms": r.duration_ms
                             }
-                        mcp_details[server_name] = server_info
+                            for r in mcp_info['validation_results']
+                        ]
 
-                    trace_service.add_agent_step(
-                        thread_id=thread_id,
-                        step_type="mcp_initialization",
-                        content=content,
-                        agent_name="single_analytics_agent",
-                        metadata={
-                            "num_servers": len(servers),
-                            "server_names": server_names,
-                            "num_tools": len(tools),
-                            "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)],
-                            "platforms": mcp_info['platforms'],
-                            "mcp_servers": mcp_details  # Full server config in metadata
-                        },
-                        level=level
-                    )
-                else:
-                    # Fallback if MCP info not available
-                    tools_list = "\n".join([f"  - {getattr(tool, 'name', f'tool_{i}')}" for i, tool in enumerate(tools)])
-                    trace_service.add_agent_step(
-                        thread_id=thread_id,
-                        step_type="tools_loaded",
-                        content=f"Loaded {len(tools)} MCP tools:\n\n{tools_list}",
-                        agent_name="single_analytics_agent",
-                        metadata={
-                            "num_tools": len(tools),
-                            "tool_names": [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)]
-                        },
-                        level=level
-                    )
+                trace_service.add_agent_step(
+                    thread_id=thread_id,
+                    step_type="mcp_initialization",
+                    content=content,
+                    agent_name="single_analytics_agent",
+                    metadata=metadata,
+                    level=level
+                )
 
             # Build context for the agent
             context_str = self._build_context_string(task_details)

@@ -69,27 +69,29 @@ class DigitalAsset(BaseModel, table=True):
 class Connection(BaseModel, table=True):
     """OAuth connections and API credentials for digital assets"""
     __tablename__ = "connections"
-    
+
     # Relationships
     digital_asset_id: int = Field(foreign_key="digital_assets.id")
     customer_id: int = Field(foreign_key="customers.id")  # Direct customer relationship for better queries
     campaigner_id: int = Field(foreign_key="campaigners.id")  # Who created the connection
-    
+
     # Authentication details
     auth_type: AuthType = Field(default=AuthType.OAUTH2)
     account_email: Optional[str] = Field(default=None, max_length=255)  # OAuth account email
     scopes: List[str] = Field(default_factory=list, sa_column=Column(JSON))  # OAuth scopes
-    
+
     # Encrypted tokens
     access_token_enc: Optional[bytes] = Field(default=None)  # Encrypted access token
     refresh_token_enc: Optional[bytes] = Field(default=None)  # Encrypted refresh token
     token_hash: Optional[str] = Field(default=None, max_length=64)  # Hash for validation
-    
+
     # Token management
     expires_at: Optional[datetime] = Field(default=None)
     revoked: bool = Field(default=False)
     rotated_at: Optional[datetime] = Field(default=None)
     last_used_at: Optional[datetime] = Field(default=None)
+    needs_reauth: bool = Field(default=False, description="Set to True when token refresh fails and user needs to re-authenticate")
+    last_validated_at: Optional[datetime] = Field(default=None, description="Last time MCP tools were successfully validated")
 
 
 class KpiCatalog(BaseModel, table=True):
