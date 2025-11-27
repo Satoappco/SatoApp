@@ -31,6 +31,7 @@ from . import campaign_sync
 from . import logs
 from . import customer_assignments
 from . import metrics
+from . import tasks
 
 __all__ = [
     "agents", "health", "webhooks", "websocket", "auth", "google_analytics",
@@ -40,5 +41,5 @@ __all__ = [
     "agencies", "property_selections", "digital_assets", "campaigners",
     "customers", "crewai", "database_management", "customer_data",
     "countries_currencies", "oauth_state", "campaign_sync", "logs",
-    "customer_assignments", "metrics"
+    "customer_assignments", "metrics", "tasks"
 ]

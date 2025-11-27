@@ -14,6 +14,7 @@ from .analytics import (
 )
 from .customer_data import RTMTable, QuestionsTable
 from .chat_feedback import ChatFeedback, FeedbackType
+from .tasks import Task, TaskPriority, TaskStatus
 
 __all__ = [
     # Base
@@ -34,5 +35,8 @@ __all__ = [
     "RTMTable", "QuestionsTable",
 
     # Chat feedback
-    "ChatFeedback", "FeedbackType"
+    "ChatFeedback", "FeedbackType",
+
+    # Tasks
+    "Task", "TaskPriority", "TaskStatus"
 ]
