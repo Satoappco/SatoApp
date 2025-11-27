@@ -16,6 +16,8 @@ from ..mcp_clients.mcp_registry import MCPSelector, MCPServer
 from langchain_mcp_adapters.client import MultiServerMCPClient as MCPClient
 from ..mcp_clients.facebook_client import FacebookMCPClient
 from ..mcp_clients.google_client import GoogleMCPClient
+from app.utils.llm_retry import LLMResponseError, validate_llm_response
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -543,9 +545,58 @@ class AnalyticsCrew:
                         logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace crew execution progress: {e}")
 
                 # Execute crew - all tracing handled by ChatTraceService via callbacks
-                result = crew.kickoff()
+                try:
+                    result = crew.kickoff()
 
-                logger.info("✅ Crew execution completed successfully")
+                    # Validate crew result
+                    if result is None:
+                        error_msg = "Crew returned None result"
+                        logger.error(f"❌ [AnalyticsCrew] {error_msg}")
+                        raise LLMResponseError(error_msg)
+
+                    # Check if result has content (CrewOutput has .raw attribute)
+                    if hasattr(result, 'raw'):
+                        if not result.raw or not str(result.raw).strip():
+                            error_msg = "Crew returned empty result"
+                            logger.error(f"❌ [AnalyticsCrew] {error_msg}")
+                            raise LLMResponseError(error_msg)
+                        logger.debug(f"✅ [AnalyticsCrew] Result validated: {len(str(result.raw))} chars")
+
+                    logger.info("✅ Crew execution completed successfully")
+
+                except LLMResponseError as e:
+                    # LLM response error - log and re-raise for retry
+                    logger.error(f"❌ [AnalyticsCrew] LLM response error: {e}")
+                    raise
+                except Exception as e:
+                    # Other errors during crew execution
+                    logger.error(f"❌ [AnalyticsCrew] Crew execution failed: {e}", exc_info=True)
+
+                    # Trace error if available
+                    if trace_service and thread_id:
+                        try:
+                            trace_service.add_agent_step(
+                                thread_id=thread_id,
+                                step_type="crew_error",
+                                content=f"Crew execution failed: {str(e)}",
+                                agent_name="analytics_crew",
+                                metadata={
+                                    "error": str(e),
+                                    "error_type": type(e).__name__,
+                                    "platforms": platforms
+                                },
+                                level=level
+                            )
+                        except Exception as trace_error:
+                            logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace crew error: {trace_error}")
+
+                    # Return error result
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "platforms": platforms,
+                        "task_details": task_details
+                    }
 
                 # Trace: Processing results
                 if trace_service and thread_id:
