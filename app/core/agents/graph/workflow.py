@@ -327,7 +327,14 @@ class ConversationWorkflow:
             logger.error(f"❌ [Stream] No assistant message to stream! Result keys: {list(result.keys())}")
             logger.error(f"❌ [Stream] Messages: {[(m.type if hasattr(m, 'type') else type(m), len(m.content) if hasattr(m, 'content') else 0) for m in messages]}")
 
+        # Limit response length to prevent massive responses
+        MAX_RESPONSE_LENGTH = 50000  # 50KB max
+        if len(assistant_message) > MAX_RESPONSE_LENGTH:
+            logger.warning(f"⚠️  [Stream] Response too large ({len(assistant_message)} chars), truncating to {MAX_RESPONSE_LENGTH}")
+            assistant_message = assistant_message[:MAX_RESPONSE_LENGTH] + "\n\n[Response truncated due to length]"
+
         logger.info(f"📤 [Stream] Streaming {len(assistant_message.split()) if assistant_message else 0} words ({len(assistant_message)} chars)")
+
         #TODO: Why is that needed?
         yield {
             "type": "metadata",
@@ -339,9 +346,15 @@ class ConversationWorkflow:
             "date_range_start": self.conversation_state.get("date_range_start"),
             "date_range_end": self.conversation_state.get("date_range_end"),
         }
-        # Yield content character by character for streaming
-        for char in assistant_message:
-            yield {"type": "content", "chunk": char}
+
+        # Yield content word-by-word for better streaming performance
+        # This is faster than character-by-character while still providing smooth display
+        # Words are natural boundaries that won't break frontend display logic
+        words = assistant_message.split(' ')
+        for i, word in enumerate(words):
+            # Add space after word (except for last word)
+            chunk = word + (' ' if i < len(words) - 1 else '')
+            yield {"type": "content", "chunk": chunk}
 
 
         # logger.info(f"📡 [Workflow] Streaming message: '{message[:50]}...'")

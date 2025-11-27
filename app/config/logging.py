@@ -40,6 +40,17 @@ def setup_logging() -> None:
         "app.api.v1.routes": log_level,
         "uvicorn": logging.WARNING,
         "fastapi": logging.WARNING,
+        # Reduce verbosity of noisy libraries
+        "httpcore": logging.WARNING,
+        "httpx": logging.WARNING,
+        "openai": logging.WARNING,
+        "google_genai": logging.WARNING,
+        "google": logging.WARNING,
+        "crewai.telemetry": logging.ERROR,
+        "urllib3": logging.WARNING,
+        "langchain": logging.WARNING,
+        "langchain_core": logging.WARNING,
+        "langchain_google_genai": logging.WARNING,
     }
 
     for logger_name, level in loggers_config.items():

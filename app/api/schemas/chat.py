@@ -1,7 +1,7 @@
 """API request/response models."""
 
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 
 
@@ -18,7 +18,20 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message", min_length=1)
     thread_id: Optional[str] = Field(None, description="Conversation thread ID")
     customer_id: Optional[int] = Field(None, description="Customer ID associated with the conversation")
-    
+
+    @field_validator('customer_id', mode='before')
+    @classmethod
+    def coerce_customer_id(cls, v):
+        """Convert string customer_id to int if needed."""
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            try:
+                return int(v)
+            except ValueError:
+                raise ValueError(f"customer_id must be an integer, got: {v}")
+        return v
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -37,6 +50,19 @@ class ChatResponse(BaseModel):
     intent: Optional[Dict[str, Any]] = Field(None, description="Extracted user intent")
     user_message_id: Optional[int] = Field(None, description="ID of the user message in chat_traces")
     assistant_message_id: Optional[int] = Field(None, description="ID of the assistant message in chat_traces")
+
+    @field_validator('user_message_id', 'assistant_message_id', mode='before')
+    @classmethod
+    def coerce_message_ids(cls, v):
+        """Convert string message IDs to int if needed."""
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            try:
+                return int(v)
+            except ValueError:
+                raise ValueError(f"message_id must be an integer, got: {v}")
+        return v
 
     class Config:
         json_schema_extra = {

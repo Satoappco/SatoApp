@@ -316,7 +316,7 @@ class MCPSelector:
                 logger.error(f"❌ Failed to configure {server.value}: {e}")
                 continue
 
-        logger.info(f"✅ Configured {len(server_params_list)} MCP server(s)")
+        logger.info(f"✅ Configured {len(server_params_list)}/{len(selected_servers)} MCP server(s). platforms: {platforms}")
         return server_params_list
 
 

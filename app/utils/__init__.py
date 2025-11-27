@@ -38,6 +38,17 @@ from .auth_utils import (
     create_campaigner_response
 )
 
+# LLM utilities
+from .llm_retry import (
+    LLMResponseError,
+    validate_llm_response,
+    call_llm_with_validation,
+    call_llm_with_validation_async,
+    wrap_llm_call,
+    SafeLLMWrapper,
+    llm_retry
+)
+
 # Existing utilities
 from .async_utils import run_async_in_thread
 from .date_utils import *
@@ -69,7 +80,16 @@ __all__ = [
     "compute_expires_at",
     "create_token_pair",
     "create_campaigner_response",
-    
+
+    # LLM utilities
+    "LLMResponseError",
+    "validate_llm_response",
+    "call_llm_with_validation",
+    "call_llm_with_validation_async",
+    "wrap_llm_call",
+    "SafeLLMWrapper",
+    "llm_retry",
+
     # Existing utilities
     "run_async_in_thread",
 ]

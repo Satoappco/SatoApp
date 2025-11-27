@@ -67,9 +67,10 @@ class AnalyticsCrewPlaceholder:
             "context": task.get("context"),  # Pass through the context (agency, campaigner, language)
             "campaigner_id": campaigner_id,  # Pass through campaigner_id
             "customer_id": customer_id,  # Pass customer_id
+            "thread_id" : task.get("thread_id"),
             "platforms": platforms,  # Use auto-fetched platforms
             "metrics": task.get("metrics", ["impressions", "clicks", "conversions", "spend"]),
-            "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
+            # "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
             "specific_campaigns": task.get("specific_campaigns", None),
             # Pass credentials for MCP configuration
             "google_analytics_credentials": credentials["google_analytics"],

@@ -17,7 +17,12 @@ from langchain_mcp_adapters.client import MultiServerMCPClient as MCPClient
 from ..mcp_clients.facebook_client import FacebookMCPClient
 from ..mcp_clients.google_client import GoogleMCPClient
 from app.utils.llm_retry import LLMResponseError, validate_llm_response
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -37,7 +42,7 @@ class AnalyticsCrew:
         self.llm = LLM(
             model="gemini/gemini-2.5-flash",
             api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
-            temperature=0.1
+            temperature=0.1,
         )
 
         # Initialize agent factory
@@ -58,7 +63,11 @@ class AnalyticsCrew:
     def _fetch_user_tokens(self, campaigner_id: int):
         """Fetch OAuth tokens for the user from database."""
         from app.config.database import get_session
-        from app.models.connections import FacebookConnection, GoogleAdsConnection, GoogleAnalyticsConnection
+        from app.models.connections import (
+            FacebookConnection,
+            GoogleAdsConnection,
+            GoogleAnalyticsConnection,
+        )
         from sqlmodel import select
 
         try:
@@ -99,7 +108,7 @@ class AnalyticsCrew:
         google_analytics_credentials: Optional[Dict[str, str]] = None,
         google_ads_credentials: Optional[Dict[str, str]] = None,
         meta_ads_credentials: Optional[Dict[str, str]] = None,
-        custom_mcp_selection: Optional[Dict[str, MCPServer]] = None
+        custom_mcp_selection: Optional[Dict[str, MCPServer]] = None,
     ):
         """Initialize MCP clients for required platforms.
 
@@ -123,111 +132,6 @@ class AnalyticsCrew:
         if not self.mcp_param_list:
             logger.warning("⚠️  No MCP servers configured")
 
-        # Legacy MCP clients (kept for backwards compatibility if needed)
-        # if "facebook" in platforms or "both" in platforms:
-        #     if not self.facebook_client:
-        #         # Pass Facebook token if available
-        #         facebook_token = self.user_tokens.get("facebook")
-        #         self.facebook_client = FacebookMCPClient(access_token=facebook_token)
-
-        # if "google" in platforms or "both" in platforms:
-        #     if not self.google_client:
-        #         # Pass Google tokens if available
-        #         google_ads_token = self.user_tokens.get("google_ads")
-        #         google_analytics_token = self.user_tokens.get("google_analytics")
-        #         self.google_client = GoogleMCPClient(
-        #             google_ads_token=google_ads_token,
-        #             google_analytics_token=google_analytics_token
-        #         )
-
-        # Convert StdioServerParameters to MultiServerMCPClient format
-        # servers = {}
-        # for idx, params in enumerate(self.mcp_param_list):
-        #     # Use service name as key (extract from working directory or use index)
-        #     server_name = f"server_{idx}"
-        #     if params.cwd:
-        #         # Extract service name from working directory path
-        #         # e.g., /path/to/mcps/google_ads_mcp -> google_ads
-        #         from pathlib import Path
-        #         cwd_path = Path(params.cwd)
-        #         server_name = cwd_path.name.replace("-", "_")
-
-        #     servers[server_name] = {
-        #         "command": params.command,
-        #         "args": params.args,
-        #         "env": params.env or {},
-        #         "transport": "stdio"  # All MCP servers use stdio transport
-        #     }
-
-        # # Create MultiServerMCPClient (initializes on creation, no connect() needed)
-        # if servers:
-        #     try:
-        #         self.mcp_client = MCPClient(servers)
-        #         logger.info(f"✅ [AnalyticsCrew] Initialized {len(servers)} MCP servers: {list(servers.keys())}")
-
-        #         # Store MCP details for later logging (will be logged with tools)
-        #         self._mcp_servers_info = {
-        #             "servers": servers,
-        #             "platforms": platforms
-        #         }
-
-        #     except Exception as e:
-        #         logger.error(f"❌ [AnalyticsCrew] Failed to initialize MCP client: {e}")
-        #         import traceback
-        #         logger.error(f"   Traceback: {traceback.format_exc()}")
-        #         self.mcp_client = None
-        # else:
-        #     logger.warning("⚠️  [AnalyticsCrew] No MCP servers configured")
-
-
-    # # TODO: use?
-    # async def refresh_user_data_connections(self, campaigner_id: int, data_sources: List[str]):
-    #     # REFRESH GA4 TOKENS BEFORE GETTING CONNECTIONS
-    #     from app.services.google_analytics_service import GoogleAnalyticsService
-    #     from app.api.v1.routes.webhooks import refresh_user_ga4_tokens, refresh_user_facebook_tokens
-    #     ga_service = GoogleAnalyticsService()
-    #     user_connections = []
-    #     if "ga4" in data_sources:
-    #         try:
-    #             # STEP 1: Automatically refresh expired tokens before using them
-    #             # logger.info(f"🔄 Checking and refreshing GA4 tokens for user {campaigner_id}...")
-    #             await refresh_user_ga4_tokens(ga_service, campaigner_id)
-                
-    #             # STEP 2: Get user connections (should work now with fresh tokens)
-    #             if hasattr(ga_service, 'get_user_connections'):
-    #                 user_connections = await ga_service.get_user_connections(campaigner_id)
-    #                 # logger.info(f"✅ Found {len(user_connections)} GA4 connections for user")
-    #             else:
-    #                 pass
-    #                 # logger.info("get_user_connections method not implemented yet - continuing without user connections")
-    #         except Exception as e:
-    #             pass
-    #             # logger.warning(f"Could not get user connections: {e}")
-        
-    #     # Also refresh Google Ads tokens if Google Ads is in data sources
-    #     if "google_ads" in data_sources:
-    #         try:
-    #             from app.services.google_ads_service import GoogleAdsService
-    #             google_ads_service = GoogleAdsService()
-    #             # logger.info(f"🔄 Checking Google Ads connections for user {campaigner_id}...")
-    #             # Google Ads tokens are refreshed automatically when needed
-    #             # logger.info(f"✅ Google Ads service ready for user {campaigner_id}")
-    #         except Exception as e:
-    #             pass
-    #             # logger.warning(f"Could not initialize Google Ads service: {e}")
-        
-    #     # Also refresh Facebook tokens if Facebook is in data sources
-    #     if "facebook" in data_sources:
-    #         try:
-    #             from app.services.facebook_service import FacebookService
-    #             facebook_service = FacebookService()
-    #             # logger.info(f"🔄 Checking and refreshing Facebook tokens for user {campaigner_id}...")
-    #             await refresh_user_facebook_tokens(facebook_service, campaigner_id)
-    #             # logger.info(f"✅ Facebook service ready for user {campaigner_id}")
-    #         except Exception as e:
-    #             pass
-    #             # logger.warning(f"Could not initialize Facebook service: {e}")
-        
 
     def _get_facebook_tools(self) -> List:
         """Get Facebook MCP tools."""
@@ -240,6 +144,31 @@ class AnalyticsCrew:
         if not self.google_client:
             return []
         return self.google_client.get_tools()
+
+    def _identify_mcp_service_type(self, server_param) -> str:
+        """Identify the service type of an MCP server parameter."""
+        # Check environment variables for service indicators
+        env_vars = server_param.env or {}
+        for env_key, env_value in env_vars.items():
+            env_key_lower = env_key.lower()
+            if "meta" in env_key_lower or "facebook" in env_key_lower:
+                return "meta_ads"
+            elif "google_analytics" in env_key_lower or "ga4" in env_key_lower:
+                return "google_analytics"
+            elif "google_ads" in env_key_lower:
+                return "google_ads"
+
+        # Check command/args for service indicators
+        command_str = " ".join(server_param.args or []).lower()
+        if "meta" in command_str or "facebook" in command_str:
+            return "meta_ads"
+        elif "analytics" in command_str or "ga4" in command_str:
+            return "google_analytics"
+        elif "google_ads" in command_str or "ads" in command_str:
+            return "google_ads"
+
+        # Default fallback
+        return "unknown"
 
     def execute(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the analytics crew with the given task details.
@@ -254,7 +183,164 @@ class AnalyticsCrew:
         except Exception as e:
             logger.error(f"❌ Analytics crew execution error: {e}")
             raise
+    
+    ### ==================================================================
+    def _create_context_str_from_task_details(self, task_details, credentials):
+        # Build context information
+        query = task_details.get("query", "")
+        context = task_details.get("context", {})
+        # metrics = ", ".join(task_details.get("metrics", []))
+        # date_range = task_details.get("date_range", {})
+        platforms = task_details.get("platforms", [])
 
+        # Get all credentials
+        fb_credentials = task_details.get("meta_ads_credentials", {}) or {}
+        ga_credentials = task_details.get("google_analytics_credentials", {}) or {}
+        gads_credentials = task_details.get("google_ads_credentials", {}) or {}
+
+        ad_account_id = fb_credentials.get("ad_account_id", "NOT_PROVIDED")
+        property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
+        customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
+        account_id = gads_credentials.get("account_id", "NOT_PROVIDED")
+
+        context_info = f"User Question: {query}\n"
+        if context:
+            agency = context.get("agency", {})
+            campaigner = context.get("campaigner", {})
+            language = context.get("language", "english")
+
+            if agency:
+                context_info += f"\n\nAgency Context:\n- Name: {agency.get('name')}"
+            if campaigner:
+                context_info += f"\n\nCampaigner Context:\n- Name: {campaigner.get('full_name')}\n- Email: {campaigner.get('email')}"
+            context_info += f"\n\nResponse User Language: {language}"
+
+        # Add account information for all platforms
+        if ad_account_id and ad_account_id != "NOT_PROVIDED":
+            context_info += (
+                f"\n\nFacebook Ads Account:\n- Ad Account ID: {ad_account_id}"
+            )
+
+        if property_id and property_id != "NOT_PROVIDED":
+            context_info += (
+                f"\n\nGoogle Analytics Property:\n- Property ID: {property_id}"
+            )
+
+        if account_id and account_id != "NOT_PROVIDED":
+            context_info += f"\n\nGoogle Ads Account:\n- Account ID: {account_id}"
+        if customer_id and customer_id != "NOT_PROVIDED":
+            context_info += f"\n- Customer ID: {customer_id}"
+
+        platforms_str = (
+            ", ".join(platforms) if platforms else "all available platforms"
+        )
+        context_info += f"\n\nPlatforms to analyze: {platforms_str}"
+        logger.info(f"📡 [AnalyticsCrew] Context: {context_info}")
+        return context_info
+
+    ### ==================================================================
+    def _get_crew(self, task_details, credentials, platforms) -> Crew:
+        """Get the crew for the task."""
+        # Get the context information (IDs, user information, user request etc...)
+        context_str = self._create_context_str_from_task_details(task_details, credentials)
+
+        from crewai import Agent, Crew, Task, Process
+        specialist_agents = []
+        # Manager agent coordinates the team
+        manager = Agent(
+            role="Project Manager",
+            goal="Coordinate team efforts and ensure project success. Receive a question from the user and intelligently transform user question and intents into specialist-specific, precise, actionable prompts that leverage each worker's expertise and tools effectively.",
+            backstory="You are a master orchestrator with deep knowledge of your specialist team capabilities. You route questions between the Google Specialist and Facebook Marketing Specialist. You ensure each specialist receives clear instructions with all necessary parameters to execute their analysis effectively, critically evaluate their results, and iterate until acceptance criteria are met. Deliver one final, decision-ready answer plus structured data.",
+            allow_delegation=True,
+            verbose=True
+        )
+        logger.info(f"✅ Manager agent created")
+
+        # Specialist agents
+        if "facebook_ads" in platforms:
+            facebook_specialist = Agent(
+                role="Facebook Marketing Specialist",
+                goal="Analyze Facebook Ads Manager and Meta Business Suite data. Extract performance metrics, audience insights, ad spend, conversions, and ROI calculations.",
+                backstory="You are a Facebook Marketing expert with extensive experience using Meta's APIs. You handle campaign performance analysis, audience targeting, creative optimization, and ROI evaluation across Facebook and Instagram.",
+                allow_delegation=False,  # Specialists focus on their expertise
+                verbose=True,
+                tools=self.facebook_tools
+            )
+            specialist_agents.append(facebook_specialist)
+            logger.info(f"✅ Facebook Specialist created with {len(self.facebook_tools)} tools")
+
+        if "google_analytics" in platforms or "google_ads" in platforms:
+            google_specialist = Agent(
+                role="Google Specialist", 
+                goal="Extract, analyze, and provide deep insights from Google Analytics and Google Ads data. Generate comprehensive reports on traffic, conversions, user behavior, and performance metrics.",
+                backstory="You are a Google Analytics and Google Ads expert with 8+ years of experience. You understand GA4 and Google Ads APIs, conversion tracking, attribution modeling, and user behavior analysis. You can access GA4 and Google Ads data programmatically and turn metrics into actionable business insights.",
+                allow_delegation=False,
+                verbose=True,
+                tools=self.google_tools
+            )
+            specialist_agents.append(google_specialist)
+            logger.info(f"✅ Google Specialist created with {len(self.google_tools)} tools")
+
+        # Manager-led task
+        project_task = Task(
+            description=f"""{context_str}
+
+Perform a comprehensive unified analysis across the platforms for the following:
+
+IMPORTANT: Use the appropriate account/credential IDs provided above when querying each platform's data through MCP tools.
+
+Your comprehensive tasks across all platforms:
+1. Understand the user's question and what specific insights they need
+2. For Facebook Ads: Use Ad Account ID to fetch campaign data, calculate KPIs, identify trends, and analyze audience engagement
+3. For Google Analytics: Use Property ID to analyze user behavior, traffic patterns, conversion funnels, and demographics
+4. For Google Ads: Use Customer/Account ID to analyze campaign performance, ad spend efficiency, and conversion tracking
+5. Calculate unified key performance indicators across all platforms
+6. Identify cross-platform patterns and correlations
+7. Compare performance across different marketing channels
+8. Analyze user journey from awareness (ads) to conversion (analytics)
+9. Identify top-performing and under-performing campaigns/channels
+10. Highlight anomalies and significant changes across platforms
+11. Provide actionable insights that span multiple platforms
+12. Answer the user's specific question with data from all relevant sources
+
+Deliver a comprehensive unified analysis with:
+- Direct answer to the user's question (first and foremost)
+- Executive summary covering all platforms (2-3 paragraphs)
+- Cross-platform performance comparison
+- Unified metrics dashboard
+- User journey analysis (ads → analytics)
+- Channel attribution insights
+- Actionable recommendations (at least 5, prioritized by impact)
+- Specific optimization strategies for each platform
+- Overall marketing health assessment
+- Next steps and prioritized action items
+IMPORTANT: Make sure your response is in the user's language.
+""",
+            # "Create a comprehensive market analysis report with recommendations",
+            expected_output="""A comprehensive unified analytics report including:
+- Executive summary covering all platforms
+- Cross-platform performance metrics and comparisons
+- User journey analysis from ads to conversions
+- Channel attribution and ROI analysis
+- 5+ prioritized actionable insights and recommendations
+- Platform-specific optimization strategies
+- Marketing performance scorecard
+- Detailed action plan with timelines
+""",   # "Executive summary, detailed analysis, and strategic recommendations",
+            agent=google_specialist  # Manager will delegate to specialists
+        )
+        
+        # Hierarchical crew
+        crew = Crew(
+            agents=[*specialist_agents],#, manager],
+            tasks=[project_task],
+            process=Process.hierarchical,  # Manager coordinates everything
+            manager_llm=self.llm,  # Specify LLM for manager
+            verbose=True
+        )
+        return crew
+        ### ==================================================================
+    
     def _execute_internal(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
         """Internal execution logic with tracing context."""
 
@@ -262,20 +348,31 @@ class AnalyticsCrew:
         self.campaigner_id = task_details.get("campaigner_id")
         customer_id = task_details.get("customer_id")
 
-        platforms = task_details.get("platforms", [])
+        platforms = task_details.get("platforms", None)
         if platforms is None:
             from app.core.agents.customer_credentials import CustomerCredentialManager
+
             self.credential_manager = CustomerCredentialManager()
-            credentials = self.credential_manager.fetch_all_credentials(customer_id, self.campaigner_id)
+            credentials = self.credential_manager.fetch_all_credentials(
+                customer_id, self.campaigner_id
+            )
             platforms = credentials.get("platforms", [])
-            google_analytics_credentials = credentials.get("google_analytics_credentials")
-            google_ads_credentials = credentials.get("google_ads_credentials")
-            meta_ads_credentials = credentials.get("meta_ads_credentials")
+            google_analytics_credentials = credentials.get(
+                "google_analytics"
+            )
+            google_ads_credentials = credentials.get("google_ads")
+            meta_ads_credentials = credentials.get("meta_ads")
+            task_details["platforms"] = platforms
+            task_details["meta_ads_credentials"] = meta_ads_credentials
+            task_details["google_analytics_credentials"] = google_analytics_credentials
+            task_details["google_ads_credentials"] = google_ads_credentials
         else:
-            google_analytics_credentials = task_details.get("google_analytics_credentials")
+            google_analytics_credentials = task_details.get(
+                "google_analytics_credentials"
+            )
             google_ads_credentials = task_details.get("google_ads_credentials")
             meta_ads_credentials = task_details.get("meta_ads_credentials")
-
+        logger.info(f"📡 [AnalyticsCrew] Platforms: {platforms}")
 
         # Get thread_id for ChatTraceService tracing
         thread_id = task_details.get("thread_id")
@@ -285,27 +382,17 @@ class AnalyticsCrew:
         trace_service = None
         if thread_id:
             from app.services.chat_trace_service import ChatTraceService
+
             trace_service = ChatTraceService()
-            logger.info(f"🔍 [AnalyticsCrew] ChatTraceService enabled for thread {thread_id}")
+            logger.info(
+                f"🔍 [AnalyticsCrew] ChatTraceService enabled for thread {thread_id}"
+            )
+        else:
+            logger.warning(f"⚠️  [AnalyticsCrew] No thread_id provided, tracing disabled")
 
         # Generate session ID for tracking
         session_id = str(uuid.uuid4())
         logger.info(f"🎬 [AnalyticsCrew] Session started: {session_id}")
-
-        # # Log credential info
-        # cred_count = 0
-        # if google_analytics_credentials:
-        #     logger.info(f"🔑 [AnalyticsCrew] Received Google Analytics credentials")
-        #     logger.debug(f"   Property ID: {google_analytics_credentials.get('property_id')}")
-        #     cred_count += 1
-        # if google_ads_credentials:
-        #     logger.info(f"🔑 [AnalyticsCrew] Received Google Ads credentials")
-        #     cred_count += 1
-        # if meta_ads_credentials:
-        #     logger.info(f"🔑 [AnalyticsCrew] Received Meta Ads credentials")
-        #     cred_count += 1
-        # if cred_count == 0:
-        #     logger.warning(f"⚠️  [AnalyticsCrew] No credentials provided")
 
         # Trace: Initializing MCP clients
         if trace_service and thread_id:
@@ -317,12 +404,14 @@ class AnalyticsCrew:
                     agent_name="analytics_crew",
                     metadata={
                         "platforms": platforms,
-                        "progress_stage": "mcp_initialization"
+                        "progress_stage": "mcp_initialization",
                     },
-                    level=level
+                    level=level,
                 )
             except Exception as e:
-                logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace MCP initialization: {e}")
+                logger.warning(
+                    f"⚠️  [AnalyticsCrew] Failed to trace MCP initialization: {e}"
+                )
 
         # Initialize MCP clients with customer credentials
         # The instrumentation will automatically trace this
@@ -335,45 +424,78 @@ class AnalyticsCrew:
 
         # Check if MCP servers are configured
         use_mcp_adapter = bool(self.mcp_param_list)
+        facebook_tools = []
+        google_tools = []
 
         if use_mcp_adapter:
             logger.info(f"🔧 Initializing {len(self.mcp_param_list)} MCP server(s)")
 
-            # Use CrewAI's official multi-server approach: pass list of server params
-            # MCPServerAdapter accepts either a single dict or a list of dicts
-            context_manager = MCPServerAdapter(self.mcp_param_list)
+            # Split MCP servers by service type
+            facebook_server_params = []
+            google_analytics_server_params = []
+            google_ads_server_params = []
+
+            for param in self.mcp_param_list:
+                # Determine service type from the server configuration
+                # We can check the command args or env vars to identify the service
+                service_type = self._identify_mcp_service_type(param)
+                if service_type == "meta_ads":
+                    facebook_server_params.append(param)
+                elif service_type == "google_analytics":
+                    google_analytics_server_params.append(param)
+                elif service_type == "google_ads":
+                    google_ads_server_params.append(param)
+
+            # Create separate MCP adapters for each service type
+            facebook_mcp_tools = []
+            if facebook_server_params:
+                fb_mcp_server = MCPServerAdapter(facebook_server_params)
+                fb_tools = fb_mcp_server.tools
+                facebook_mcp_tools = list(fb_tools) if fb_tools else []
+
+            google_mcp_tools = []
+            google_server_params = google_analytics_server_params + google_ads_server_params
+            if google_server_params:
+                ggl_mcp_server = MCPServerAdapter(google_server_params)
+                g_tools = ggl_mcp_server.tools
+                google_mcp_tools = list(g_tools) if g_tools else []
+
+            # Add MCP tools to respective specialists
+            facebook_tools.extend(facebook_mcp_tools)
+            google_tools.extend(google_mcp_tools)
+
         else:
-            # Fallback: Use custom MCP clients or no tools
+            # Fallback: Use custom MCP clients
             logger.warning("⚠️  No MCP servers configured, using custom MCP clients")
-            from contextlib import nullcontext
-            context_manager = nullcontext(enter_result=[])
+            # if "facebook_ads" in platforms or "facebook" in platforms or "both" in platforms:
+            #     facebook_tools.extend(self._get_facebook_tools())
+            # if "google_analytics" in platforms or "google_ads" in platforms or "google" in platforms or "both" in platforms:
+            #     google_tools.extend(self._get_google_tools())
 
-        with context_manager as aggregated_tools:
-            # Add calculator tool to aggregated tools
-            from app.core.agents.tools.calculator_tool import CalculatorTool
-            calculator = CalculatorTool()
+        # Store tools for use in specialist creation
+        self.facebook_tools = facebook_tools
+        self.google_tools = google_tools
 
-            # Ensure aggregated_tools is a list
-            if aggregated_tools is None:
-                aggregated_tools = []
-            elif not isinstance(aggregated_tools, list):
-                aggregated_tools = list(aggregated_tools)
+        # Initialize calculator tool
+        from app.core.agents.tools.calculator_tool import CalculatorTool
+        calculator = CalculatorTool()
+        if len(facebook_tools) > 0:
+            facebook_tools.append(calculator)
+        if len(google_tools) > 0:
+            google_tools.append(calculator)
 
-            # Add calculator to the tools list
-            aggregated_tools.append(calculator)
+        # Log loaded tools
+        logger.info(f"✅ Tools prepared: {len(self.facebook_tools)} Facebook + {len(self.google_tools)} Google (including calculator)")
+        logger.info(f"🔧 Facebook tools: {[tool.name for tool in self.facebook_tools]}")
+        logger.info(f"🔧 Google tools: {[tool.name for tool in self.google_tools]}")
 
-            # Log loaded tools
-            if aggregated_tools:
-                logger.info(f"✅ Total tools loaded: {len(aggregated_tools)} (including calculator)")
-                logger.debug(f"🔧 Available tools: {[tool.name for tool in aggregated_tools]}")
-            else:
-                logger.warning("⚠️  No tools available")
+        # Get LLM model name for tracing
+        llm_model_name = (
+            self.llm.model if hasattr(self.llm, "model") else str(self.llm)
+        )
 
-            # Get LLM model name for tracing
-            llm_model_name = self.llm.model if hasattr(self.llm, 'model') else str(self.llm)
-
-            # Trace: Creating agents
-            if trace_service and thread_id:
+        # Trace: Creating agents
+        if trace_service and thread_id:
                 try:
                     trace_service.add_agent_step(
                         thread_id=thread_id,
@@ -383,169 +505,201 @@ class AnalyticsCrew:
                         metadata={
                             "progress_stage": "agent_creation",
                             "platforms": platforms,
-                            "llm_model": llm_model_name
+                            "llm_model": llm_model_name,
                         },
-                        level=level
+                        level=level,
                     )
                 except Exception as e:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace agent creation progress: {e}")
-
-            # Create agents
-            master_agent = self.agents_factory.create_master_agent()
-
-            # Trace master agent initialization
-            if trace_service and thread_id:
-                try:
-                    trace_service.add_crew_agent_initialization(
-                        thread_id=thread_id,
-                        agent_name="master_agent",
-                        agent_role=master_agent.role,
-                        agent_goal=master_agent.goal,
-                        agent_backstory=master_agent.backstory,
-                        llm_model=llm_model_name,
-                        tools=[],  # Master agent doesn't have direct tools in hierarchical mode
-                        allow_delegation=True,
-                        metadata={
-                            "max_iter": getattr(master_agent, 'max_iter', None),
-                            "reasoning": getattr(master_agent, 'reasoning', False),
-                            "verbose": getattr(master_agent, 'verbose', False)
-                        },
-                        level=level
+                    logger.warning(
+                        f"⚠️  [AnalyticsCrew] Failed to trace agent creation progress: {e}"
                     )
-                    logger.info(f"✅ [AnalyticsCrew] Traced master_agent initialization")
-                except Exception as e:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace master_agent initialization: {e}")
 
-            agents = []
-            tasks = []
-            specialist_tasks = []
 
-            # Create Facebook specialist if needed
-            if "facebook_ads" in platforms or "facebook" in platforms or "both" in platforms:
-                facebook_tools = self._get_facebook_tools()
-                facebook_agent = self.agents_factory.create_facebook_specialist(
-                    tools=facebook_tools
-                )
-                facebook_task = self.tasks_factory.create_facebook_analysis_task(
-                    agent=facebook_agent,
-                    task_details=task_details
-                )
-                agents.append(facebook_agent)
-                tasks.append(facebook_task)
-                specialist_tasks.append(facebook_task)
+        ### ==================================================================
+        # # Create agents
+        # master_agent = self.agents_factory.create_master_agent()
 
-            # Create Google specialist if needed
-            if "google_analytics" in platforms or "google_ads" in platforms or "google" in platforms or "both" in platforms:
-                # Use aggregated_tools if available, otherwise use custom Google tools
-                tools = aggregated_tools if use_mcp_adapter else self._get_google_tools()
-                google_agent = self.agents_factory.create_google_specialist(
-                    tools=tools
-                )
-                google_task = self.tasks_factory.create_google_analysis_task(
-                    agent=google_agent,
-                    task_details=task_details
-                )
-                agents.append(google_agent)
-                tasks.append(google_task)
-                specialist_tasks.append(google_task)
+        # # Trace master agent initialization
+        # if trace_service and thread_id:
+        #     try:
+        #         trace_service.add_crew_agent_initialization(
+        #             thread_id=thread_id,
+        #             agent_name="master_agent",
+        #             agent_role=master_agent.role,
+        #             agent_goal=master_agent.goal,
+        #             agent_backstory=master_agent.backstory,
+        #             llm_model=llm_model_name,
+        #             tools=[],  # Master agent doesn't have direct tools in hierarchical mode
+        #             allow_delegation=True,
+        #             metadata={
+        #                 "max_iter": getattr(master_agent, "max_iter", None),
+        #                 "reasoning": getattr(master_agent, "reasoning", False),
+        #                 "verbose": getattr(master_agent, "verbose", False),
+        #             },
+        #             level=level,
+        #         )
+        #         logger.info(
+        #             f"✅ [AnalyticsCrew] Traced master_agent initialization"
+        #         )
+        #     except Exception as e:
+        #         logger.warning(
+        #             f"⚠️  [AnalyticsCrew] Failed to trace master_agent initialization: {e}"
+        #         )
 
-                # Trace Google specialist initialization
-                if trace_service and thread_id:
-                    try:
-                        tool_names = [tool.name for tool in tools] if tools else []
-                        trace_service.add_crew_agent_initialization(
-                            thread_id=thread_id,
-                            agent_name="google_specialist",
-                            agent_role=google_agent.role,
-                            agent_goal=google_agent.goal,
-                            agent_backstory=google_agent.backstory,
-                            llm_model=llm_model_name,
-                            tools=tool_names,
-                            allow_delegation=False,
-                            task_description=google_task.description if hasattr(google_task, 'description') else None,
-                            metadata={
-                                "max_iter": getattr(google_agent, 'max_iter', None),
-                                "verbose": getattr(google_agent, 'verbose', False)
-                            },
-                            level=level
-                        )
-                        logger.info(f"✅ [AnalyticsCrew] Traced google_specialist initialization with {len(tool_names)} tools")
-                    except Exception as e:
-                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace google_specialist initialization: {e}")
+        # agents = []
+        # tasks = []
+        # specialist_tasks = []
 
-            # # Create synthesis task for master agent
-            # synthesis_task = self.tasks_factory.create_synthesis_task(
-            #     agent=master_agent,
-            #     task_details=task_details,
-            #     context=specialist_tasks  # Master agent gets specialist outputs
-            # )
-            # tasks.append(synthesis_task)
+        # # Create Facebook specialist if needed
+        # if (
+        #     "facebook_ads" in platforms
+        #     or "facebook" in platforms
+        #     or "both" in platforms
+        # ):
+        #     facebook_agent = self.agents_factory.create_facebook_specialist(
+        #         tools=self.facebook_tools
+        #     )
+        #     agents.append(facebook_agent)
+        #     facebook_task = self.tasks_factory.create_facebook_analysis_task(
+        #         agent=facebook_agent, task_details=task_details
+        #     )
+        #     tasks.append(facebook_task)
+        #     specialist_tasks.append(facebook_task)
 
-            # Create callbacks for ChatTraceService integration
-            callbacks = CrewCallbacks(thread_id=thread_id, level=level)
+        # # Create Google specialist if needed
+        # if (
+        #     "google_analytics" in platforms
+        #     or "google_ads" in platforms
+        #     or "google" in platforms
+        #     or "both" in platforms
+        # ):
+        #     google_agent = self.agents_factory.create_google_specialist(
+        #         tools=self.google_tools
+        #     )
+        #     agents.append(google_agent)
+        #     google_task = self.tasks_factory.create_google_analysis_task(
+        #         agent=google_agent, task_details=task_details
+        #     )
+        #     tasks.append(google_task)
+        #     specialist_tasks.append(google_task)
 
-            # Record task starts
-            for i, task in enumerate(tasks):
-                agent = task.agent if hasattr(task, 'agent') else master_agent
-                callbacks.start_task(task, agent, i)
+        #     # Trace Google specialist initialization
+        #     if trace_service and thread_id:
+        #         try:
+        #             tool_names = [tool.name for tool in self.google_tools] if self.google_tools else []
+        #             trace_service.add_crew_agent_initialization(
+        #                 thread_id=thread_id,
+        #                 agent_name="google_specialist",
+        #                 agent_role=google_agent.role,
+        #                 agent_goal=google_agent.goal,
+        #                 agent_backstory=google_agent.backstory,
+        #                 llm_model=llm_model_name,
+        #                 tools=tool_names,
+        #                 allow_delegation=False,
+        #                 task_description=google_task.description
+        #                 if hasattr(google_task, "description")
+        #                 else None,
+        #                 metadata={
+        #                     "max_iter": getattr(google_agent, "max_iter", None),
+        #                     "verbose": getattr(google_agent, "verbose", False),
+        #                 },
+        #                 level=level,
+        #             )
+        #             logger.info(
+        #                 f"✅ [AnalyticsCrew] Traced google_specialist initialization with {len(tool_names)} tools"
+        #             )
+        #         except Exception as e:
+        #             logger.warning(
+        #                 f"⚠️  [AnalyticsCrew] Failed to trace google_specialist initialization: {e}"
+        #             )
 
-            # Create and run crew with callbacks
-            logger.debug(f"Starting a crew with agents: {agents}, tasks: {tasks}, master_agent: {master_agent}")
-            crew = Crew(
-                agents=agents,
-                tasks=tasks,
-                process=Process.hierarchical,
-                manager_agent=master_agent,
-                verbose=True,
-                planning=True,
-                # Note: CrewAI callbacks - task_callback called after each task completes
-                task_callback=callbacks.task_callback,
-                step_callback=callbacks.step_callback,  # Enable step-by-step tracing
-            )
+        # # Create synthesis task for master agent
+        # synthesis_task = self.tasks_factory.create_synthesis_task(
+        #     agent=master_agent,
+        #     task_details=task_details,
+        #     context=specialist_tasks  # Master agent gets specialist outputs
+        # )
+        # tasks.append(synthesis_task)
 
-            # Trace crew kickoff start
-            if trace_service and thread_id:
-                try:
-                    trace_service.add_agent_step(
-                        thread_id=thread_id,
-                        step_type="crew_kickoff_start",
-                        content=f"Starting crew execution with {len(agents)} agents and {len(tasks)} tasks",
-                        agent_name="analytics_crew",
-                        metadata={
-                            "num_agents": len(agents),
-                            "num_tasks": len(tasks),
-                            "platforms": platforms,
-                            "session_id": session_id
-                        },
-                        level=level
-                    )
-                except Exception as e:
-                    logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace crew kickoff start: {e}")
+        # merged_task = self.tasks_factory.create_merged_task(
+        #     agent=master_agent, task_details=task_details
+        # )
+        # tasks.append(merged_task)
 
+        # # Create callbacks for ChatTraceService integration
+        # callbacks = CrewCallbacks(thread_id=thread_id, level=level)
+
+        # # Record task starts
+        # for i, task in enumerate(tasks):
+        #     agent = task.agent if hasattr(task, "agent") else master_agent
+        #     callbacks.start_task(task, agent, i)
+
+        # # Create and run crew with callbacks
+        # logger.debug(
+        #     f"Starting a crew with agents: {agents}, tasks: {tasks}, master_agent: {master_agent}"
+        # )
+        # crew = Crew(
+        #     agents=agents,# + [master_agent],
+        #     manager_agent=master_agent,
+        #     manager_llm=self.llm,
+        #     tasks=[merged_task],
+        #     process=Process.hierarchical,
+        #     verbose=True,
+        #     planning=True,
+        #     # Note: CrewAI callbacks - task_callback called after each task completes
+        #     task_callback=callbacks.task_callback,
+        #     step_callback=callbacks.step_callback,  # Enable step-by-step tracing
+        # )
+        ### ==================================================================
+        crew = self._get_crew(task_details, credentials, platforms)
+        # # Trace crew kickoff start
+        # if trace_service and thread_id:
+        #     try:
+        #         trace_service.add_agent_step(
+        #             thread_id=thread_id,
+        #             step_type="crew_kickoff_start",
+        #             content=f"Starting crew execution with {len(agents)} agents and {len(tasks)} tasks",
+        #             agent_name="analytics_crew",
+        #             metadata={
+        #                 "num_agents": len(agents),
+        #                 "num_tasks": len(tasks),
+        #                 "platforms": platforms,
+        #                 "session_id": session_id,
+        #             },
+        #             level=level,
+        #         )
+        #     except Exception as e:
+        #         logger.warning(
+        #             f"⚠️  [AnalyticsCrew] Failed to trace crew kickoff start: {e}"
+        #         )
+        try:
+        #     logger.info(
+        #         f"🚀 Starting crew execution with {len(agents)} agents and {len(tasks)} tasks"
+        #     )
+
+        #     # Trace: Starting crew execution
+        #     if trace_service and thread_id:
+        #         try:
+        #             trace_service.add_agent_step(
+        #                 thread_id=thread_id,
+        #                 step_type="progress",
+        #                 content=f"Executing crew with {len(agents)} agents and {len(tasks)} tasks - this may take a while...",
+        #                 agent_name="analytics_crew",
+        #                 metadata={
+        #                     "progress_stage": "crew_execution",
+        #                     "num_agents": len(agents),
+        #                     "num_tasks": len(tasks),
+        #                     "platforms": platforms,
+        #                 },
+        #                 level=level,
+        #             )
+        #         except Exception as e:
+        #             logger.warning(
+        #                     f"⚠️  [AnalyticsCrew] Failed to trace crew execution progress: {e}"
+        #                 )
+
+            # Execute crew - all tracing handled by ChatTraceService via callbacks
             try:
-                logger.info(f"🚀 Starting crew execution with {len(agents)} agents and {len(tasks)} tasks")
-
-                # Trace: Starting crew execution
-                if trace_service and thread_id:
-                    try:
-                        trace_service.add_agent_step(
-                            thread_id=thread_id,
-                            step_type="progress",
-                            content=f"Executing crew with {len(agents)} agents and {len(tasks)} tasks - this may take a while...",
-                            agent_name="analytics_crew",
-                            metadata={
-                                "progress_stage": "crew_execution",
-                                "num_agents": len(agents),
-                                "num_tasks": len(tasks),
-                                "platforms": platforms
-                            },
-                            level=level
-                        )
-                    except Exception as e:
-                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace crew execution progress: {e}")
-
-                # Execute crew - all tracing handled by ChatTraceService via callbacks
-                try:
                     result = crew.kickoff()
 
                     # Validate crew result
@@ -555,22 +709,26 @@ class AnalyticsCrew:
                         raise LLMResponseError(error_msg)
 
                     # Check if result has content (CrewOutput has .raw attribute)
-                    if hasattr(result, 'raw'):
+                    if hasattr(result, "raw"):
                         if not result.raw or not str(result.raw).strip():
                             error_msg = "Crew returned empty result"
                             logger.error(f"❌ [AnalyticsCrew] {error_msg}")
                             raise LLMResponseError(error_msg)
-                        logger.debug(f"✅ [AnalyticsCrew] Result validated: {len(str(result.raw))} chars")
+                        logger.debug(
+                            f"✅ [AnalyticsCrew] Result validated: {len(str(result.raw))} chars"
+                        )
 
                     logger.info("✅ Crew execution completed successfully")
 
-                except LLMResponseError as e:
+            except LLMResponseError as e:
                     # LLM response error - log and re-raise for retry
                     logger.error(f"❌ [AnalyticsCrew] LLM response error: {e}")
                     raise
-                except Exception as e:
+            except Exception as e:
                     # Other errors during crew execution
-                    logger.error(f"❌ [AnalyticsCrew] Crew execution failed: {e}", exc_info=True)
+                    logger.error(
+                        f"❌ [AnalyticsCrew] Crew execution failed: {e}", exc_info=True
+                    )
 
                     # Trace error if available
                     if trace_service and thread_id:
@@ -583,64 +741,67 @@ class AnalyticsCrew:
                                 metadata={
                                     "error": str(e),
                                     "error_type": type(e).__name__,
-                                    "platforms": platforms
+                                    "platforms": platforms,
                                 },
-                                level=level
+                                level=level,
                             )
                         except Exception as trace_error:
-                            logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace crew error: {trace_error}")
+                            logger.warning(
+                                f"⚠️  [AnalyticsCrew] Failed to trace crew error: {trace_error}"
+                            )
 
                     # Return error result
                     return {
                         "success": False,
                         "error": str(e),
                         "platforms": platforms,
-                        "task_details": task_details
+                        "task_details": task_details,
                     }
 
                 # Trace: Processing results
-                if trace_service and thread_id:
-                    try:
-                        trace_service.add_agent_step(
-                            thread_id=thread_id,
-                            step_type="progress",
-                            content=f"Processing crew results and finalizing response...",
-                            agent_name="analytics_crew",
-                            metadata={
-                                "progress_stage": "results_processing",
-                                "platforms": platforms
-                            },
-                            level=level
-                        )
-                    except Exception as e:
-                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace results processing: {e}")
+            if trace_service and thread_id:
+                try:
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="progress",
+                        content=f"Processing crew results and finalizing response...",
+                        agent_name="analytics_crew",
+                        metadata={
+                            "progress_stage": "results_processing",
+                            "platforms": platforms,
+                        },
+                        level=level,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️  [AnalyticsCrew] Failed to trace results processing: {e}"
+                    )
 
-                # Trace crew kickoff completion
-                if trace_service and thread_id:
-                    try:
-                        trace_service.add_agent_step(
-                            thread_id=thread_id,
-                            step_type="crew_kickoff_complete",
-                            content=f"✅ Crew execution completed successfully",
-                            agent_name="analytics_crew",
-                            metadata={
-                                "session_id": session_id,
-                                "platforms": platforms
-                            },
-                            level=level
-                        )
-                    except Exception as e:
-                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace crew kickoff completion: {e}")
+            # Trace crew kickoff completion
+            if trace_service and thread_id:
+                try:
+                    trace_service.add_agent_step(
+                        thread_id=thread_id,
+                        step_type="crew_kickoff_complete",
+                        content=f"✅ Crew execution completed successfully",
+                        agent_name="analytics_crew",
+                        metadata={"session_id": session_id, "platforms": platforms},
+                        level=level,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️  [AnalyticsCrew] Failed to trace crew kickoff completion: {e}"
+                    )
 
-                return {
-                    "success": True,
+            return {
+                "success": True,
                     "result": result,
                     "platforms": platforms,
                     "task_details": task_details,
-                    "session_id": session_id
+                    "session_id": session_id,
                 }
 
-            except Exception as e:
+        except Exception as e:
                 logger.error(f"❌ Crew execution failed: {e}")
 
                 # Trace error
@@ -654,22 +815,24 @@ class AnalyticsCrew:
                             metadata={
                                 "error_type": type(e).__name__,
                                 "platforms": platforms,
-                                "session_id": session_id
+                                "session_id": session_id,
                             },
-                            level=level
+                            level=level,
                         )
                     except Exception as trace_error:
-                        logger.warning(f"⚠️  [AnalyticsCrew] Failed to trace error: {trace_error}")
+                        logger.warning(
+                            f"⚠️  [AnalyticsCrew] Failed to trace error: {trace_error}"
+                        )
 
                 return {
                     "success": False,
                     "error": str(e),
                     "platforms": platforms,
                     "task_details": task_details,
-                    "session_id": session_id
+                    "session_id": session_id,
                 }
 
-            finally:
+        finally:
                 # Cleanup MCP clients
                 if self.facebook_client:
                     self.facebook_client.close()

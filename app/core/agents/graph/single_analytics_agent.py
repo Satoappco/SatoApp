@@ -431,7 +431,7 @@ class SingleAnalyticsAgent:
             "customer_id": customer_id,
             "platforms": credentials["platforms"],
             "metrics": task.get("metrics", ["impressions", "clicks", "conversions", "spend"]),
-            "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
+            # "date_range": task.get("date_range", {"start": "last_30_days", "end": "today"}),
             "google_analytics_credentials": credentials["google_analytics"],
             "google_ads_credentials": credentials["google_ads"],
             "meta_ads_credentials": credentials["meta_ads"],
