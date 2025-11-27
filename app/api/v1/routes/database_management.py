@@ -37,7 +37,7 @@ from app.models.agents import (
     CustomerLog,
     DetailedExecutionLog,
 )
-from app.config.database import get_session, engine
+from app.config.database import get_session, get_engine
 from app.config.logging import get_logger
 
 logger = get_logger(__name__)
@@ -1197,7 +1197,7 @@ async def delete_kpi_goal(
     """Delete a campaign KPI entry"""
     session = None
     try:
-        session = Session(engine)
+        session = Session(get_engine())
         campaign = session.get(KpiGoal, kpi_goal_id)
 
         if not campaign:

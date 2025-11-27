@@ -12,7 +12,6 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
 from app.config.settings import Settings
-from app.config.database import get_session
 from app.models.base import BaseModel
 
 

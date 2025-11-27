@@ -39,9 +39,13 @@ jobs:
         python -m py_compile app/**/*.py
 
     - name: Run unit tests
+      env:
+        DATABASE_URL: sqlite:///:memory:
       run: pytest tests/unit/ -v --cov=app --cov-report=xml --tb=short
 
     - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       run: pytest tests/integration/ -v --tb=short
 
     - name: Upload coverage
@@ -51,6 +55,8 @@ jobs:
         fail_ci_if_error: false
 
     - name: Generate test report
+      env:
+        DATABASE_URL: sqlite:///:memory:
       run: pytest tests/ --html=reports/test-report.html --self-contained-html
       if: always()
 
