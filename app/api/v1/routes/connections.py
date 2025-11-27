@@ -13,8 +13,6 @@ from app.config.database import get_session
 from app.models.analytics import Connection, DigitalAsset, AssetType
 from app.api.dependencies import get_current_user
 from app.utils.connection_failure_utils import (
-    get_failing_connections,
-    record_connection_failure,
     record_connection_success,
     should_retry_connection
 )
