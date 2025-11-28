@@ -166,7 +166,7 @@ class TestConnectionDeletionWithOrphanCleanup:
         mock_delete_orphaned.assert_called_once_with(mock_session, 20)
 
     @pytest.mark.asyncio
-    @patch("app.config.database.get_session")
+    @patch("app.api.v1.routes.facebook.get_session")
     @patch("app.services.digital_asset_service.delete_orphaned_digital_asset")
     async def test_facebook_connection_deletion_cleans_orphaned_asset(
         self, mock_delete_orphaned, mock_get_session
