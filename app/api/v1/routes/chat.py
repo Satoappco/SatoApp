@@ -391,6 +391,8 @@ async def stream_chat(
             if use_crew:
                 logger.info(f"🤖 [Stream] use_crew flag detected, routing to AnalyticsCrew automatically")
                 async for chunk in run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=True):
+                    yield chunk
+                return
 
             # Send progress event
             yield f"data: {json.dumps({'type': 'progress', 'message': 'Processing your request...', 'timestamp': time.time()})}\n\n"
