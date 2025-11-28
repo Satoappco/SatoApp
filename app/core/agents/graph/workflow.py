@@ -516,8 +516,9 @@ def get_graph():
 try:
     graph = build_graph()
 except Exception as e:
-    # During testing, graph will be built lazily
-    # if not os.getenv("OPENAI_API_KEY"):
-    #     graph = None
-    # else:
+    # During testing or when credentials are not available, graph will be built lazily
+    import os
+    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        graph = None
+    else:
         raise

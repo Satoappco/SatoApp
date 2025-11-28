@@ -41,11 +41,13 @@ jobs:
     - name: Run unit tests
       env:
         DATABASE_URL: "sqlite:///:memory:"
+        GEMINI_API_KEY: "dummy-key-for-testing"
       run: pytest tests/unit/ -v --cov=app --cov-report=xml --tb=short
 
     - name: Run integration tests
       env:
         DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
+        GEMINI_API_KEY: "dummy-key-for-testing"
       run: pytest tests/integration/ -v --tb=short
 
     - name: Upload coverage
@@ -57,6 +59,7 @@ jobs:
     - name: Generate test report
       env:
         DATABASE_URL: "sqlite:///:memory:"
+        GEMINI_API_KEY: "dummy-key-for-testing"
       run: pytest tests/ --html=reports/test-report.html --self-contained-html
       if: always()
 

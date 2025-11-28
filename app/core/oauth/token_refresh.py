@@ -12,7 +12,7 @@ from sqlmodel import select
 
 from app.config.database import get_session
 from app.config.logging import get_logger
-from app.config.settings import settings
+from app.config.settings import get_settings
 from app.models.analytics import Connection, AssetType
 from app.core.agents.mcp_clients.mcp_registry import MCPServer
 
@@ -61,11 +61,12 @@ def refresh_google_token(refresh_token: str) -> Dict[str, any]:
         OAuthRefreshError: If refresh fails
     """
     try:
+        settings = get_settings()
         response = requests.post(
             'https://oauth2.googleapis.com/token',
             data={
-                'client_id': settings.GOOGLE_CLIENT_ID,
-                'client_secret': settings.GOOGLE_CLIENT_SECRET,
+                'client_id': settings.google_client_id,
+                'client_secret': settings.google_client_secret,
                 'refresh_token': refresh_token,
                 'grant_type': 'refresh_token'
             },
@@ -111,12 +112,13 @@ def refresh_facebook_token(access_token: str) -> Dict[str, any]:
         OAuthRefreshError: If refresh fails
     """
     try:
+        settings = get_settings()
         response = requests.get(
             'https://graph.facebook.com/v18.0/oauth/access_token',
             params={
                 'grant_type': 'fb_exchange_token',
-                'client_id': settings.FACEBOOK_APP_ID,
-                'client_secret': settings.FACEBOOK_APP_SECRET,
+                'client_id': settings.facebook_app_id,
+                'client_secret': settings.facebook_app_secret,
                 'fb_exchange_token': access_token
             },
             timeout=10
