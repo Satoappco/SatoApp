@@ -51,6 +51,117 @@ logger = logging.getLogger(__name__)
 #     logger.debug(f"🔍 [Debug Request] Data: {data}")
 #     return JSONResponse(data)
 
+def run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
+
+    # Send progress event
+    if stream_it:
+        yield f"data: {json.dumps({'type': 'progress', 'message': 'Routing to Analytics Crew...', 'timestamp': time.time()})}\n\n"
+        last_event_time = time.time()
+
+    # Import AnalyticsCrewPlaceholder
+    from app.core.agents.graph.agents import AnalyticsCrewPlaceholder
+
+    # Initialize the crew placeholder
+    crew_placeholder = AnalyticsCrewPlaceholder(llm=None)
+
+    # Prepare task for crew execution
+    crew_task = {
+        "query": request.message,
+        "customer_id": customer_id,
+        "campaigner_id": current_user.id,
+        "thread_id": thread_id,
+        "context": {
+            "campaigner": {
+                "id": current_user.id,
+                "name": current_user.full_name,
+                "email": current_user.email
+            }
+        }
+    }
+
+    # Send progress event
+    if stream_it:
+        yield f"data: {json.dumps({'type': 'progress', 'message': 'Executing Analytics Crew...', 'timestamp': time.time()})}\n\n"
+        last_event_time = time.time()
+
+    # Execute crew
+    logger.debug(f"🚀 [Stream] Executing AnalyticsCrew with task: {crew_task}")
+    crew_result = crew_placeholder.execute(crew_task)
+
+    # Extract result message
+    if crew_result.get("status") == "completed":
+        assistant_message = crew_result.get("result", "Analysis completed successfully.")
+        logger.info(f"✅ [Stream] Crew execution completed successfully")
+    else:
+        assistant_message = f"Error executing analytics crew: {crew_result.get('message', 'Unknown error')}"
+        logger.error(f"❌ [Stream] Crew execution failed: {crew_result.get('message')}")
+
+    # Stream the result as content chunks
+    if stream_it:
+        for char in assistant_message:
+            yield f"data: {json.dumps({'type': 'content', 'chunk': char})}\n\n"
+            last_event_time = time.time()
+
+    # Add assistant message to trace
+    assistant_message_record = trace_service.add_message(
+        thread_id=thread_id,
+        role="assistant",
+        content=assistant_message
+    )
+    assistant_message_id = assistant_message_record.id if assistant_message_record else None
+
+    # Build intent from crew result
+    intent = {
+        "platforms": crew_result.get("platforms", []),
+        "metrics": crew_result.get("task_details", {}).get("metrics", []),
+    }
+    
+    # Send metadata
+    if stream_it:
+        final_metadata = {
+            "type": "metadata",
+            "thread_id": thread_id,
+            "user_message_id": user_message_id,
+            "assistant_message_id": assistant_message_id,
+            "needs_clarification": False,
+            "ready_for_analysis": True,
+            "intent": intent
+        }
+        yield f"data: {json.dumps(final_metadata)}\n\n"
+        last_event_time = time.time()
+
+    # Update conversation intent in trace
+    trace_service.update_intent(
+        thread_id=thread_id,
+        intent=intent,
+        needs_clarification=False,
+        ready_for_analysis=True
+    )
+
+    # Complete conversation
+    trace_service.complete_conversation(
+        thread_id=thread_id,
+        status="completed",
+        final_intent=intent
+    )
+
+    # Flush Langfuse traces
+    trace_service.flush_langfuse()
+
+    if stream_it:
+        yield "data: [DONE]\n\n"
+        return
+    
+    return ChatResponse(
+        message=assistant_message,
+        thread_id=thread_id,
+        needs_clarification=False,
+        ready_for_analysis=True,
+        intent=intent if any(intent.values()) else None,
+        user_message_id=user_message_id,
+        assistant_message_id=assistant_message_id
+    )
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -101,85 +212,11 @@ async def chat(
         user_message_id = user_message_record.id if user_message_record else None
 
         # Check if metadata has use_crew flag
-        use_crew = request.metadata and request.metadata.get("use_crew", False)
+        use_crew = request.use_crew
 
         if use_crew:
             logger.info(f"🤖 [Chat] use_crew flag detected, routing to AnalyticsCrew automatically")
-
-            # Import AnalyticsCrewPlaceholder
-            from app.core.agents.graph.agents import AnalyticsCrewPlaceholder
-
-            # Initialize the crew placeholder
-            crew_placeholder = AnalyticsCrewPlaceholder(llm=None)  # LLM initialized inside AnalyticsCrew
-
-            # Prepare task for crew execution
-            crew_task = {
-                "query": request.message,
-                "customer_id": customer_id,
-                "campaigner_id": current_user.id,
-                "thread_id": thread_id,
-                "context": {
-                    "campaigner": {
-                        "id": current_user.id,
-                        "name": current_user.full_name,
-                        "email": current_user.email
-                    }
-                }
-            }
-
-            # Execute crew
-            logger.debug(f"🚀 [Chat] Executing AnalyticsCrew with task: {crew_task}")
-            crew_result = crew_placeholder.execute(crew_task)
-
-            # Extract result message
-            if crew_result.get("status") == "completed":
-                assistant_message = crew_result.get("result", "Analysis completed successfully.")
-                logger.info(f"✅ [Chat] Crew execution completed successfully")
-            else:
-                assistant_message = f"Error executing analytics crew: {crew_result.get('message', 'Unknown error')}"
-                logger.error(f"❌ [Chat] Crew execution failed: {crew_result.get('message')}")
-
-            # Add assistant message to trace
-            assistant_message_record = trace_service.add_message(
-                thread_id=thread_id,
-                role="assistant",
-                content=assistant_message
-            )
-            assistant_message_id = assistant_message_record.id if assistant_message_record else None
-
-            # Build intent from crew result
-            intent = {
-                "platforms": crew_result.get("platforms", []),
-                "metrics": crew_result.get("task_details", {}).get("metrics", []),
-            }
-
-            # Update conversation intent in trace
-            trace_service.update_intent(
-                thread_id=thread_id,
-                intent=intent,
-                needs_clarification=False,
-                ready_for_analysis=True
-            )
-
-            # Complete conversation
-            trace_service.complete_conversation(
-                thread_id=thread_id,
-                status="completed",
-                final_intent=intent
-            )
-
-            # Flush Langfuse traces
-            trace_service.flush_langfuse()
-
-            return ChatResponse(
-                message=assistant_message,
-                thread_id=thread_id,
-                needs_clarification=False,
-                ready_for_analysis=True,
-                intent=intent if any(intent.values()) else None,
-                user_message_id=user_message_id,
-                assistant_message_id=assistant_message_id
-            )
+            return run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id)
 
         # Get conversation workflow for this thread (with campaigner_id)
         logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
@@ -348,104 +385,12 @@ async def stream_chat(
             user_message_id = user_message_record.id if user_message_record else None
 
             # Check if metadata has use_crew flag
-            use_crew = request.metadata and request.metadata.get("use_crew", False)
+            use_crew = request.use_crew
+            stream_it = True
 
             if use_crew:
                 logger.info(f"🤖 [Stream] use_crew flag detected, routing to AnalyticsCrew automatically")
-
-                # Send progress event
-                yield f"data: {json.dumps({'type': 'progress', 'message': 'Routing to Analytics Crew...', 'timestamp': time.time()})}\n\n"
-                last_event_time = time.time()
-
-                # Import AnalyticsCrewPlaceholder
-                from app.core.agents.graph.agents import AnalyticsCrewPlaceholder
-
-                # Initialize the crew placeholder
-                crew_placeholder = AnalyticsCrewPlaceholder(llm=None)
-
-                # Prepare task for crew execution
-                crew_task = {
-                    "query": request.message,
-                    "customer_id": customer_id,
-                    "campaigner_id": current_user.id,
-                    "thread_id": thread_id,
-                    "context": {
-                        "campaigner": {
-                            "id": current_user.id,
-                            "name": current_user.full_name,
-                            "email": current_user.email
-                        }
-                    }
-                }
-
-                # Send progress event
-                yield f"data: {json.dumps({'type': 'progress', 'message': 'Executing Analytics Crew...', 'timestamp': time.time()})}\n\n"
-                last_event_time = time.time()
-
-                # Execute crew
-                logger.debug(f"🚀 [Stream] Executing AnalyticsCrew with task: {crew_task}")
-                crew_result = crew_placeholder.execute(crew_task)
-
-                # Extract result message
-                if crew_result.get("status") == "completed":
-                    assistant_message = crew_result.get("result", "Analysis completed successfully.")
-                    logger.info(f"✅ [Stream] Crew execution completed successfully")
-                else:
-                    assistant_message = f"Error executing analytics crew: {crew_result.get('message', 'Unknown error')}"
-                    logger.error(f"❌ [Stream] Crew execution failed: {crew_result.get('message')}")
-
-                # Stream the result as content chunks
-                for char in assistant_message:
-                    yield f"data: {json.dumps({'type': 'content', 'chunk': char})}\n\n"
-                    last_event_time = time.time()
-
-                # Add assistant message to trace
-                assistant_message_record = trace_service.add_message(
-                    thread_id=thread_id,
-                    role="assistant",
-                    content=assistant_message
-                )
-                assistant_message_id = assistant_message_record.id if assistant_message_record else None
-
-                # Build intent from crew result
-                intent = {
-                    "platforms": crew_result.get("platforms", []),
-                    "metrics": crew_result.get("task_details", {}).get("metrics", []),
-                }
-
-                # Send metadata
-                final_metadata = {
-                    "type": "metadata",
-                    "thread_id": thread_id,
-                    "user_message_id": user_message_id,
-                    "assistant_message_id": assistant_message_id,
-                    "needs_clarification": False,
-                    "ready_for_analysis": True,
-                    "intent": intent
-                }
-                yield f"data: {json.dumps(final_metadata)}\n\n"
-                last_event_time = time.time()
-
-                # Update conversation intent in trace
-                trace_service.update_intent(
-                    thread_id=thread_id,
-                    intent=intent,
-                    needs_clarification=False,
-                    ready_for_analysis=True
-                )
-
-                # Complete conversation
-                trace_service.complete_conversation(
-                    thread_id=thread_id,
-                    status="completed",
-                    final_intent=intent
-                )
-
-                # Flush Langfuse traces
-                trace_service.flush_langfuse()
-
-                yield "data: [DONE]\n\n"
-                return
+                async for chunk in run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=True):
 
             # Send progress event
             yield f"data: {json.dumps({'type': 'progress', 'message': 'Processing your request...', 'timestamp': time.time()})}\n\n"

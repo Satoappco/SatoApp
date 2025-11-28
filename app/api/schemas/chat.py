@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message", min_length=1)
     thread_id: Optional[str] = Field(None, description="Conversation thread ID")
     customer_id: Optional[int] = Field(None, description="Customer ID associated with the conversation")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for the message")
+    use_crew: Optional[bool] = Field(False, description="Whether to use the crew for processing")
 
     @field_validator('customer_id', mode='before')
     @classmethod
