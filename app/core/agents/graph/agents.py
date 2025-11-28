@@ -158,18 +158,18 @@ def get_agent(agent_name: str, llm: BaseChatModel):
         "campaign_planning_crew": CampaignPlanningCrewPlaceholder
     }
 
-    # # Handle analytics agent routing based on configuration
-    # if agent_name == "analytics_crew":
-    #     analytics_type = settings.analytics_agent_type
-    #     logger.info(f"🔧 [get_agent] Using analytics agent type: {analytics_type}")
+    # Handle analytics agent routing based on configuration
+    if agent_name == "analytics_crew":
+        analytics_type = settings.analytics_agent_type
+        logger.info(f"🔧 [get_agent] Using analytics agent type: {analytics_type}")
 
-    #     if analytics_type == "single":
-    #         agent_name = "single_analytics_agent"
-    #     elif analytics_type == "crew":
-    #         agent_name = "analytics_crew"
-    #     else:
-    #         logger.warning(f"⚠️  [get_agent] Unknown analytics_agent_type: {analytics_type}, defaulting to crew")
-    #         agent_name = "analytics_crew"
+        if analytics_type == "single":
+            agent_name = "single_analytics_agent"
+        elif analytics_type == "crew":
+            agent_name = "analytics_crew"
+        else:
+            logger.warning(f"⚠️  [get_agent] Unknown analytics_agent_type: {analytics_type}, defaulting to crew")
+            agent_name = "analytics_crew"
 
     if agent_name not in agents:
         raise ValueError(f"Unknown agent: {agent_name}")
