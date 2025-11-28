@@ -10,7 +10,8 @@ import os
 import logging
 
 from .state import GraphState
-from .nodes import ChatbotNode, AgentExecutorNode, ErrorHandlerNode
+from .nodes import AgentExecutorNode, ErrorHandlerNode
+from .chatbot_agent import ChatbotNode
 from app.core.agents.database.connection import get_database_url
 from app.models.users import Campaigner
 from app.services.chat_trace_service import ChatTraceService
@@ -261,8 +262,45 @@ class ConversationWorkflow:
             Chunks of the assistant's response as they are generated
         """
 
+        # Yield progress: Starting workflow
+        try:
+            trace_service = ChatTraceService()
+            trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type="progress",
+                content="Analyzing your request with conversational AI...",
+                agent_name="workflow",
+                metadata={
+                    "progress_stage": "workflow_start",
+                    "message_length": len(message)
+                },
+                level=0
+            )
+            yield {"type": "progress", "message": "Analyzing your request..."}
+        except Exception as e:
+            logger.warning(f"⚠️  [Workflow] Failed to trace workflow start: {e}")
+
         #TODO: fix
         result = self.process_message(message)
+
+        # Yield progress: Workflow completed
+        try:
+            trace_service = ChatTraceService()
+            trace_service.add_agent_step(
+                thread_id=self.thread_id,
+                step_type="progress",
+                content="Request analysis complete, preparing response...",
+                agent_name="workflow",
+                metadata={
+                    "progress_stage": "workflow_complete",
+                    "needs_clarification": result.get("needs_clarification", False),
+                    "ready_for_crew": result.get("ready_for_crew", False)
+                },
+                level=0
+            )
+            yield {"type": "progress", "message": "Preparing your response..."}
+        except Exception as e:
+            logger.warning(f"⚠️  [Workflow] Failed to trace workflow completion: {e}")
 
         # Extract response message
         messages = result.get("messages", [])
@@ -289,7 +327,14 @@ class ConversationWorkflow:
             logger.error(f"❌ [Stream] No assistant message to stream! Result keys: {list(result.keys())}")
             logger.error(f"❌ [Stream] Messages: {[(m.type if hasattr(m, 'type') else type(m), len(m.content) if hasattr(m, 'content') else 0) for m in messages]}")
 
+        # Limit response length to prevent massive responses
+        MAX_RESPONSE_LENGTH = 50000  # 50KB max
+        if len(assistant_message) > MAX_RESPONSE_LENGTH:
+            logger.warning(f"⚠️  [Stream] Response too large ({len(assistant_message)} chars), truncating to {MAX_RESPONSE_LENGTH}")
+            assistant_message = assistant_message[:MAX_RESPONSE_LENGTH] + "\n\n[Response truncated due to length]"
+
         logger.info(f"📤 [Stream] Streaming {len(assistant_message.split()) if assistant_message else 0} words ({len(assistant_message)} chars)")
+
         #TODO: Why is that needed?
         yield {
             "type": "metadata",
@@ -301,9 +346,15 @@ class ConversationWorkflow:
             "date_range_start": self.conversation_state.get("date_range_start"),
             "date_range_end": self.conversation_state.get("date_range_end"),
         }
-        # Yield content character by character for streaming
-        for char in assistant_message:
-            yield {"type": "content", "chunk": char}
+
+        # Yield content word-by-word for better streaming performance
+        # This is faster than character-by-character while still providing smooth display
+        # Words are natural boundaries that won't break frontend display logic
+        words = assistant_message.split(' ')
+        for i, word in enumerate(words):
+            # Add space after word (except for last word)
+            chunk = word + (' ' if i < len(words) - 1 else '')
+            yield {"type": "content", "chunk": chunk}
 
 
         # logger.info(f"📡 [Workflow] Streaming message: '{message[:50]}...'")

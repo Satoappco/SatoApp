@@ -34,7 +34,9 @@ from app.core.agents.mcp_clients.mcp_registry import (
     MCPServer,
     MCPServerConfig,
 )
-from app.core.agents.graph.agents import AnalyticsCrewPlaceholder
+# from app.core.agents.graph.agents import AnalyticsCrewPlaceholder
+from app.core.agents.customer_credentials import CustomerCredentialManager
+
 from crewai_tools import MCPServerAdapter
 import logging
 
@@ -112,7 +114,7 @@ async def validate_server(
                 with MCPServerAdapter([server_params]) as tools:
                     tool_count = len(tools)
                     print(f"   ✅ Success! Loaded {tool_count} tools")
-                    show_max_cnt = 10
+                    show_max_cnt = 100
                     if tool_count > 0:
                         print(f"   📋 Available tools:")
                         for i, tool in enumerate(
@@ -254,17 +256,11 @@ async def validate_all_servers(
         print(
             f"📊 Fetching credentials for customer ID: {customer_id}, campaigner_id: {campaigner_id}"
         )
-        # Use the same method as AnalyticsCrew
-        analytics_placeholder = AnalyticsCrewPlaceholder(llm=None)
-        google_analytics_creds = analytics_placeholder._fetch_google_analytics_token(
-            customer_id, campaigner_id
-        )
-        google_ads_creds = analytics_placeholder._fetch_google_ads_token(
-            customer_id, campaigner_id
-        )
-        meta_ads_creds = analytics_placeholder._fetch_meta_ads_token(
-            customer_id, campaigner_id
-        )
+        credential_manager = CustomerCredentialManager()
+        credentials = credential_manager.fetch_all_credentials(customer_id, campaigner_id)
+        google_analytics_creds = credentials.get("google_analytics")
+        google_ads_creds = credentials.get("google_ads")
+        meta_ads_creds = credentials.get("meta_ads")
 
         if google_analytics_creds:
             print(f"   ✅ Found Google Analytics credentials")
@@ -436,27 +432,18 @@ async def validate_single_server(
         print(
             f"📊 Fetching credentials for customer ID: {customer_id}, campaigner_id: {campaigner_id}"
         )
-        analytics_placeholder = AnalyticsCrewPlaceholder(llm=None)
 
+        credential_manager = CustomerCredentialManager()
+        credentials = credential_manager.fetch_all_credentials(customer_id, campaigner_id)
+        google_analytics_creds = credentials.get("google_analytics")
+        google_ads_creds = credentials.get("google_ads")
+        meta_ads_creds = credentials.get("meta_ads")
         if service == "google_analytics":
-            credentials = (
-                analytics_placeholder._fetch_google_analytics_token(
-                    customer_id, campaigner_id
-                )
-                or {}
-            )
+            credentials = google_analytics_creds or {}
         elif service == "google_ads":
-            credentials = (
-                analytics_placeholder._fetch_google_ads_token(
-                    customer_id, campaigner_id
-                )
-                or {}
-            )
+            credentials = google_ads_creds or {}
         elif service == "meta_ads":
-            credentials = (
-                analytics_placeholder._fetch_meta_ads_token(customer_id, campaigner_id)
-                or {}
-            )
+            credentials = meta_ads_creds or {}
 
         if credentials:
             print(f"   ✅ Found {service} credentials")

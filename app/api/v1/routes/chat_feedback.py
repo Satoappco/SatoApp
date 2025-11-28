@@ -178,7 +178,7 @@ async def _create_clickup_notification(
             customer_stmt = select(Customer).where(Customer.id == message.customer_id)
             customer = session.exec(customer_stmt).first()
             if customer:
-                customer_name = customer.name
+                customer_name = customer.full_name
 
         # Generate trace URL
         from app.config import get_settings
@@ -191,7 +191,7 @@ async def _create_clickup_notification(
         result = clickup_service.create_validation_task(
             thread_id=feedback.thread_id,
             message_id=feedback.message_id,
-            campaigner_name=campaigner.name,
+            campaigner_name=campaigner.full_name,
             customer_name=customer_name,
             trace_url=trace_url,
             trace_start_time=trace_start_time,

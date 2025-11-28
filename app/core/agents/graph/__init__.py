@@ -6,9 +6,11 @@ to understand their intent and routes tasks to specialized agents.
 
 from .workflow import ConversationWorkflow, build_graph, get_graph
 from .state import GraphState
-from .nodes import ChatbotNode, AgentExecutorNode, ErrorHandlerNode
-from .agents import AnalyticsCrewPlaceholder, CampaignPlanningCrewPlaceholder, get_agent
+from .nodes import AgentExecutorNode, ErrorHandlerNode
+from .chatbot_agent import ChatbotNode
 from .sql_agent import SQLBasicInfoAgent
+from .single_analytics_agent import SingleAnalyticsAgent
+from .agents import AnalyticsCrewPlaceholder, CampaignPlanningCrewPlaceholder, get_agent
 
 __all__ = [
     "ChatbotWorkflow",
@@ -19,6 +21,8 @@ __all__ = [
     "AgentExecutorNode",
     "ErrorHandlerNode",
     "SQLBasicInfoAgent",
+    "ChatbotNode",
+    "SingleAnalyticsAgent",
     "AnalyticsCrewPlaceholder",
     "CampaignPlanningCrewPlaceholder",
     "get_agent"

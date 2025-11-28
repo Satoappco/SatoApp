@@ -514,9 +514,24 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
                 session.add(connection)
                 session.commit()
                 session.refresh(connection)
-                
+
                 print(f"DEBUG: Google Ads connection created successfully: {connection.id}")
-                
+
+                # Sync metrics for the new digital asset
+                # Note: sync_metrics_new will automatically detect this is a new asset and sync all 90 days
+                try:
+                    from app.services.campaign_sync_service import CampaignSyncService
+                    print(f"🔄 Starting metrics sync for new Google Ads connection...")
+                    sync_service = CampaignSyncService()
+                    sync_result = sync_service.sync_metrics_new(customer_id=request.customer_id)
+                    if sync_result.get("success"):
+                        print(f"✅ Metrics sync completed: {sync_result.get('metrics_upserted', 0)} metrics synced")
+                    else:
+                        print(f"⚠️ Metrics sync completed with errors: {sync_result.get('error_details', [])}")
+                except Exception as sync_error:
+                    print(f"⚠️ Failed to sync metrics for new connection: {sync_error}")
+                    # Don't fail the connection creation if metrics sync fails
+
                 return {
                     "success": True,
                     "message": f"Successfully connected to {request.customer_name}",

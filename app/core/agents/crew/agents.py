@@ -18,7 +18,6 @@ class AnalyticsAgents:
             api_key=os.getenv("OPENAI_API_KEY")
         )
 
-
     agents_service =  AgentService()
         
     def create_master_agent(self) -> Agent:

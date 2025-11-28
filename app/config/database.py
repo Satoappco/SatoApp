@@ -4,23 +4,35 @@ Database configuration and connection management
 
 from sqlmodel import create_engine, Session
 from sqlalchemy.engine import Engine
-from typing import Generator
+from typing import Generator, Optional
 from .settings import get_settings
 
 settings = get_settings()
 
-# Create database engine
-engine: Engine = create_engine(
-    settings.database_url,
-    echo=settings.database_echo,
-    pool_pre_ping=True,
-    pool_recycle=300,
-)
+# Lazy database engine creation
+_engine: Optional[Engine] = None
+
+
+def get_engine() -> Engine:
+    """Get or create database engine (lazy initialization)"""
+    global _engine
+    if _engine is None:
+        if not settings.database_url:
+            raise ValueError(
+                "DATABASE_URL is not configured. Please set the DATABASE_URL environment variable."
+            )
+        _engine = create_engine(
+            settings.database_url,
+            echo=settings.database_echo,
+            pool_pre_ping=True,
+            pool_recycle=300,
+        )
+    return _engine
 
 
 def get_session():
     """Get database session as context manager"""
-    return Session(engine)
+    return Session(get_engine())
 
 
 def init_database():

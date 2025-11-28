@@ -439,6 +439,21 @@ async def create_facebook_ads_connection(
             print(f"✅ SUCCESS: Created Facebook Ads connection for account {request.ad_account_name} (ID: {request.ad_account_id})")
             print(f"   Connection ID: {connection.id}, Digital Asset ID: {digital_asset.id}")
 
+            # Sync metrics for the new digital asset
+            # Note: sync_metrics_new will automatically detect this is a new asset and sync all 90 days
+            try:
+                from app.services.campaign_sync_service import CampaignSyncService
+                print(f"🔄 Starting metrics sync for new Facebook Ads connection...")
+                sync_service = CampaignSyncService()
+                sync_result = sync_service.sync_metrics_new(customer_id=request.customer_id)
+                if sync_result.get("success"):
+                    print(f"✅ Metrics sync completed: {sync_result.get('metrics_upserted', 0)} metrics synced")
+                else:
+                    print(f"⚠️ Metrics sync completed with errors: {sync_result.get('error_details', [])}")
+            except Exception as sync_error:
+                print(f"⚠️ Failed to sync metrics for new connection: {sync_error}")
+                # Don't fail the connection creation if metrics sync fails
+
             return OAuthCallbackResponse(
                 success=True,
                 message=f"Successfully connected Facebook Ads account: {request.ad_account_name}",

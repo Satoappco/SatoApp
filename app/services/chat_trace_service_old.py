@@ -15,7 +15,7 @@ from sqlalchemy import and_
 
 from app.models.conversations import Conversation, Message, AgentStep, ToolUsage
 from app.config.langfuse_config import LangfuseConfig
-from app.config.database import engine
+from app.config.database import get_engine
 
 try:
     from langfuse import Langfuse
@@ -43,7 +43,7 @@ class ChatTraceService:
         """Get or create a database session."""
         if self.session:
             return self.session
-        return Session(engine)
+        return Session(get_engine())
 
     def _close_session(self, session: Session):
         """Close session if it was created internally."""

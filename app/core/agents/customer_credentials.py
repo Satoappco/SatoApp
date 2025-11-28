@@ -19,6 +19,7 @@ class CustomerCredentialManager:
         """Initialize the credential manager."""
         self.google_ads_service = GoogleAdsService()
         self.facebook_ads_service = FacebookService()
+        
     def fetch_customer_platforms(self, customer_id: int) -> List[str]:
         """Fetch customer's enabled platforms from digital_assets table.
 
@@ -43,13 +44,15 @@ class CustomerCredentialManager:
                 platform_set = set()
                 for asset in digital_assets:
                     asset_type_str = asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type)
-                    provider = asset.provider.lower() if asset.provider else ""
+                    # provider = asset.provider.lower() if asset.provider else ""
 
                     # Map asset types to platforms
-                    if asset_type_str.upper() in ["GA4", "GOOGLE_ADS", "GOOGLE_ADS_CAPS"]:
-                        platform_set.add("google")
-                    elif asset_type_str.upper() in ["FACEBOOK_ADS", "FACEBOOK_ADS_CAPS"] or "facebook" in provider or "meta" in provider:
-                        platform_set.add("facebook")
+                    if asset_type_str.upper() in ["GOOGLE_ADS", "GOOGLE_ADS_CAPS"]:
+                        platform_set.add("google_ads")
+                    elif asset_type_str.upper() in ["GA4", "GOOGLE_ANALYTICS", "GOOGLE_ANALYTICS_CAPS"]:
+                        platform_set.add("google_analytics")
+                    elif asset_type_str.upper() in ["FACEBOOK_ADS", "FACEBOOK_ADS_CAPS"]: # or "facebook" in provider or "meta" in provider:
+                        platform_set.add("facebook_ads")
                     else:
                         logger.warning(f"⚠️  [CredentialManager] Unknown asset type '{asset_type_str}' for customer {customer_id}")
 
@@ -58,7 +61,7 @@ class CustomerCredentialManager:
 
         except Exception as e:
             logger.warning(f"⚠️  [CredentialManager] Failed to fetch platforms for customer {customer_id}: {e}")
-            platforms = ["google"]  # Fallback to default
+            platforms = []
 
         return platforms
 
@@ -317,11 +320,45 @@ class CustomerCredentialManager:
             "meta_ads": None
         }
 
-        if "google" in platforms:
+        if "google_analytics" in platforms:
             credentials["google_analytics"] = self.fetch_google_analytics_credentials(customer_id, campaigner_id)
+        if "google_ads" in platforms:
             credentials["google_ads"] = self.fetch_google_ads_credentials(customer_id, campaigner_id)
-
-        if "facebook" in platforms:
+        if "facebook_ads" in platforms:
             credentials["meta_ads"] = self.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
         return credentials
+
+
+
+    # def fetch_and_validate_customer_platforms(self, campaigner_id, customer_id: int) -> List[str]:
+    #     """Fetch customer's enabled platforms from digital_assets table.
+
+    #     Args:
+    #         campaigner_id: Campaigner ID
+    #         customer_id: Customer ID
+    #     Returns:
+    #         List of platform names (e.g., ["google", "facebook"])
+    #     """
+
+    #     logger.info(f"🔍 [CredentialManager] Auto-fetching data for customer {customer_id}")
+    #     platforms = self.fetch_customer_platforms(customer_id)
+    #     logger.info(f"✅ [CredentialManager] Fetched platforms: {platforms}")
+
+    #     if "google" in platforms:
+    #         google_analytics_credentials = self.fetch_google_analytics_credentials(customer_id, campaigner_id)
+    #         if google_analytics_credentials:
+    #             logger.info(f"✅ [CredentialManager] Fetched Google Analytics credentials")
+    #         else:
+    #             logger.warning(f"⚠️  [CredentialManager] Missing Google Analytics credentials")
+    #         google_ads_credentials = self.fetch_google_ads_credentials(customer_id, campaigner_id)
+    #         if google_ads_credentials:
+    #             logger.info(f"✅ [CredentialManager] Fetched Google Ads credentials")
+    #         else:
+    #             logger.warning(f"⚠️  [CredentialManager] Missing Google Ads credentials")
+    #     if "facebook" in platforms:
+    #         meta_ads_credentials = self.fetch_meta_ads_credentials(customer_id, campaigner_id)
+    #         if meta_ads_credentials:
+    #             logger.info(f"✅ [CredentialManager] Fetched Facebook Ads credentials")
+    #         else:
+    #             logger.warning(f"⚠️  [CredentialManager] Missing Facebook Ads credentials")

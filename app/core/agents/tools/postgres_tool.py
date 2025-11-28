@@ -257,11 +257,11 @@ class PostgresTool(BaseTool):
         # Map of models to extract schema from (RESTRICTED LIST)
         # Excludes agencies and campaigners tables, rtm_table, and questions_table
         models = {
-            "customers": Customer,
+            # "customers": Customer,
             "kpi_goals": KpiGoal,
-            "kpi_values": KpiValue,
+            # "kpi_values": KpiValue,
             "digital_assets": DigitalAsset,
-            "connections": Connection,
+            # "connections": Connection,
             "metrics": Metrics,
         }
 
@@ -273,10 +273,10 @@ class PostgresTool(BaseTool):
             "description": "Table relationships for proper JOINs. Note: agencies and campaigners tables are NOT accessible.",
             "chains": {
                 "kpi_goals_to_campaigner": "kpi_goals.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "kpi_values_to_campaigner": "kpi_values.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "customers_to_campaigner": "customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
+                # "kpi_values_to_campaigner": "kpi_values.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
+                # "customers_to_campaigner": "customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "digital_assets_to_campaigner": "digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
+                # "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 "metrics_to_campaigner": "metrics.platform_id → digital_assets.id → digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id"
             },
             "note": "metrics table contains only last 90 days of data"
