@@ -125,7 +125,7 @@ async def revoke_facebook_connection(
             statement = select(Connection).where(
                 and_(
                     Connection.id == connection_id,
-                    Connection.user_id == 5  # Demo user ID
+                    Connection.campaigner_id == current_user.id
                 )
             )
             connection = session.exec(statement).first()

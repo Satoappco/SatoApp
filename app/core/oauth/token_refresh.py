@@ -96,6 +96,11 @@ def refresh_google_token(refresh_token: str) -> Dict[str, any]:
     except requests.RequestException as e:
         logger.error(f"❌ Network error refreshing Google token: {e}")
         raise OAuthRefreshError(provider="google", error="network_error", error_description=str(e))
+    except OAuthRefreshError:
+        raise  # Re-raise OAuth errors as-is
+    except Exception as e:
+        logger.error(f"❌ Unexpected error refreshing Google token: {e}")
+        raise OAuthRefreshError(provider="google", error="network_error", error_description=str(e))
 
 
 def refresh_facebook_token(access_token: str) -> Dict[str, any]:

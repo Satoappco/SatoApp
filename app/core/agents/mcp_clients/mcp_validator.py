@@ -118,26 +118,25 @@ class MCPValidator:
             )
 
     async def _get_tools(self, client) -> List[str]:
-        """Get list of available tools from MCP client."""
-        try:
-            # MultiServerMCPClient has get_tools() method
-            if hasattr(client, 'get_tools'):
-                tools_response = await client.get_tools()
-                return [getattr(tool, 'name', str(tool)) for tool in tools_response]
+        """Get list of available tools from MCP client.
 
-            # Single MCP client has list_tools() method
-            elif hasattr(client, 'list_tools'):
-                tools_response = await client.list_tools()
-                if hasattr(tools_response, 'tools'):
-                    return [tool.name for tool in tools_response.tools]
-                return []
+        Raises:
+            Exception: If there's an error fetching tools from the client
+        """
+        # MultiServerMCPClient has get_tools() method
+        if hasattr(client, 'get_tools'):
+            tools_response = await client.get_tools()
+            return [getattr(tool, 'name', str(tool)) for tool in tools_response]
 
-            else:
-                logger.warning(f"⚠️  Client has no get_tools() or list_tools() method")
-                return []
+        # Single MCP client has list_tools() method
+        elif hasattr(client, 'list_tools'):
+            tools_response = await client.list_tools()
+            if hasattr(tools_response, 'tools'):
+                return [tool.name for tool in tools_response.tools]
+            return []
 
-        except Exception as e:
-            logger.error(f"❌ Failed to get tools: {e}")
+        else:
+            logger.warning(f"⚠️  Client has no get_tools() or list_tools() method")
             return []
 
     async def _execute_validation_test(

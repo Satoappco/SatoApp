@@ -25,6 +25,7 @@ update-connector-payload.json
 __pycache__/
 *.pyc
 .next/
+logs/
 
 # Setup scripts with sensitive credentials
 setup-*.sh
@@ -41,3 +42,4 @@ db_backups/
 *.dump
 
 docs/*
+.worktrees

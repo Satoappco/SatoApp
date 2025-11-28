@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 import ast
 import operator
 
+# Import at module level for easier mocking in tests
+try:
+    from app.services.chat_trace_service import ChatTraceService
+except ImportError:
+    ChatTraceService = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,6 +71,7 @@ class CalculatorTool(CrewAIBaseTool):
         ast.Mod: operator.mod,
         ast.Pow: operator.pow,
         ast.USub: operator.neg,  # Unary minus
+        ast.UAdd: operator.pos,  # Unary plus
     }
 
     def _run(self, expression: str, **kwargs) -> str:
@@ -98,9 +105,8 @@ class CalculatorTool(CrewAIBaseTool):
             logger.info(f"✅ [CalculatorTool] Result: {output}")
 
             # Trace tool usage if thread_id is available
-            if self.thread_id:
+            if self.thread_id and ChatTraceService:
                 try:
-                    from app.services.chat_trace_service import ChatTraceService
                     trace_service = ChatTraceService()
                     trace_service.add_tool_usage(
                         thread_id=self.thread_id,
@@ -128,9 +134,8 @@ class CalculatorTool(CrewAIBaseTool):
             latency_ms = int((time.time() - start_time) * 1000)
 
             # Trace tool usage failure if thread_id is available
-            if self.thread_id:
+            if self.thread_id and ChatTraceService:
                 try:
-                    from app.services.chat_trace_service import ChatTraceService
                     trace_service = ChatTraceService()
                     trace_service.add_tool_usage(
                         thread_id=self.thread_id,
