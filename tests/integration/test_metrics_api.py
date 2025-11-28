@@ -19,7 +19,7 @@ from app.models.users import (
     CustomerStatus,
 )
 from app.models.analytics import DigitalAsset, Metrics, AssetType
-from app.core.security import create_access_token
+from app.core.auth import create_access_token
 
 
 @pytest.fixture

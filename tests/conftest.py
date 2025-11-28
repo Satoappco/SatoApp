@@ -15,8 +15,34 @@ from app.config.settings import Settings
 from app.models.base import BaseModel
 
 
-# Test database configuration
-TEST_DATABASE_URL = "sqlite:///:memory:"
+def is_integration_test(request):
+    """Check if current test is an integration test"""
+    # Check if test file is in integration directory
+    if 'integration' in str(request.fspath):
+        return True
+    # Check if test has integration marker
+    if request.node.get_closest_marker('integration'):
+        return True
+    return False
+
+
+def get_test_database_url(request=None):
+    """Get appropriate database URL for test type"""
+    # Use environment variable if set (for CI)
+    if os.getenv("DATABASE_URL"):
+        return os.getenv("DATABASE_URL")
+
+    # Check if this is an integration test
+    if request and is_integration_test(request):
+        # Use PostgreSQL for integration tests
+        # Default to local PostgreSQL or use env var
+        return os.getenv(
+            "TEST_DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:5432/postgres"
+        )
+
+    # Use SQLite for unit tests (faster)
+    return "sqlite:///:memory:"
 
 
 @pytest.fixture(scope="session")
@@ -27,15 +53,26 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
-def test_engine():
-    """Create test database engine"""
-    engine = create_engine(
-        TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=False,
-    )
+@pytest.fixture(scope="function")
+def test_engine(request):
+    """Create test database engine based on test type"""
+    db_url = get_test_database_url(request)
+
+    # Configure engine based on database type
+    if db_url.startswith("sqlite"):
+        engine = create_engine(
+            db_url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=False,
+        )
+    else:
+        # PostgreSQL configuration
+        engine = create_engine(
+            db_url,
+            echo=False,
+            pool_pre_ping=True,
+        )
 
     # Create all tables
     BaseModel.metadata.create_all(bind=engine)
@@ -44,6 +81,7 @@ def test_engine():
 
     # Clean up
     BaseModel.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 @pytest.fixture(scope="function")
@@ -61,7 +99,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture(scope="function")
-def mock_settings():
+def mock_settings(request):
     """Mock settings for testing"""
     settings = Mock(spec=Settings)
     settings.secret_key = "test-secret-key"
@@ -69,7 +107,7 @@ def mock_settings():
     settings.google_client_secret = "test-google-client-secret"
     settings.facebook_app_id = "test-facebook-app-id"
     settings.facebook_app_secret = "test-facebook-app-secret"
-    settings.database_url = TEST_DATABASE_URL
+    settings.database_url = get_test_database_url(request)
     settings.jwt_access_token_expire_minutes = 60
     settings.jwt_refresh_token_expire_days = 7
     return settings
