@@ -10,6 +10,7 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from ..tools.postgres_tool import PostgresTool
+from ..tools.delegate_tool import DelegateToCoworkerTool
 from app.services.agent_service import AgentService
 
 logger = logging.getLogger(__name__)
@@ -99,11 +100,22 @@ class SQLBasicInfoAgent:
                 level=level
             )
 
+            # Create DelegateToCoworkerTool instance
+            delegate_tool = DelegateToCoworkerTool(
+                llm=self.llm,
+                customer_id=customer_id,
+                campaigner_id=campaigner_id,
+                context=context,
+                thread_id=thread_id,
+                level=level,
+                allowed_agents=["single_analytics_agent"]  # Only allow delegation to analytics agent
+            )
+
             # Get schema information
             schema_info = postgres_tool.get_schema_info()
 
             # Create the agent with tools
-            agent = self._create_agent(postgres_tool, schema_info, context, customer_id)
+            agent = self._create_agent(postgres_tool, delegate_tool, schema_info, context, customer_id)
 
             # Execute the agent
             logger.info(f"🚀 [SQLBasicInfoAgent] Executing agent")
@@ -132,14 +144,16 @@ class SQLBasicInfoAgent:
     def _create_agent(
         self,
         postgres_tool: PostgresTool,
+        delegate_tool: DelegateToCoworkerTool,
         schema_info: Dict[str, Any],
         context: Dict[str, Any],
         customer_id : Optional[int]
     ) -> AgentExecutor:
-        """Create a LangChain agent with PostgresTool.
+        """Create a LangChain agent with PostgresTool and DelegateToCoworkerTool.
 
         Args:
             postgres_tool: PostgreSQL query tool
+            delegate_tool: Tool for delegating to other agents
             schema_info: Database schema information
             context: Additional context (agency info, etc.)
 
@@ -186,17 +200,20 @@ class SQLBasicInfoAgent:
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
 
+        # Create tool list
+        tools = [postgres_tool, delegate_tool]
+
         # Create tool-calling agent
         agent = create_tool_calling_agent(
             llm=self.llm,
-            tools=[postgres_tool],
+            tools=tools,
             prompt=prompt
         )
 
         # Create agent executor
         agent_executor = AgentExecutor(
             agent=agent,
-            tools=[postgres_tool],
+            tools=tools,
             verbose=True,
             max_iterations=5,
             handle_parsing_errors=True,
@@ -241,6 +258,21 @@ class SQLBasicInfoAgent:
                 if goal:
                     prompt_parts.append(f"\nYour goal: {goal}")
 
+#                 # Add delegation instructions
+#                 prompt_parts.append("""
+# IMPORTANT - When to Delegate:
+# If the user's question requires data from external analytics platforms (Google Analytics, Google Ads, Facebook Ads)
+# that is NOT available in the database, use the delegate_to_coworker tool to send the question to 'single_analytics_agent'.
+
+# Examples of questions that require delegation:
+# - "What was my Google Ads spend yesterday?"
+# - "How many clicks did my Facebook campaign get?"
+# - "Show me my Google Analytics sessions for last week"
+# - Questions about real-time or recent platform-specific metrics not in the database
+
+# The database contains historical campaign data, but live/real-time analytics platform data requires delegation.
+# """)
+
                 # Add schema and context
                 prompt_parts.append(f"\nDatabase Schema:\n```json\n{schema_str}\n```")
                 if context_str:
@@ -283,6 +315,18 @@ Your role is to:
 3. Execute queries using the postgres_query tool
 4. Interpret results and provide clear answers
 5. **ALWAYS respond in the language specified in the context below**
+
+IMPORTANT - When to Delegate:
+If the user's question requires data from external analytics platforms (Google Analytics, Google Ads, Facebook Ads)
+that is NOT available in the database, use the delegate_to_coworker tool to send the question to 'single_analytics_agent'.
+
+Examples of questions that require delegation:
+- "What was my Google Ads spend yesterday?"
+- "How many clicks did my Facebook campaign get?"
+- "Show me my Google Analytics sessions for last week"
+- Questions about real-time or recent platform-specific metrics not in the database
+
+The database contains historical campaign data, but live/real-time analytics platform data requires delegation.
 
 Database Schema:
 ```json
