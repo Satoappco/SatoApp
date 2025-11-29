@@ -12,6 +12,7 @@ class TestCredentialManagerIntegration:
     def test_analytics_crew_placeholder_uses_credential_manager(self):
         """Test AnalyticsCrewPlaceholder has credential_manager instance."""
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         agent = AnalyticsCrewPlaceholder(llm)
 
         # Should have credential_manager
@@ -21,6 +22,7 @@ class TestCredentialManagerIntegration:
     def test_single_analytics_agent_uses_credential_manager(self):
         """Test SingleAnalyticsAgent has credential_manager instance."""
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         agent = SingleAnalyticsAgent(llm)
 
         # Should have credential_manager
@@ -36,6 +38,7 @@ class TestCredentialManagerIntegration:
         mock_session.exec.return_value.all.return_value = []
 
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         agent = AnalyticsCrewPlaceholder(llm)
 
         # Spy on credential_manager
@@ -55,6 +58,7 @@ class TestCredentialManagerIntegration:
         mock_session.exec.return_value.all.return_value = []
 
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         agent = SingleAnalyticsAgent(llm)
 
         # Spy on credential_manager
@@ -75,6 +79,7 @@ class TestCredentialManagerIntegration:
         mock_session.exec.return_value.first.return_value = None
 
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         agent = AnalyticsCrewPlaceholder(llm)
 
         # Spy on credential_manager
@@ -95,6 +100,7 @@ class TestCredentialManagerIntegration:
         mock_session.exec.return_value.first.return_value = None
 
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         agent = SingleAnalyticsAgent(llm)
 
         # Spy on credential_manager
@@ -108,6 +114,7 @@ class TestCredentialManagerIntegration:
     def test_both_agents_share_same_credential_logic(self):
         """Test that both agents use identical credential fetching logic."""
         llm = Mock()
+        llm._lc_kwargs = {}  # Required by SingleAnalyticsAgent
         crew_agent = AnalyticsCrewPlaceholder(llm)
         single_agent = SingleAnalyticsAgent(llm)
 

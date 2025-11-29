@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     # Performance Configuration
     max_concurrent_analyses: int = 10
     request_timeout_seconds: int = 30
+    metrics_sync_days_back: Optional[int] = None 
     
     # GA Property Fetching Configuration
     ga_initial_properties_limit: int = 20  # Properties to return immediately

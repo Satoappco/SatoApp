@@ -39,21 +39,21 @@ class SingleAnalyticsAgent:
         self.mcp_client: Optional[MCPClient] = None
         self.credential_manager = CustomerCredentialManager()
 
-    # def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
-    #     """Fetch customer's enabled platforms from digital_assets table."""
-    #     return self.credential_manager.fetch_customer_platforms(customer_id)
+    def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
+        """Fetch customer's enabled platforms from digital_assets table."""
+        return self.credential_manager.fetch_customer_platforms(customer_id)
 
-    # def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-    #     """Fetch customer's Google Analytics refresh token and property ID."""
-    #     return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
+    def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Analytics refresh token and property ID."""
+        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
 
-    # def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-    #     """Fetch customer's Google Ads credentials."""
-    #     return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
+    def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Ads credentials."""
+        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
 
-    # def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-    #     """Fetch customer's Facebook/Meta Ads access token."""
-    #     return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
+    def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Facebook/Meta Ads access token."""
+        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
     async def _initialize_mcp_clients(self, task_details: Dict[str, Any], thread_id: Optional[str] = None, level: int = 1):
         """Initialize and connect MultiServerMCPClient using MCP Client Manager.

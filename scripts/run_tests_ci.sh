@@ -81,11 +81,11 @@ $DOCKER_COMPOSE -f docker-compose.test.yml up -d
 print_step "Waiting for PostgreSQL to be ready..."
 max_attempts=30
 attempt=0
-while ! $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test pg_isready -U postgres > /dev/null 2>&1; do
+while ! $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test pg_isready -h localhost -p 5433 -U postgres > /dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ $attempt -eq $max_attempts ]; then
         print_error "PostgreSQL failed to start after $max_attempts attempts"
-        docker compose -f docker-compose.test.yml logs postgres-test
+        $DOCKER_COMPOSE -f docker-compose.test.yml logs postgres-test
         exit 1
     fi
     echo -n "."
@@ -98,11 +98,11 @@ print_step "Waiting for PostgreSQL to fully initialize..."
 sleep 3
 
 # Verify connection with actual database query
-if $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test psql -U postgres -d postgres -c "SELECT 1" > /dev/null 2>&1; then
+if $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test psql -h localhost -p 5433 -U postgres -d postgres -c "SELECT 1" > /dev/null 2>&1; then
     print_success "PostgreSQL is ready and accepting queries"
 else
     print_error "PostgreSQL is running but not accepting queries"
-    docker compose -f docker-compose.test.yml logs postgres-test
+    $DOCKER_COMPOSE -f docker-compose.test.yml logs postgres-test
     exit 1
 fi
 
@@ -141,7 +141,7 @@ fi
 
 print_step "Running integration tests with PostgreSQL..."
 
-export TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+export TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5433/postgres"
 export GEMINI_API_KEY="dummy-key-for-testing"
 
 if pytest tests/integration/ -v --tb=short; then
@@ -161,7 +161,7 @@ print_step "Generating HTML test report..."
 mkdir -p reports
 
 # Run all tests and generate HTML report
-export TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+export TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5433/postgres"
 export GEMINI_API_KEY="dummy-key-for-testing"
 
 if pytest tests/ --html=reports/test-report.html --self-contained-html --tb=short; then

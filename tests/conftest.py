@@ -3,12 +3,14 @@ Pytest configuration and shared fixtures for Sato AI testing
 """
 
 import os
+import time
 import pytest
 import asyncio
 from typing import Generator, AsyncGenerator
 from unittest.mock import Mock, MagicMock, patch
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
 from app.config.settings import Settings
@@ -18,10 +20,10 @@ from app.models.base import BaseModel
 def is_integration_test(request):
     """Check if current test is an integration test"""
     # Check if test file is in integration directory
-    if 'integration' in str(request.fspath):
+    if "integration" in str(request.fspath):
         return True
     # Check if test has integration marker
-    if request.node.get_closest_marker('integration'):
+    if request.node.get_closest_marker("integration"):
         return True
     return False
 
@@ -39,7 +41,11 @@ def get_test_database_url(request=None):
         test_url = os.getenv("TEST_DATABASE_URL")
         if test_url:
             # Safety check: ensure it's not accidentally pointing to production
-            if "localhost" not in test_url and "127.0.0.1" not in test_url and "test" not in test_url.lower():
+            if (
+                "localhost" not in test_url
+                and "127.0.0.1" not in test_url
+                and "test" not in test_url.lower()
+            ):
                 raise RuntimeError(
                     f"SAFETY ERROR: TEST_DATABASE_URL appears to point to a production database!\n"
                     f"URL: {test_url}\n"
@@ -51,7 +57,7 @@ def get_test_database_url(request=None):
             return test_url
 
         # Fallback to default local test database
-        return "postgresql://postgres:postgres@localhost:5432/sato_test"
+        return "postgresql://postgres:postgres@localhost:5433/postgres"
 
     # Use SQLite for unit tests (faster)
     return "sqlite:///:memory:"
@@ -78,6 +84,8 @@ def test_engine(request):
             poolclass=StaticPool,
             echo=False,
         )
+        # Create tables immediately for SQLite
+        BaseModel.metadata.create_all(bind=engine)
     else:
         # PostgreSQL configuration
         engine = create_engine(
@@ -86,13 +94,24 @@ def test_engine(request):
             pool_pre_ping=True,
         )
 
-    # Create all tables
-    BaseModel.metadata.create_all(bind=engine)
+        # Wait for PostgreSQL to be ready and create tables with retry
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            try:
+                BaseModel.metadata.create_all(bind=engine)
+                break  # Success
+            except OperationalError as e:
+                if attempt == max_attempts - 1:
+                    raise  # Re-raise on final attempt
+                time.sleep(1)  # Wait 1 second before retry
 
     yield engine
 
     # Clean up
-    BaseModel.metadata.drop_all(bind=engine)
+    try:
+        BaseModel.metadata.drop_all(bind=engine)
+    except OperationalError:
+        pass  # Ignore errors during cleanup
     engine.dispose()
 
 

@@ -210,11 +210,14 @@ class TestDatabaseIntegration:
         assert trace.data["role"] == "user"
 
         # Test JSON field operations
-        trace.data["processed"] = True
+        trace.data = {
+            **trace.data,
+            "processed": True,
+        }  # Create new dict to ensure persistence
         db_session.add(trace)
         db_session.commit()
         db_session.refresh(trace)
-        assert trace.data["processed"] is True
+        assert trace.data.get("processed") is True
 
     def test_customer_data_tables(self, db_session):
         """Test customer-specific data tables"""
@@ -288,8 +291,12 @@ class TestDatabaseIntegration:
         assert len(results) == 6  # 3 campaigners * 2 customers each
 
         # Verify all customers belong to the agency
-        for customer in results:
-            assert customer.agency_id == agency.id
+        for customer_row in results:
+            # SQLAlchemy returns Row objects with Customer as first element
+            customer = customer_row[0]  # Get the Customer object
+            assert (
+                customer.agency_id == agency.id
+            ), f"Customer {customer.id} has agency_id {customer.agency_id}, expected {agency.id}"
 
     def test_transaction_rollback(self, db_session):
         """Test database transaction rollback"""

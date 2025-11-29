@@ -43,3 +43,4 @@ db_backups/
 
 docs/*
 .worktrees
+coverage.xml
