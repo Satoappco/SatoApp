@@ -39,8 +39,25 @@ export GEMINI_API_KEY="dummy-key-for-testing"
 if ! $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test pg_isready -U postgres > /dev/null 2>&1; then
     echo "⚠️  PostgreSQL not running. Starting it..."
     $DOCKER_COMPOSE -f docker-compose.test.yml up -d
-    echo "Waiting for PostgreSQL..."
+
+    # Wait for PostgreSQL to be ready
+    echo "Waiting for PostgreSQL to be ready..."
+    max_attempts=30
+    attempt=0
+    while ! $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test pg_isready -U postgres > /dev/null 2>&1; do
+        attempt=$((attempt + 1))
+        if [ $attempt -eq $max_attempts ]; then
+            echo "❌ PostgreSQL failed to start"
+            exit 1
+        fi
+        echo -n "."
+        sleep 1
+    done
+    echo ""
+
+    # Additional wait for full initialization
     sleep 3
+    echo "✅ PostgreSQL is ready"
 fi
 
 # Run tests

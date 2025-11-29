@@ -14,7 +14,7 @@ class TestNewAssetMetricsSync:
     """Test that new assets automatically sync 90 days of metrics"""
 
     @pytest.mark.asyncio
-    @patch('app.services.google_ads_service.CampaignSyncService')
+    @patch('app.services.campaign_sync_service.CampaignSyncService')
     @patch('app.services.google_ads_service.get_session')
     async def test_google_ads_connection_triggers_90_day_sync(
         self, mock_get_session, mock_sync_service_class
@@ -40,8 +40,8 @@ class TestNewAssetMetricsSync:
         mock_connection.id = 1
 
         # Mock upsert_digital_asset
-        with patch('app.services.google_ads_service.upsert_digital_asset', return_value=mock_digital_asset):
-            with patch('app.services.google_ads_service.PropertySelectionService'):
+        with patch('app.services.digital_asset_service.upsert_digital_asset', return_value=mock_digital_asset):
+            with patch('app.services.property_selection_service.PropertySelectionService'):
                 # Create service and call save_google_ads_connection
                 service = GoogleAdsService()
                 result = await service.save_google_ads_connection(
@@ -64,7 +64,7 @@ class TestNewAssetMetricsSync:
         assert result["success"] is True
 
     @pytest.mark.asyncio
-    @patch('app.services.facebook_service.CampaignSyncService')
+    @patch('app.services.campaign_sync_service.CampaignSyncService')
     @patch('app.services.facebook_service.get_session')
     async def test_facebook_connection_triggers_90_day_sync(
         self, mock_get_session, mock_sync_service_class
@@ -98,8 +98,8 @@ class TestNewAssetMetricsSync:
             with patch.object(FacebookService, '_get_user_ad_accounts', return_value=[
                 {'id': 'act_123', 'name': 'Test Ad Account', 'currency': 'USD'}
             ]):
-                with patch('app.services.facebook_service.upsert_digital_asset', return_value=mock_digital_asset):
-                    with patch('app.services.facebook_service.PropertySelectionService'):
+                with patch('app.services.digital_asset_service.upsert_digital_asset', return_value=mock_digital_asset):
+                    with patch('app.services.property_selection_service.PropertySelectionService'):
                         # Create service and call save_facebook_connection
                         service = FacebookService()
                         result = await service.save_facebook_connection(
@@ -175,7 +175,7 @@ class TestNewAssetMetricsSync:
         assert "metrics_upserted" in result
 
     @pytest.mark.asyncio
-    @patch('app.services.google_ads_service.CampaignSyncService')
+    @patch('app.services.campaign_sync_service.CampaignSyncService')
     @patch('app.services.google_ads_service.get_session')
     async def test_connection_creation_continues_on_sync_failure(
         self, mock_get_session, mock_sync_service_class
@@ -197,8 +197,8 @@ class TestNewAssetMetricsSync:
         mock_connection.id = 1
 
         # Mock upsert_digital_asset
-        with patch('app.services.google_ads_service.upsert_digital_asset', return_value=mock_digital_asset):
-            with patch('app.services.google_ads_service.PropertySelectionService'):
+        with patch('app.services.digital_asset_service.upsert_digital_asset', return_value=mock_digital_asset):
+            with patch('app.services.property_selection_service.PropertySelectionService'):
                 # Create service and call save_google_ads_connection
                 service = GoogleAdsService()
                 result = await service.save_google_ads_connection(

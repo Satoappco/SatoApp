@@ -85,13 +85,26 @@ while ! $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test pg_isre
     attempt=$((attempt + 1))
     if [ $attempt -eq $max_attempts ]; then
         print_error "PostgreSQL failed to start after $max_attempts attempts"
+        docker compose -f docker-compose.test.yml logs postgres-test
         exit 1
     fi
     echo -n "."
     sleep 1
 done
 echo ""
-print_success "PostgreSQL is ready"
+
+# Additional wait to ensure PostgreSQL is fully initialized
+print_step "Waiting for PostgreSQL to fully initialize..."
+sleep 3
+
+# Verify connection with actual database query
+if $DOCKER_COMPOSE -f docker-compose.test.yml exec -T postgres-test psql -U postgres -d postgres -c "SELECT 1" > /dev/null 2>&1; then
+    print_success "PostgreSQL is ready and accepting queries"
+else
+    print_error "PostgreSQL is running but not accepting queries"
+    docker compose -f docker-compose.test.yml logs postgres-test
+    exit 1
+fi
 
 ################################################################################
 # Step 3: Run Linting (Basic Python Compilation)
