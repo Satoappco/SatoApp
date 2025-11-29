@@ -27,19 +27,31 @@ def is_integration_test(request):
 
 
 def get_test_database_url(request=None):
-    """Get appropriate database URL for test type"""
-    # Use environment variable if set (for CI)
-    if os.getenv("DATABASE_URL"):
-        return os.getenv("DATABASE_URL")
+    """Get appropriate database URL for test type
 
+    SAFETY: This function will NEVER use DATABASE_URL (production database).
+    It only uses TEST_DATABASE_URL to prevent accidental production database corruption.
+    """
     # Check if this is an integration test
     if request and is_integration_test(request):
         # Use PostgreSQL for integration tests
-        # Default to local PostgreSQL or use env var
-        return os.getenv(
-            "TEST_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:5432/postgres"
-        )
+        # ALWAYS use TEST_DATABASE_URL, never production DATABASE_URL
+        test_url = os.getenv("TEST_DATABASE_URL")
+        if test_url:
+            # Safety check: ensure it's not accidentally pointing to production
+            if "localhost" not in test_url and "127.0.0.1" not in test_url and "test" not in test_url.lower():
+                raise RuntimeError(
+                    f"SAFETY ERROR: TEST_DATABASE_URL appears to point to a production database!\n"
+                    f"URL: {test_url}\n"
+                    f"Test database URLs must either:\n"
+                    f"  1. Contain 'localhost' or '127.0.0.1'\n"
+                    f"  2. Contain 'test' in the database name\n"
+                    f"This prevents accidental production database corruption."
+                )
+            return test_url
+
+        # Fallback to default local test database
+        return "postgresql://postgres:postgres@localhost:5432/sato_test"
 
     # Use SQLite for unit tests (faster)
     return "sqlite:///:memory:"
