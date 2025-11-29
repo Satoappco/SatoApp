@@ -60,6 +60,13 @@ class AnalyticsCrewPlaceholder:
         else:
             logger.warning("⚠️  [AnalyticsCrew] No customer_id provided, using NO platforms")
             platforms = task.get("platforms", [])
+            # Initialize empty credentials when no customer_id
+            credentials = {
+                "platforms": [],
+                "google_analytics": None,
+                "google_ads": None,
+                "meta_ads": None
+            }
 
         # Build task details for AnalyticsCrew
         task_details = {
