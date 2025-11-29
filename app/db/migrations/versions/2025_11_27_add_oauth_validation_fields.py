@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251127_oauth_validation'
-down_revision = None  # Set this to the previous migration if one exists
+down_revision = '2e18477ba827'  # Previous migration (add_metrics_table_for_campaign_sync)
 branch_labels = None
 depends_on = None
 

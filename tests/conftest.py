@@ -8,8 +8,8 @@ import asyncio
 from typing import Generator, AsyncGenerator
 from unittest.mock import Mock, MagicMock, patch
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+from sqlmodel import Session
 
 from app.config.settings import Settings
 from app.models.base import BaseModel
