@@ -372,6 +372,14 @@ IMPORTANT: Make sure your response is in the user's language.
             )
             google_ads_credentials = task_details.get("google_ads_credentials")
             meta_ads_credentials = task_details.get("meta_ads_credentials")
+
+            # Construct credentials dict for consistency
+            credentials = {
+                "platforms": platforms,
+                "google_analytics": google_analytics_credentials,
+                "google_ads": google_ads_credentials,
+                "meta_ads": meta_ads_credentials,
+            }
         logger.info(f"📡 [AnalyticsCrew] Platforms: {platforms}")
 
         # Get thread_id for ChatTraceService tracing

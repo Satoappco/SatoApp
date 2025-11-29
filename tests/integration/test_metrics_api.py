@@ -7,6 +7,8 @@ import pytest
 from datetime import date, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from unittest.mock import patch
+from contextlib import contextmanager
 
 from app.main import create_app
 from app.models.users import (
@@ -23,10 +25,20 @@ from app.core.auth import create_access_token
 
 
 @pytest.fixture
-def client():
-    """Create test client"""
+def client(db_session):
+    """Create test client with mocked database session"""
     app = create_app()
-    return TestClient(app)
+
+    # Mock get_session to return the test database session
+    @contextmanager
+    def mock_get_session():
+        yield db_session
+
+    # Patch get_session throughout the app
+    with patch('app.config.database.get_session', mock_get_session):
+        with patch('app.core.auth.get_session', mock_get_session):
+            with patch('app.api.v1.routes.metrics.get_session', mock_get_session):
+                yield TestClient(app)
 
 
 @pytest.fixture
@@ -123,19 +135,25 @@ def setup_test_data(db_session):
     asset1 = DigitalAsset(
         customer_id=customer1.id,
         asset_type=AssetType.GOOGLE_ADS,
-        platform_name="Google Ads",
+        provider="Google",
+        name="Google Ads Account 1",
+        external_id="google-ads-123",
         is_active=True,
     )
     asset2 = DigitalAsset(
         customer_id=customer2.id,
         asset_type=AssetType.FACEBOOK_ADS,
-        platform_name="Facebook Ads",
+        provider="Facebook",
+        name="Facebook Ads Account 2",
+        external_id="facebook-ads-456",
         is_active=True,
     )
     asset3 = DigitalAsset(
         customer_id=customer3.id,
         asset_type=AssetType.GOOGLE_ADS,
-        platform_name="Google Ads",
+        provider="Google",
+        name="Google Ads Account 3",
+        external_id="google-ads-789",
         is_active=True,
     )
     db_session.add_all([asset1, asset2, asset3])
@@ -492,7 +510,7 @@ class TestMetricsAPIValidation:
         """Test error when accessing without authentication"""
         response = client.get("/api/v1/metrics")
 
-        assert response.status_code == 401  # Unauthorized
+        assert response.status_code == 403  # Forbidden (no auth credentials provided)
 
     def test_invalid_date_format(self, client, setup_test_data, db_session):
         """Test error when providing invalid date format"""

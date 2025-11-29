@@ -9,8 +9,7 @@ import logging
 from typing import Optional, Type, List
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field as PydanticField
-from app.core.agents.graph.agents import get_agent
-from app.core.services.chat_trace_service import ChatTraceService
+from app.services.chat_trace_service import ChatTraceService
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +104,9 @@ class DelegateToCoworkerTool(BaseTool):
             # Get the target agent instance
             if not self.llm:
                 raise ValueError("LLM instance not provided to DelegateToCoworkerTool")
+
+            # Lazy import to avoid circular dependency
+            from app.core.agents.graph.agents import get_agent
 
             target_agent = get_agent(agent_name, self.llm)
 

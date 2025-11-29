@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 #     logger.debug(f"🔍 [Debug Request] Data: {data}")
 #     return JSONResponse(data)
 
-def run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
+async def run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
 
     # Send progress event
     if stream_it:
@@ -152,7 +152,7 @@ def run_crew(request, thread_id, current_user, customer_id, trace_service, user_
         yield "data: [DONE]\n\n"
         return
     
-    return ChatResponse(
+    yield ChatResponse(
         message=assistant_message,
         thread_id=thread_id,
         needs_clarification=False,
@@ -161,6 +161,7 @@ def run_crew(request, thread_id, current_user, customer_id, trace_service, user_
         user_message_id=user_message_id,
         assistant_message_id=assistant_message_id
     )
+    return
 
 @router.post("", response_model=ChatResponse)
 async def chat(
@@ -216,7 +217,7 @@ async def chat(
 
         if use_crew:
             logger.info(f"🤖 [Chat] use_crew flag detected, routing to AnalyticsCrew automatically")
-            return run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id)
+            return await run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id)
 
         # Get conversation workflow for this thread (with campaigner_id)
         logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
