@@ -26,7 +26,7 @@ if not os.path.exists(_mock_creds_file):
                 "type": "service_account",
                 "project_id": "test-project",
                 "private_key_id": "test-key-id",
-                "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKB...\n-----END PRIVATE KEY-----\n",
+                "private_key": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg2Z3qX2BTLS4e0TyL\nsJfJB8NJ9U8wK4qH1B8nJ4qH1B8hRANCAATmG1iY9n5i8q8N4gF8qH1B8nJ4qH\n1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8\n-----END PRIVATE KEY-----\n",
                 "client_email": "test@test-project.iam.gserviceaccount.com",
                 "client_id": "123456789",
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
