@@ -166,20 +166,19 @@ class MCPClientManager:
             #     if 'facebook' in platform:
             #         mcp_servers.append(MCPServer.META_ADS)
 
-            if 'google_ads' in self.platforms or 'google_analytics' in self.platforms:
-                mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
-                mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
-            if 'facebook_ads' in self.platforms:
-                mcp_servers.append(MCPServer.META_ADS)
-            mcp_servers = mcp_servers.unique()
+            # if 'google_ads' in self.platforms or 'google_analytics' in self.platforms:
+            #     mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
+            #     mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
+            # if 'facebook_ads' in self.platforms:
+            #     mcp_servers.append(MCPServer.META_ADS)
 
-            if not mcp_servers:
-                logger.warning("⚠️  No MCP servers configured")
-                return False
+            # if not mcp_servers:
+            #     logger.warning("⚠️  No MCP servers configured")
+            #     return False
 
             # Build server parameters using MCPSelector
             server_params_list = MCPSelector.build_all_server_params(
-                platforms=mcp_servers,
+                platforms=self.platforms,
                 google_analytics_credentials=self.credentials.get('google_analytics'),
                 google_ads_credentials=self.credentials.get('google_ads'),
                 meta_ads_credentials=self.credentials.get('facebook')

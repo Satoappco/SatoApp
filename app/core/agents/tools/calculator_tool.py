@@ -2,8 +2,9 @@
 
 import logging
 from typing import Optional, Type
+from langchain.tools import BaseTool as LangChainBaseTool
 from crewai.tools import BaseTool as CrewAIBaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Field as PydanticField
 import ast
 import operator
 
@@ -21,7 +22,7 @@ class CalculatorInput(BaseModel):
     expression: str = Field(..., description="Mathematical expression to evaluate")
 
 
-class CalculatorTool(CrewAIBaseTool):
+class CalculatorTool(LangChainBaseTool, CrewAIBaseTool):
     """Tool for performing mathematical calculations.
 
     This tool can evaluate mathematical expressions safely using Python's
@@ -58,8 +59,8 @@ class CalculatorTool(CrewAIBaseTool):
     args_schema: Type[BaseModel] = CalculatorInput
 
     # Thread ID for tracing (optional)
-    thread_id: Optional[str] = Field(default=None, description="Thread ID for tracing")
-    level: int = Field(default=1, description="Hierarchy level for tracing")
+    thread_id: Optional[str] = PydanticField(default=None, description="Thread ID for tracing")
+    level: int = PydanticField(default=1, description="Hierarchy level for tracing")
 
     # Supported operators
     _operators = {
