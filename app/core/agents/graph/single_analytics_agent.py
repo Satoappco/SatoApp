@@ -33,7 +33,7 @@ class SingleAnalyticsAgent:
             self.llm_kwargs['model'] = llm.model
 
         # Get other kwargs if available
-        if hasattr(llm, '_lc_kwargs'):
+        if hasattr(llm, '_lc_kwargs') and isinstance(llm._lc_kwargs, dict):
             self.llm_kwargs.update(llm._lc_kwargs)
 
         self.mcp_client: Optional[MCPClient] = None
@@ -920,15 +920,6 @@ Remember: Use the tools available to you to fetch real data before providing ins
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_in_new_loop)
                 return future.result()
-        except RuntimeError as e:
+        except RuntimeError:
             # No running event loop - create a new one
-            return {
-                "status": "error",
-                "result": "There was internal error in the analytics agent execution.",
-                "message": f"Single analytics agent execution failed: {str(e)}",
-                "error_type": type(e).__name__,
-                "agent": "single_analytics_agent",
-                "platforms": [],
-                "task_received": task
-            }
-            # return asyncio.run(self._execute_async(task))
+            return asyncio.run(self._execute_async(task))

@@ -384,7 +384,11 @@ class ChatTraceService:
                 )
             ).one()
 
-            # Count tokens if not provided
+            # Save original tokens_used value (for conversation total tracking)
+            # We only add explicitly provided tokens to the conversation total
+            explicitly_provided_tokens = tokens_used
+
+            # Count tokens if not provided (for the message record itself)
             if tokens_used is None and content:
                 tokens_used = self.count_tokens(content, model or "gpt-4")
 
@@ -416,6 +420,7 @@ class ChatTraceService:
                 "latency_ms": latency_ms,
                 "level": level,
                 "langfuse_generation_id": langfuse_generation_id,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": metadata or {}
             }
 
@@ -432,8 +437,9 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["message_count"] += 1
-            if tokens_used:
-                conversation.data["total_tokens"] += tokens_used
+            # Only add explicitly provided tokens to conversation total
+            if explicitly_provided_tokens is not None:
+                conversation.data["total_tokens"] += explicitly_provided_tokens
             conversation.updated_at = datetime.utcnow()
 
             # Mark data as modified for SQLAlchemy to detect the change
@@ -532,6 +538,7 @@ class ChatTraceService:
                 "task_index": task_index,
                 "task_description": task_description,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": metadata or {}
             }
 
@@ -640,6 +647,7 @@ class ChatTraceService:
                 "content": content,
                 "agent_name": chatbot_name,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": {
                     "llm_model": llm_model,
                     "system_prompt": system_prompt,  # Full prompt in metadata
@@ -789,6 +797,7 @@ class ChatTraceService:
                 "agent_name": agent_name,
                 "agent_role": agent_role,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": {
                     "agent_role": agent_role,
                     "agent_goal": agent_goal,
@@ -919,6 +928,7 @@ class ChatTraceService:
                 "error": error,
                 "latency_ms": latency_ms,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": metadata or {}
             }
 
