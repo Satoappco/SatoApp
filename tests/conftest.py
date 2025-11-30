@@ -21,17 +21,20 @@ import tempfile
 _mock_creds_file = os.path.join(tempfile.gettempdir(), "test_google_credentials.json")
 if not os.path.exists(_mock_creds_file):
     with open(_mock_creds_file, "w") as f:
-        json.dump({
-            "type": "service_account",
-            "project_id": "test-project",
-            "private_key_id": "test-key-id",
-            "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA2Z3qX2BTLS4e0TyL...\n-----END RSA PRIVATE KEY-----\n",
-            "client_email": "test@test-project.iam.gserviceaccount.com",
-            "client_id": "123456789",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
-        }, f)
+        json.dump(
+            {
+                "type": "service_account",
+                "project_id": "test-project",
+                "private_key_id": "test-key-id",
+                "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKB...\n-----END PRIVATE KEY-----\n",
+                "client_email": "test@test-project.iam.gserviceaccount.com",
+                "client_id": "123456789",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            },
+            f,
+        )
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _mock_creds_file
 os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
@@ -47,15 +50,25 @@ def mock_google_auth():
     This fixture runs automatically for all tests and mocks Google auth
     so tests don't need real Google Cloud credentials.
     """
-    with patch("google.auth.default") as mock_default:
+    with (
+        patch("google.auth.default") as mock_default,
+        patch(
+            "google.oauth2.service_account.Credentials.from_service_account_file"
+        ) as mock_creds,
+        patch("google.oauth2.credentials.Credentials") as mock_oauth_creds,
+    ):
         # Create mock credentials
         mock_credentials = Mock()
         mock_credentials.valid = True
         mock_credentials.token = "mock-token"
         mock_credentials.refresh = Mock()
 
+        # Mock OAuth2 credentials
+        mock_oauth_creds.return_value = mock_credentials
+
         # Return mock credentials and project
         mock_default.return_value = (mock_credentials, "test-project")
+        mock_creds.return_value = mock_credentials
 
         yield mock_default
 
