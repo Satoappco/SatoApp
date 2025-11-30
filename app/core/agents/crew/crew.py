@@ -327,7 +327,7 @@ IMPORTANT: Make sure your response is in the user's language.
 - Marketing performance scorecard
 - Detailed action plan with timelines
 """,   # "Executive summary, detailed analysis, and strategic recommendations",
-            agent=google_specialist  # Manager will delegate to specialists
+            agent=manager  # Manager will delegate to specialists
         )
         
         # Hierarchical crew

@@ -28,11 +28,12 @@ class ChatbotNode:
         self.system_prompt = self._load_system_prompt()
 
         # Only format system prompt if conversation_state is provided
-        if conversation_state and hasattr(conversation_state, 'campaigner'):
-            self.formatted_system_prompt = self._format_system_prompt(conversation_state.campaigner, conversation_state.customer_id)
+        if conversation_state and conversation_state.get('campaigner', None) is not None:
+            self.formatted_system_prompt = self._format_system_prompt(conversation_state.get('campaigner'), conversation_state.get('customer_id'))
         else:
             # Use generic system prompt for module-level initialization
-            logger.warning("⚠️  [ChatbotNode] conversation_state not provided, using generic system prompt")
+            error_msg = "conversation_state not provided" if not conversation_state else f"campaigner not in conversation_state: {conversation_state}"
+            logger.warning(f"⚠️  [ChatbotNode] {error_msg}, using generic system prompt")
             self.formatted_system_prompt = self.system_prompt
         logger.debug(f"✅ [ChatbotNode] System prompt loaded: {self.formatted_system_prompt}")
         self.num_retries = 5
