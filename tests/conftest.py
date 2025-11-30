@@ -13,8 +13,51 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
+# Mock Google Auth before any app imports to prevent credential errors in CI/CD
+# Create a mock credentials JSON file if it doesn't exist
+import json
+import tempfile
+
+_mock_creds_file = os.path.join(tempfile.gettempdir(), "test_google_credentials.json")
+if not os.path.exists(_mock_creds_file):
+    with open(_mock_creds_file, "w") as f:
+        json.dump({
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key_id": "test-key-id",
+            "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA2Z3qX2BTLS4e0TyL...\n-----END RSA PRIVATE KEY-----\n",
+            "client_email": "test@test-project.iam.gserviceaccount.com",
+            "client_id": "123456789",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+        }, f)
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _mock_creds_file
+os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
+
 from app.config.settings import Settings
 from app.models.base import BaseModel
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_google_auth():
+    """Mock Google authentication globally to prevent credential errors in CI/CD.
+
+    This fixture runs automatically for all tests and mocks Google auth
+    so tests don't need real Google Cloud credentials.
+    """
+    with patch("google.auth.default") as mock_default:
+        # Create mock credentials
+        mock_credentials = Mock()
+        mock_credentials.valid = True
+        mock_credentials.token = "mock-token"
+        mock_credentials.refresh = Mock()
+
+        # Return mock credentials and project
+        mock_default.return_value = (mock_credentials, "test-project")
+
+        yield mock_default
 
 
 def is_integration_test(request):

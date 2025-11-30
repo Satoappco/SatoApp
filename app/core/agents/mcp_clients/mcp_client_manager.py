@@ -109,10 +109,10 @@ class MCPClientManager:
 
             # Convert platform strings to MCPServer enums
             mcp_servers = []
-            if 'google' in self.platforms:
+            if 'google_ads' in self.platforms or 'google_analytics' in self.platforms:
                 mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
                 mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
-            if 'facebook' in self.platforms:
+            if 'facebook_ads' in self.platforms:
                 mcp_servers.append(MCPServer.META_ADS)
 
             # Build user_tokens dict from credentials
@@ -158,12 +158,20 @@ class MCPClientManager:
 
             # Convert platform strings to MCPServer enums
             mcp_servers = []
-            if 'google' in self.platforms:
-                # Use official servers
+            # for platform in self.platforms:
+            #     if 'google' in platform:
+            #         # Use official servers
+            #         mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
+            #         mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
+            #     if 'facebook' in platform:
+            #         mcp_servers.append(MCPServer.META_ADS)
+
+            if 'google_ads' in self.platforms or 'google_analytics' in self.platforms:
                 mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
                 mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
-            if 'facebook' in self.platforms:
+            if 'facebook_ads' in self.platforms:
                 mcp_servers.append(MCPServer.META_ADS)
+            mcp_servers = mcp_servers.unique()
 
             if not mcp_servers:
                 logger.warning("⚠️  No MCP servers configured")
