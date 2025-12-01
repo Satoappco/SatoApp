@@ -14,29 +14,9 @@ from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
 # Mock Google Auth before any app imports to prevent credential errors in CI/CD
-# Create a mock credentials JSON file if it doesn't exist
-import json
-import tempfile
-
-_mock_creds_file = os.path.join(tempfile.gettempdir(), "test_google_credentials.json")
-if not os.path.exists(_mock_creds_file):
-    with open(_mock_creds_file, "w") as f:
-        json.dump(
-            {
-                "type": "service_account",
-                "project_id": "test-project",
-                "private_key_id": "test-key-id",
-                "private_key": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg2Z3qX2BTLS4e0TyL\nsJfJB8NJ9U8wK4qH1B8nJ4qH1B8hRANCAATmG1iY9n5i8q8N4gF8qH1B8nJ4qH\n1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8nJ4qH1B8\n-----END PRIVATE KEY-----\n",
-                "client_email": "test@test-project.iam.gserviceaccount.com",
-                "client_id": "123456789",
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            },
-            f,
-        )
-
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _mock_creds_file
+# We set GOOGLE_APPLICATION_CREDENTIALS to empty in pytest.ini to prevent
+# Google auth from trying to load credentials files during test collection.
+# The actual mocking is done in the mock_google_auth fixture below.
 os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
 
 from app.config.settings import Settings

@@ -2,7 +2,7 @@
 QA Testing Script for Chat API
 
 This script processes an Excel table with predefined questions and evaluates chat responses.
-Columns: question, expected_answer, current_answer, previous_answer, rank, suggestion
+Columns: type, question, expected_answer, current_answer, previous_answer, rank, suggestion
 
 Process:
 1. Move current_answer to previous_answer
@@ -42,7 +42,7 @@ class QATestingScript:
         excel_path: str,
         api_base_url: str = "http://localhost:8000",
         api_token: Optional[str] = None,
-        llm_provider: str = "gemini"
+        llm_provider: str = "gemini",
     ):
         """
         Initialize the QA testing script.
@@ -64,12 +64,13 @@ class QATestingScript:
 
         # Column names
         self.columns = [
-            "question",
-            "expected_answer",
-            "current_answer",
-            "previous_answer",
-            "rank",
-            "suggestion"
+            "Type",
+            "Question",
+            "Expected Answer",
+            "Current Answer",
+            "Previous Answer",
+            "Rank",
+            "Suggestion",
         ]
 
     async def __aenter__(self):
@@ -88,7 +89,7 @@ class QATestingScript:
         df = pd.read_excel(self.excel_path)
 
         # Validate required columns
-        required_columns = ["question", "expected_answer"]
+        required_columns = ["Question", "Expected Answer"]
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
@@ -104,7 +105,9 @@ class QATestingScript:
         """Save the updated DataFrame to Excel."""
         # Create backup before overwriting
         if os.path.exists(self.excel_path):
-            backup_path = f"{self.excel_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            backup_path = (
+                f"{self.excel_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
             os.rename(self.excel_path, backup_path)
             print(f"✅ Created backup: {backup_path}")
 
@@ -113,12 +116,14 @@ class QATestingScript:
 
     def move_current_to_previous(self, df: pd.DataFrame) -> pd.DataFrame:
         """Move current_answer to previous_answer for all rows."""
-        df["previous_answer"] = df["current_answer"]
-        df["current_answer"] = ""
+        df["Previous Answer"] = df["Current Answer"]
+        df["Current Answer"] = ""
         print("✅ Moved current answers to previous")
         return df
 
-    async def call_chat_api(self, question: str, customer_id: Optional[int] = None) -> Dict[str, Any]:
+    async def call_chat_api(
+        self, question: str, customer_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
         Call the chat API with a question.
 
@@ -131,9 +136,7 @@ class QATestingScript:
         """
         url = f"{self.api_base_url}/api/v1/chat"
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        headers = {"Content-Type": "application/json"}
 
         if self.api_token:
             headers["Authorization"] = f"Bearer {self.api_token}"
@@ -152,7 +155,7 @@ class QATestingScript:
             return response.json()
         except httpx.HTTPError as e:
             print(f"❌ API Error: {str(e)}")
-            if hasattr(e, 'response') and e.response:
+            if hasattr(e, "response") and e.response:
                 print(f"Response: {e.response.text}")
             return {"error": str(e), "message": ""}
 
@@ -161,7 +164,7 @@ class QATestingScript:
         question: str,
         expected_answer: str,
         current_answer: str,
-        previous_answer: str
+        previous_answer: str,
     ) -> Dict[str, str]:
         """
         Use LLM to rank the answers and provide suggestions.
@@ -213,7 +216,7 @@ Respond in JSON format:
             import google.generativeai as genai
 
             genai.configure(api_key=self.settings.gemini_api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-1.5-pro")
 
             response = model.generate_content(prompt)
             result_text = response.text.strip()
@@ -230,24 +233,23 @@ Respond in JSON format:
             # Validate rank value
             valid_ranks = ["both good", "previous better", "current better", "both bad"]
             if result.get("rank") not in valid_ranks:
-                print(f"⚠️  Invalid rank: {result.get('rank')}, defaulting to 'both bad'")
+                print(
+                    f"⚠️  Invalid rank: {result.get('rank')}, defaulting to 'both bad'"
+                )
                 result["rank"] = "both bad"
 
             return result
 
         except Exception as e:
             print(f"❌ LLM Ranking Error: {str(e)}")
-            return {
-                "rank": "both bad",
-                "suggestion": f"Error during ranking: {str(e)}"
-            }
+            return {"rank": "both bad", "suggestion": f"Error during ranking: {str(e)}"}
 
     async def process_test_cases(
         self,
         df: pd.DataFrame,
         start_row: int = 0,
         end_row: Optional[int] = None,
-        customer_id: Optional[int] = None
+        customer_id: Optional[int] = None,
     ) -> pd.DataFrame:
         """
         Process test cases from the DataFrame.
@@ -264,13 +266,15 @@ Respond in JSON format:
         end_row = end_row or len(df)
         total_rows = end_row - start_row
 
-        print(f"\n🚀 Processing {total_rows} test cases (rows {start_row} to {end_row-1})...\n")
+        print(
+            f"\n🚀 Processing {total_rows} test cases (rows {start_row} to {end_row-1})...\n"
+        )
 
         for idx in range(start_row, end_row):
             row = df.iloc[idx]
-            question = row["question"]
-            expected_answer = row["expected_answer"]
-            previous_answer = row["previous_answer"]
+            question = row["Question"]
+            expected_answer = row["Expected Answer"]
+            previous_answer = row["Previous Answer"]
 
             print(f"[{idx+1}/{end_row}] Testing: {question[:60]}...")
 
@@ -282,7 +286,7 @@ Respond in JSON format:
             if response.get("error"):
                 current_answer = f"ERROR: {response['error']}"
 
-            df.at[idx, "current_answer"] = current_answer
+            df.at[idx, "Current Answer"] = current_answer
             print(f"  ✅ Got response: {current_answer[:100]}...")
 
             # Rank with LLM
@@ -291,11 +295,11 @@ Respond in JSON format:
                 question=question,
                 expected_answer=expected_answer,
                 current_answer=current_answer,
-                previous_answer=previous_answer
+                previous_answer=previous_answer,
             )
 
-            df.at[idx, "rank"] = ranking.get("rank", "both bad")
-            df.at[idx, "suggestion"] = ranking.get("suggestion", "")
+            df.at[idx, "Rank"] = ranking.get("rank", "both bad")
+            df.at[idx, "Suggestion"] = ranking.get("suggestion", "")
 
             print(f"  ✅ Rank: {ranking.get('rank')}")
             print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
@@ -310,7 +314,7 @@ Respond in JSON format:
         self,
         start_row: int = 0,
         end_row: Optional[int] = None,
-        customer_id: Optional[int] = None
+        customer_id: Optional[int] = None,
     ):
         """
         Run the complete QA testing workflow.
@@ -345,7 +349,7 @@ Respond in JSON format:
         print("SUMMARY")
         print("=" * 80)
 
-        rank_counts = df["rank"].value_counts()
+        rank_counts = df["Rank"].value_counts()
         print("\nRanking Distribution:")
         for rank, count in rank_counts.items():
             print(f"  {rank}: {count}")
@@ -357,40 +361,32 @@ Respond in JSON format:
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="QA Testing Script for Chat API")
-    parser.add_argument(
-        "excel_path",
-        help="Path to Excel file with test cases"
-    )
+    parser.add_argument("excel_path", help="Path to Excel file with test cases")
     parser.add_argument(
         "--api-url",
         default="http://localhost:8000",
-        help="API base URL (default: http://localhost:8000)"
+        help="API base URL (default: http://localhost:8000)",
     )
     parser.add_argument(
-        "--api-token",
-        help="JWT authentication token (can also use API_TOKEN env var)"
+        "--api-token", help="JWT authentication token (can also use API_TOKEN env var)"
     )
     parser.add_argument(
-        "--customer-id",
-        type=int,
-        help="Customer ID to use for all requests"
+        "--customer-id", type=int, help="Customer ID to use for all requests"
     )
     parser.add_argument(
         "--start-row",
         type=int,
         default=0,
-        help="Starting row index (0-based, default: 0)"
+        help="Starting row index (0-based, default: 0)",
     )
     parser.add_argument(
-        "--end-row",
-        type=int,
-        help="Ending row index (exclusive, default: all rows)"
+        "--end-row", type=int, help="Ending row index (exclusive, default: all rows)"
     )
     parser.add_argument(
         "--llm-provider",
         choices=["gemini"],
         default="gemini",
-        help="LLM provider for ranking (default: gemini)"
+        help="LLM provider for ranking (default: gemini)",
     )
 
     args = parser.parse_args()
@@ -399,7 +395,9 @@ async def main():
     api_token = args.api_token or os.getenv("API_TOKEN")
 
     if not api_token:
-        print("⚠️  Warning: No API token provided. Set API_TOKEN env var or use --api-token")
+        print(
+            "⚠️  Warning: No API token provided. Set API_TOKEN env var or use --api-token"
+        )
         print("   Authentication may fail if the API requires it.")
 
     # Run the script
@@ -407,12 +405,10 @@ async def main():
         excel_path=args.excel_path,
         api_base_url=args.api_url,
         api_token=api_token,
-        llm_provider=args.llm_provider
+        llm_provider=args.llm_provider,
     ) as script:
         await script.run(
-            start_row=args.start_row,
-            end_row=args.end_row,
-            customer_id=args.customer_id
+            start_row=args.start_row, end_row=args.end_row, customer_id=args.customer_id
         )
 
 

@@ -801,9 +801,13 @@ IMPORTANT: Make sure your response is in the user's language.
                         f"⚠️  [AnalyticsCrew] Failed to trace crew kickoff completion: {e}"
                     )
 
+            # Convert TaskOutput/CrewOutput to string for JSON serialization
+            # TaskOutput objects cannot be JSON serialized directly
+            result_str = str(result) if result is not None else "Analysis completed successfully"
+
             return {
                 "success": True,
-                    "result": result,
+                    "result": result_str,
                     "platforms": platforms,
                     "task_details": task_details,
                     "session_id": session_id,
