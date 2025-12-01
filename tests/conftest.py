@@ -13,12 +13,27 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
-# Mock Google Auth before any app imports to prevent credential errors in CI/CD
-# We set GOOGLE_APPLICATION_CREDENTIALS to empty in pytest.ini to prevent
-# Google auth from trying to load credentials files during test collection.
-# The actual mocking is done in the mock_google_auth fixture below.
+# Mock Google Auth BEFORE any app imports to prevent credential errors in CI/CD
+# This must happen before importing any app code that uses Google APIs
 os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
 
+# Patch google.auth.default immediately, before any app imports
+# This prevents errors during module-level initialization in workflow.py
+_mock_credentials = Mock()
+_mock_credentials.valid = True
+_mock_credentials.token = "mock-token"
+_mock_credentials.refresh = Mock()
+
+# Start patching before imports
+_google_auth_patch = patch("google.auth.default", return_value=(_mock_credentials, "test-project"))
+_google_service_account_patch = patch("google.oauth2.service_account.Credentials.from_service_account_file", return_value=_mock_credentials)
+_google_oauth_creds_patch = patch("google.oauth2.credentials.Credentials", return_value=_mock_credentials)
+
+_google_auth_patch.start()
+_google_service_account_patch.start()
+_google_oauth_creds_patch.start()
+
+# Now safe to import app code
 from app.config.settings import Settings
 from app.models.base import BaseModel
 
@@ -27,30 +42,18 @@ from app.models.base import BaseModel
 def mock_google_auth():
     """Mock Google authentication globally to prevent credential errors in CI/CD.
 
-    This fixture runs automatically for all tests and mocks Google auth
-    so tests don't need real Google Cloud credentials.
+    This fixture keeps the module-level patches active throughout the test session.
+    The patches are started at module level (before imports) to handle module-level
+    initialization in app code (like workflow.py:517).
     """
-    with (
-        patch("google.auth.default") as mock_default,
-        patch(
-            "google.oauth2.service_account.Credentials.from_service_account_file"
-        ) as mock_creds,
-        patch("google.oauth2.credentials.Credentials") as mock_oauth_creds,
-    ):
-        # Create mock credentials
-        mock_credentials = Mock()
-        mock_credentials.valid = True
-        mock_credentials.token = "mock-token"
-        mock_credentials.refresh = Mock()
+    # Patches are already started at module level above
+    # Just yield to keep them active during the test session
+    yield _google_auth_patch
 
-        # Mock OAuth2 credentials
-        mock_oauth_creds.return_value = mock_credentials
-
-        # Return mock credentials and project
-        mock_default.return_value = (mock_credentials, "test-project")
-        mock_creds.return_value = mock_credentials
-
-        yield mock_default
+    # Stop patches after all tests complete
+    _google_auth_patch.stop()
+    _google_service_account_patch.stop()
+    _google_oauth_creds_patch.stop()
 
 
 def is_integration_test(request):
