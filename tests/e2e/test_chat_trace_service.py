@@ -2,6 +2,7 @@
 Tests for ChatTraceService
 """
 
+import os
 import pytest
 from datetime import datetime
 from sqlmodel import Session, create_engine, SQLModel
@@ -14,6 +15,9 @@ from app.models.conversations import Conversation, Message, AgentStep, ToolUsage
 @pytest.fixture(name="session")
 def session_fixture():
     """Create a test database session."""
+    # Set TEST_DATABASE_URL to ensure get_json_column_type() uses JSON instead of JSONB
+    os.environ["TEST_DATABASE_URL"] = "sqlite:///:memory:"
+
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -32,7 +36,7 @@ def test_create_conversation(session):
         thread_id="test_thread_1",
         campaigner_id=1,
         customer_id=10,
-        metadata={"test": "data"}
+        metadata={"test": "data"},
     )
 
     assert conversation is not None
@@ -48,15 +52,9 @@ def test_create_conversation_idempotent(session):
     """Test that creating a conversation twice returns the existing one."""
     service = ChatTraceService(session=session)
 
-    conv1, _ = service.create_conversation(
-        thread_id="test_thread_2",
-        campaigner_id=1
-    )
+    conv1, _ = service.create_conversation(thread_id="test_thread_2", campaigner_id=1)
 
-    conv2, _ = service.create_conversation(
-        thread_id="test_thread_2",
-        campaigner_id=1
-    )
+    conv2, _ = service.create_conversation(thread_id="test_thread_2", campaigner_id=1)
 
     assert conv1.id == conv2.id
 
@@ -67,15 +65,12 @@ def test_add_message(session):
 
     # Create conversation
     conversation, _ = service.create_conversation(
-        thread_id="test_thread_3",
-        campaigner_id=1
+        thread_id="test_thread_3", campaigner_id=1
     )
 
     # Add user message
     msg1 = service.add_message(
-        thread_id="test_thread_3",
-        role="user",
-        content="Hello, how are you?"
+        thread_id="test_thread_3", role="user", content="Hello, how are you?"
     )
 
     assert msg1 is not None
@@ -89,7 +84,7 @@ def test_add_message(session):
         role="assistant",
         content="I'm doing well, thank you!",
         model="gpt-4",
-        tokens_used=10
+        tokens_used=10,
     )
 
     assert msg2 is not None
@@ -109,8 +104,7 @@ def test_add_agent_step(session):
 
     # Create conversation
     conversation, _ = service.create_conversation(
-        thread_id="test_thread_4",
-        campaigner_id=1
+        thread_id="test_thread_4", campaigner_id=1
     )
 
     # Add agent step
@@ -121,7 +115,7 @@ def test_add_agent_step(session):
         agent_name="AnalysisAgent",
         agent_role="analyst",
         task_index=0,
-        metadata={"confidence": 0.9}
+        metadata={"confidence": 0.9},
     )
 
     assert step is not None
@@ -142,8 +136,7 @@ def test_add_tool_usage(session):
 
     # Create conversation
     conversation, _ = service.create_conversation(
-        thread_id="test_thread_5",
-        campaigner_id=1
+        thread_id="test_thread_5", campaigner_id=1
     )
 
     # Add successful tool usage
@@ -153,7 +146,7 @@ def test_add_tool_usage(session):
         tool_input={"query": "SELECT * FROM users"},
         tool_output={"rows": 5},
         success=True,
-        latency_ms=150
+        latency_ms=150,
     )
 
     assert tool1 is not None
@@ -167,7 +160,7 @@ def test_add_tool_usage(session):
         tool_name="api_call",
         tool_input={"endpoint": "/test"},
         success=False,
-        error="Connection timeout"
+        error="Connection timeout",
     )
 
     assert tool2 is not None
@@ -185,8 +178,7 @@ def test_update_intent(session):
 
     # Create conversation
     conversation, _ = service.create_conversation(
-        thread_id="test_thread_6",
-        campaigner_id=1
+        thread_id="test_thread_6", campaigner_id=1
     )
 
     # Update intent
@@ -194,7 +186,7 @@ def test_update_intent(session):
         thread_id="test_thread_6",
         intent={"platforms": ["google_ads"], "metrics": ["impressions"]},
         needs_clarification=False,
-        ready_for_analysis=True
+        ready_for_analysis=True,
     )
 
     assert updated is not None
@@ -209,15 +201,14 @@ def test_complete_conversation(session):
 
     # Create conversation
     conversation, _ = service.create_conversation(
-        thread_id="test_thread_7",
-        campaigner_id=1
+        thread_id="test_thread_7", campaigner_id=1
     )
 
     # Complete conversation
     completed = service.complete_conversation(
         thread_id="test_thread_7",
         status="completed",
-        final_intent={"platforms": ["google_ads"]}
+        final_intent={"platforms": ["google_ads"]},
     )
 
     assert completed is not None
@@ -233,27 +224,31 @@ def test_get_conversation_history(session):
 
     # Create conversation
     conversation, _ = service.create_conversation(
-        thread_id="test_thread_8",
-        campaigner_id=1,
-        metadata={"source": "web"}
+        thread_id="test_thread_8", campaigner_id=1, metadata={"source": "web"}
     )
 
     # Add messages
     service.add_message("test_thread_8", "user", "Hello")
-    service.add_message("test_thread_8", "assistant", "Hi there!", model="gpt-4", tokens_used=5)
+    service.add_message(
+        "test_thread_8", "assistant", "Hi there!", model="gpt-4", tokens_used=5
+    )
 
     # Add agent step
-    service.add_agent_step("test_thread_8", "thought", "Analyzing...", agent_name="Agent1")
+    service.add_agent_step(
+        "test_thread_8", "thought", "Analyzing...", agent_name="Agent1"
+    )
 
     # Add tool usage
-    service.add_tool_usage("test_thread_8", "search", tool_input={"q": "test"}, success=True)
+    service.add_tool_usage(
+        "test_thread_8", "search", tool_input={"q": "test"}, success=True
+    )
 
     # Get history with all data
     history = service.get_conversation_history(
         thread_id="test_thread_8",
         include_messages=True,
         include_steps=True,
-        include_tools=True
+        include_tools=True,
     )
 
     assert history is not None
@@ -289,9 +284,7 @@ def test_add_message_to_nonexistent_conversation(session):
     service = ChatTraceService(session=session)
 
     message = service.add_message(
-        thread_id="nonexistent_thread",
-        role="user",
-        content="Test"
+        thread_id="nonexistent_thread", role="user", content="Test"
     )
 
     assert message is None

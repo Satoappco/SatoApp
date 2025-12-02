@@ -1,0 +1,3 @@
+# act configuration
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+--container-architecture linux/amd64

@@ -10,9 +10,44 @@ from datetime import datetime, timedelta
 
 # Backend URL and API token from environment
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
-API_TOKEN = os.getenv("API_TOKEN", "sato_universal_prod_k8j9h6g5f4d3s2a1p0o9i8u7y6t5r4e3w2q1z0x9c8v7b6n5m4")
+API_TOKEN = os.getenv("API_TOKEN")  # Must be set in environment
 
-headers = {"Authorization": f"Bearer {API_TOKEN}"}
+# Skip all tests if API_TOKEN not configured
+pytestmark = pytest.mark.skipif(
+    not API_TOKEN,
+    reason="API_TOKEN environment variable not set. Set it to run e2e tests against real backend."
+)
+
+headers = {"Authorization": f"Bearer {API_TOKEN}"} if API_TOKEN else {}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def validate_api_token():
+    """Validate API token works before running tests"""
+    if not API_TOKEN:
+        pytest.skip("API_TOKEN not set")
+
+    # Quick health check with the token
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/api/v1/logs/stats",
+            headers=headers,
+            timeout=5
+        )
+
+        if response.status_code == 401:
+            pytest.exit(
+                f"\n❌ API_TOKEN is INVALID for backend: {BACKEND_URL}\n"
+                f"   Response: {response.text}\n"
+                f"   Please check:\n"
+                f"   1. API_TOKEN environment variable is set correctly\n"
+                f"   2. Token matches the backend's configured API_TOKEN\n"
+                f"   3. Backend URL is correct: {BACKEND_URL}\n"
+            )
+        elif response.status_code >= 500:
+            pytest.exit(f"\n❌ Backend error ({response.status_code}): {BACKEND_URL}\n")
+    except requests.RequestException as e:
+        pytest.exit(f"\n❌ Cannot connect to backend: {BACKEND_URL}\n   Error: {e}\n")
 
 
 def test_get_recent_logs():

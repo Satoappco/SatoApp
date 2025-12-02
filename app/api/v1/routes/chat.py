@@ -217,7 +217,9 @@ async def chat(
 
         if use_crew:
             logger.info(f"🤖 [Chat] use_crew flag detected, routing to AnalyticsCrew automatically")
-            return await run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id)
+            # run_crew is an async generator, so iterate to get result
+            async for result in run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
+                return result
 
         # Get conversation workflow for this thread (with campaigner_id)
         logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
