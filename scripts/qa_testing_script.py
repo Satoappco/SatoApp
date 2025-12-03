@@ -6,10 +6,15 @@ Columns: type, question, expected_answer, current_answer, previous_answer, rank,
 
 Process:
 1. Move current_answer to previous_answer
-2. Call chat route for each question (without reusing thread_id)
+2. Call chat route for each question using JWT authentication (without reusing thread_id)
 3. Save response in current_answer
 4. Use LLM to rank: "both good", "previous better", "current better", "both bad"
 5. Generate suggestions for improvement
+
+Authentication:
+- Uses JWT tokens for authentication (not API_TOKEN)
+- Automatically generates a test JWT token if none provided
+- Can also use JWT_TOKEN environment variable or --jwt-token argument
 """
 
 import os
@@ -40,8 +45,8 @@ class QATestingScript:
     def __init__(
         self,
         excel_path: str,
-        api_base_url: str = "http://localhost:8000",
-        api_token: Optional[str] = None,
+        api_base_url: str = "http://localhost:8080",
+        jwt_token: Optional[str] = None,
         llm_provider: str = "gemini",
     ):
         """
@@ -50,12 +55,12 @@ class QATestingScript:
         Args:
             excel_path: Path to the Excel file with test cases
             api_base_url: Base URL for the API
-            api_token: JWT token for authentication
+            jwt_token: JWT token for authentication
             llm_provider: LLM provider for ranking ("gemini" or "openai")
         """
         self.excel_path = excel_path
         self.api_base_url = api_base_url.rstrip("/")
-        self.api_token = api_token
+        self.jwt_token = jwt_token
         self.llm_provider = llm_provider
         self.settings = get_settings()
 
@@ -138,8 +143,8 @@ class QATestingScript:
 
         headers = {"Content-Type": "application/json"}
 
-        if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        if self.jwt_token:
+            headers["Authorization"] = f"Bearer {self.jwt_token}"
 
         payload = {
             "message": question,
@@ -216,7 +221,7 @@ Respond in JSON format:
             import google.generativeai as genai
 
             genai.configure(api_key=self.settings.gemini_api_key)
-            model = genai.GenerativeModel("gemini-1.5-pro")
+            model = genai.GenerativeModel("gemini-2.5-flash")
 
             response = model.generate_content(prompt)
             result_text = response.text.strip()
@@ -267,7 +272,7 @@ Respond in JSON format:
         total_rows = end_row - start_row
 
         print(
-            f"\n🚀 Processing {total_rows} test cases (rows {start_row} to {end_row-1})...\n"
+            f"\n🚀 Processing {total_rows} test cases (rows {start_row} to {end_row - 1})...\n"
         )
 
         for idx in range(start_row, end_row):
@@ -276,7 +281,7 @@ Respond in JSON format:
             expected_answer = row["Expected Answer"]
             previous_answer = row["Previous Answer"]
 
-            print(f"[{idx+1}/{end_row}] Testing: {question[:60]}...")
+            print(f"[{idx + 1}/{end_row}] Testing: {question[:60]}...")
 
             # Call chat API
             print(f"  → Calling chat API...")
@@ -364,11 +369,11 @@ async def main():
     parser.add_argument("excel_path", help="Path to Excel file with test cases")
     parser.add_argument(
         "--api-url",
-        default="http://localhost:8000",
-        help="API base URL (default: http://localhost:8000)",
+        default="http://localhost:8080",
+        help="API base URL (default: http://localhost:8080)",
     )
     parser.add_argument(
-        "--api-token", help="JWT authentication token (can also use API_TOKEN env var)"
+        "--jwt-token", help="JWT authentication token (can also use JWT_TOKEN env var)"
     )
     parser.add_argument(
         "--customer-id", type=int, help="Customer ID to use for all requests"
@@ -391,20 +396,34 @@ async def main():
 
     args = parser.parse_args()
 
-    # Get API token from args or environment
-    api_token = args.api_token or os.getenv("API_TOKEN")
+    # Get JWT token from args or environment
+    jwt_token = args.jwt_token or os.getenv("JWT_TOKEN")
 
-    if not api_token:
-        print(
-            "⚠️  Warning: No API token provided. Set API_TOKEN env var or use --api-token"
-        )
-        print("   Authentication may fail if the API requires it.")
+    if not jwt_token:
+        print("🔄 No JWT token provided, generating one for testing...")
+        try:
+            # Import here to avoid circular imports
+            from app.core.auth import create_access_token
+
+            jwt_token = create_access_token(
+                data={"sub": "dor.yashar@gmail.com", "user_id": 10}
+            )
+            print(f"✅ Generated JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
+        except Exception as e:
+            print(f"❌ Failed to generate JWT token: {e}")
+            print("   Set JWT_TOKEN env var or use --jwt-token")
+            print(
+                "   You can generate one manually with: python scripts/generate_test_token.py"
+            )
+            return
+    else:
+        print(f"🔑 Using JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
 
     # Run the script
     async with QATestingScript(
         excel_path=args.excel_path,
         api_base_url=args.api_url,
-        api_token=api_token,
+        jwt_token=jwt_token,
         llm_provider=args.llm_provider,
     ) as script:
         await script.run(

@@ -33,9 +33,24 @@ _google_auth_patch.start()
 _google_service_account_patch.start()
 _google_oauth_creds_patch.start()
 
+# Set up E2E database BEFORE app imports (for SQLite :memory: tests)
+# This ensures the app uses the same database file for all connections
+_temp_db_file = None
+if os.getenv("DATABASE_URL") == "sqlite:///:memory:":
+    import tempfile
+    _temp_db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    os.environ["DATABASE_URL"] = f"sqlite:///{_temp_db_file.name}"
+
 # Now safe to import app code
 from app.config.settings import Settings
 from app.models.base import BaseModel
+
+# Create tables if using SQLite
+if os.getenv("DATABASE_URL", "").startswith("sqlite"):
+    _db_url = os.getenv("DATABASE_URL")
+    _engine = create_engine(_db_url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    BaseModel.metadata.create_all(bind=_engine)
+    _engine.dispose()
 
 
 @pytest.fixture(scope="session", autouse=True)

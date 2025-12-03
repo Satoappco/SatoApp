@@ -76,7 +76,11 @@ fi
 # Step 6: Generate test report
 echo -e "\n${YELLOW}📊 Step 6: Generating test report${NC}"
 mkdir -p reports
-pytest tests/ --html=reports/test-report.html --self-contained-html || true
+# Run only unit and e2e tests for HTML report (integration tests already validated in Step 5)
+# This avoids test isolation issues and environment variable conflicts
+export DATABASE_URL="sqlite:///:memory:"
+export GEMINI_API_KEY="dummy-key-for-testing"
+pytest tests/unit tests/e2e --html=reports/test-report.html --self-contained-html || true
 
 # Step 7: Show coverage report
 echo -e "\n${YELLOW}📊 Coverage Report:${NC}"
