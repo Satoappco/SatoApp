@@ -105,6 +105,39 @@ class QATestingScript:
             "Suggestion",
         ]
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, _exc_type, _exc_val, _exc_tb):
+        """Async context manager exit - cleanup resources."""
+        await self.client.aclose()
+        return False
+
+    def load_data(self) -> pd.DataFrame:
+        """Load data from Google Sheets or Excel file."""
+        if self.is_google_sheets:
+            return self._load_google_sheets()
+        else:
+            return self._load_excel()
+
+    def _load_excel(self) -> pd.DataFrame:
+        """Load data from Excel file."""
+        df = pd.read_excel(self.sheet_url)
+
+        # Validate required columns
+        required_columns = ["Question", "Expected Answer"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+
+        # Add missing optional columns
+        for col in self.columns:
+            if col not in df.columns:
+                df[col] = ""
+
+        return df
+
     def _is_google_sheets_url(self, url: str) -> bool:
         """Check if the provided URL is a Google Sheets URL."""
         return "docs.google.com/spreadsheets" in url
@@ -173,12 +206,29 @@ class QATestingScript:
             return None
 
     def _get_service_account_client(self):
-        """Get gspread client using service account JSON file."""
+        """Get gspread client using service account JSON file or env var."""
         try:
             scope = [
                 "https://spreadsheets.google.com/feeds",
                 "https://www.googleapis.com/auth/drive",
             ]
+
+            # Try to get credentials from JSON string in env var first (for CI/CD)
+            json_str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if json_str:
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    f.write(json_str)
+                    temp_path = f.name
+                try:
+                    creds = ServiceAccountCredentials.from_json_keyfile_name(temp_path, scope)
+                    return gspread.authorize(creds)
+                finally:
+                    # Clean up temp file
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+
+            # Fall back to file path
             creds_path = self.settings.google_sheets_service_account_path or os.getenv(
                 "GOOGLE_SERVICE_ACCOUNT_PATH"
             )
@@ -445,7 +495,7 @@ Respond in JSON format:
         # Group by Type if fail_fast is enabled
         if self.fail_fast and "Type" in df.columns:
             # Process by groups
-            grouped = df.iloc[start_row:end_row].groupby("Type", sort=False)
+            grouped = df.iloc[start_row:end_row].groupby("Group", sort=False)
             for group_name, group_df in grouped:
                 print(f"📁 Processing group: {group_name}")
                 group_failed = False
