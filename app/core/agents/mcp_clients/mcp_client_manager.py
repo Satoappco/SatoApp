@@ -70,16 +70,30 @@ class MCPClientManager:
         1. Token refresh (if enabled)
         2. MCP client initialization
         3. Tool validation (if enabled)
+        4. Reinitialize if validation removed platforms
 
         Returns:
             True if initialization successful, False otherwise
         """
         try:
             # Step 1: Refresh tokens before initialization
+            platforms_before_refresh = len(self.platforms)
             if self.enable_token_refresh:
                 await self._refresh_tokens()
             else:
                 logger.info("⚠️  Token refresh disabled via ENABLE_TOKEN_REFRESH=false")
+
+            # Check if token refresh removed platforms
+            if len(self.platforms) < platforms_before_refresh:
+                logger.warning(
+                    f"⚠️  Token refresh removed {platforms_before_refresh - len(self.platforms)} platform(s). "
+                    f"Remaining: {self.platforms}"
+                )
+
+            # If no platforms remain, fail initialization
+            if not self.platforms:
+                logger.error("❌ No platforms remaining after token refresh")
+                return False
 
             # Step 2: Initialize MCP clients
             success = await self._initialize_clients()
@@ -88,14 +102,38 @@ class MCPClientManager:
                 return False
 
             # Step 3: Validate tools
+            platforms_before_validation = len(self.platforms)
             if self.enable_validation:
                 await self._validate_clients()
             else:
                 logger.info("⚠️  MCP validation disabled via ENABLE_MCP_VALIDATION=false")
 
-            # Step 4: Update last_validated_at in database
+            # Step 4: Reinitialize if validation removed platforms
+            if len(self.platforms) < platforms_before_validation:
+                logger.warning(
+                    f"⚠️  Validation removed {platforms_before_validation - len(self.platforms)} platform(s). "
+                    f"Remaining: {self.platforms}"
+                )
+
+                # If no platforms remain, fail initialization
+                if not self.platforms:
+                    logger.error("❌ No platforms remaining after validation")
+                    return False
+
+                # Cleanup old clients
+                await self.cleanup()
+
+                # Reinitialize with remaining platforms
+                logger.info(f"🔄 Reinitializing MCP clients with remaining platforms: {self.platforms}")
+                success = await self._initialize_clients()
+                if not success:
+                    logger.error("❌ Failed to reinitialize MCP clients after validation")
+                    return False
+
+            # Step 5: Update last_validated_at in database
             await self._update_validation_timestamps()
 
+            logger.info(f"✅ MCP initialization complete with {len(self.platforms)} platform(s): {self.platforms}")
             return True
 
         except Exception as e:
@@ -103,14 +141,17 @@ class MCPClientManager:
             return False
 
     async def _refresh_tokens(self):
-        """Refresh OAuth tokens if needed."""
+        """Refresh OAuth tokens if needed. Remove platforms that fail token refresh."""
+        platforms_to_remove = []
+
         try:
             logger.info(f"🔄 Refreshing tokens for platforms: {self.platforms}")
 
             # Convert platform strings to MCPServer enums
             mcp_servers = []
-            if 'google_ads' in self.platforms or 'google_analytics' in self.platforms:
+            if 'google' in self.platforms or 'google_analytics' in self.platforms:
                 mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
+            if 'google_ads' in self.platforms or 'google' in self.platforms:
                 mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
             if 'facebook_ads' in self.platforms:
                 mcp_servers.append(MCPServer.META_ADS)
@@ -125,56 +166,68 @@ class MCPClientManager:
                 user_tokens['facebook'] = self.credentials['facebook'].get('access_token')
 
             # Refresh tokens
-            refreshed_tokens = refresh_tokens_for_platforms(
-                campaigner_id=self.campaigner_id,
-                platforms=mcp_servers,
-                user_tokens=user_tokens
-            )
+            try:
+                refreshed_tokens = refresh_tokens_for_platforms(
+                    campaigner_id=self.campaigner_id,
+                    platforms=mcp_servers,
+                    user_tokens=user_tokens
+                )
+                logger.debug(f"Refreshed tokens: {refreshed_tokens} platforms: {self.platforms}")
+                # Check which platforms had their tokens successfully refreshed or maintained
+                # If a token is missing from refreshed_tokens, it means refresh failed
+                if 'google_analytics' in self.platforms:
+                    if 'google_analytics' in refreshed_tokens:
+                        if self.credentials.get('google_analytics'):
+                            self.credentials['google_analytics']['refresh_token'] = refreshed_tokens['google_analytics']
+                        logger.info("✅ Google Analytics token is valid")
+                    else:
+                        logger.warning("⚠️  Google Analytics token refresh failed, removing platform")
+                        platforms_to_remove.append('google_analytics')
 
-            # Update credentials with refreshed tokens
-            if 'google_analytics' in refreshed_tokens and self.credentials.get('google_analytics'):
-                self.credentials['google_analytics']['refresh_token'] = refreshed_tokens['google_analytics']
-                logger.info("✅ Updated Google Analytics credentials with refreshed token")
+                if 'google_ads' in self.platforms:
+                    if 'google_ads' in refreshed_tokens:
+                        if self.credentials.get('google_ads'):
+                            self.credentials['google_ads']['refresh_token'] = refreshed_tokens['google_ads']
+                        logger.info("✅ Google Ads token is valid")
+                    else:
+                        logger.warning("⚠️  Google Ads token refresh failed, removing platform")
+                        platforms_to_remove.append('google_ads')
 
-            if 'google_ads' in refreshed_tokens and self.credentials.get('google_ads'):
-                self.credentials['google_ads']['refresh_token'] = refreshed_tokens['google_ads']
-                logger.info("✅ Updated Google Ads credentials with refreshed token")
+                if 'facebook_ads' in self.platforms:
+                    if 'facebook' in refreshed_tokens:
+                        if self.credentials.get('facebook'):
+                            self.credentials['facebook']['access_token'] = refreshed_tokens['facebook']
+                        logger.info("✅ Facebook token is valid")
+                    else:
+                        logger.warning("⚠️  Facebook token refresh failed, removing platform")
+                        platforms_to_remove.append('facebook_ads')
 
-            if 'facebook' in refreshed_tokens and self.credentials.get('facebook'):
-                self.credentials['facebook']['access_token'] = refreshed_tokens['facebook']
-                logger.info("✅ Updated Facebook credentials with refreshed token")
+                logger.info(f"✅ Token refresh check completed for campaigner {self.campaigner_id}")
 
-            logger.info(f"✅ Token refresh completed for campaigner {self.campaigner_id}")
+            except Exception as e:
+                logger.error(f"❌ Token refresh failed: {e}", exc_info=True)
+                # Remove all platforms since we can't determine which ones failed
+                platforms_to_remove.extend(self.platforms)
 
         except Exception as e:
-            logger.error(f"⚠️  Token refresh failed, continuing with existing tokens: {e}")
-            # Don't fail initialization on token refresh errors
-            # Validation will catch if tokens are invalid
+            logger.error(f"❌ Token refresh setup failed: {e}")
+            # Remove all platforms since we can't proceed
+            platforms_to_remove.extend(self.platforms)
+
+        # Remove failed platforms
+        if platforms_to_remove:
+            for platform in platforms_to_remove:
+                if platform in self.platforms:
+                    self.platforms.remove(platform)
+                    logger.warning(f"🚫 Removed platform '{platform}' due to token refresh failure")
+                    # Also remove credentials
+                    if platform in self.credentials:
+                        del self.credentials[platform]
 
     async def _initialize_clients(self) -> bool:
         """Initialize MCP clients using registry."""
         try:
             logger.info(f"🚀 Initializing MCP clients for platforms: {self.platforms}")
-
-            # Convert platform strings to MCPServer enums
-            mcp_servers = []
-            # for platform in self.platforms:
-            #     if 'google' in platform:
-            #         # Use official servers
-            #         mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
-            #         mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
-            #     if 'facebook' in platform:
-            #         mcp_servers.append(MCPServer.META_ADS)
-
-            # if 'google_ads' in self.platforms or 'google_analytics' in self.platforms:
-            #     mcp_servers.append(MCPServer.GOOGLE_ANALYTICS_OFFICIAL)
-            #     mcp_servers.append(MCPServer.GOOGLE_ADS_OFFICIAL)
-            # if 'facebook_ads' in self.platforms:
-            #     mcp_servers.append(MCPServer.META_ADS)
-
-            # if not mcp_servers:
-            #     logger.warning("⚠️  No MCP servers configured")
-            #     return False
 
             # Build server parameters using MCPSelector
             server_params_list = MCPSelector.build_all_server_params(
@@ -223,7 +276,9 @@ class MCPClientManager:
             return False
 
     async def _validate_clients(self):
-        """Validate MCP clients after initialization."""
+        """Validate MCP clients after initialization. Remove platforms that fail validation."""
+        platforms_to_remove = []
+
         try:
             if not self.clients:
                 logger.warning("⚠️  No MCP clients to validate")
@@ -245,16 +300,53 @@ class MCPClientManager:
                 f"{summary['error']} error"
             )
 
-            # Warn if there are failures
-            if summary['failed'] > 0 or summary['error'] > 0:
-                logger.warning(
-                    f"⚠️  Some MCP tools may not be available. "
-                    f"Check validation results for details."
-                )
+            # Check which platforms failed validation and remove them
+            from app.core.agents.mcp_clients.mcp_validator import ValidationStatus
+            for result in self.validation_results:
+                if result.status in [ValidationStatus.FAILED, ValidationStatus.ERROR]:
+                    # Check error details to identify which platform failed
+                    error_detail = str(result.error_detail or '').lower()
+                    server_name = result.server.lower()
+
+                    # Check if error mentions specific platform or server
+                    if 'google_analytics' in server_name or 'google-analytics' in error_detail:
+                        platforms_to_remove.append('google_analytics')
+                        logger.error(
+                            f"❌ Google Analytics validation failed: {result.message} - {result.error_detail}"
+                        )
+                    elif 'google_ads' in server_name or 'google-ads' in error_detail or 'ads_mcp' in error_detail:
+                        platforms_to_remove.append('google_ads')
+                        logger.error(
+                            f"❌ Google Ads validation failed: {result.message} - {result.error_detail}"
+                        )
+                    elif 'facebook' in server_name or 'facebook' in error_detail or 'meta' in error_detail:
+                        platforms_to_remove.append('facebook_ads')
+                        logger.error(
+                            f"❌ Facebook validation failed: {result.message} - {result.error_detail}"
+                        )
+                    else:
+                        # Can't determine which platform - log the error but remove all platforms to be safe
+                        logger.error(
+                            f"❌ MCP validation failed but cannot determine platform: {result.message}"
+                        )
+                        logger.error(f"   Error detail: {result.error_detail}")
+                        # Remove all platforms since we can't isolate the failure
+                        platforms_to_remove.extend(self.platforms)
 
         except Exception as e:
             logger.error(f"❌ MCP validation failed: {e}", exc_info=True)
-            # Don't fail initialization on validation errors
+            # Remove all platforms since validation failed completely
+            platforms_to_remove.extend(self.platforms)
+
+        # Remove failed platforms
+        if platforms_to_remove:
+            for platform in platforms_to_remove:
+                if platform in self.platforms:
+                    self.platforms.remove(platform)
+                    logger.warning(f"🚫 Removed platform '{platform}' due to validation failure")
+                    # Also remove credentials
+                    if platform in self.credentials:
+                        del self.credentials[platform]
 
     async def _update_validation_timestamps(self):
         """Update last_validated_at timestamp in database for successful validations."""
@@ -308,6 +400,15 @@ class MCPClientManager:
             MultiServerMCPClient instance or None
         """
         return self.clients
+
+    def get_active_platforms(self) -> List[str]:
+        """
+        Get list of currently active platforms (after token refresh and validation).
+
+        Returns:
+            List of active platform names
+        """
+        return self.platforms.copy()
 
     def get_validation_results(self) -> List[MCPValidationResult]:
         """

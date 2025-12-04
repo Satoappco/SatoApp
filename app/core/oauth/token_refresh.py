@@ -43,6 +43,11 @@ def is_token_expired(expires_at: Optional[datetime], buffer_minutes: int = 5) ->
     if not expires_at:
         return True  # No expiry info = assume expired
 
+    # Ensure expires_at is timezone-aware for comparison
+    if expires_at.tzinfo is None:
+        # If naive, assume UTC
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
     buffer = timedelta(minutes=buffer_minutes)
     return datetime.now(timezone.utc) + buffer >= expires_at
 
@@ -272,6 +277,9 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Google Analytics token: {e}")
                     if e.error == 'invalid_grant':
                         mark_needs_reauth(campaigner_id, AssetType.GA4)
+                    # Remove failed token from result so MCP manager knows it failed
+                    if 'google_analytics' in refreshed_tokens:
+                        del refreshed_tokens['google_analytics']
 
     # Check Google Ads
     if MCPServer.GOOGLE_ADS_OFFICIAL in platforms:
@@ -305,6 +313,9 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Google Ads token: {e}")
                     if e.error == 'invalid_grant':
                         mark_needs_reauth(campaigner_id, AssetType.GOOGLE_ADS_CAPS)
+                    # Remove failed token from result so MCP manager knows it failed
+                    if 'google_ads' in refreshed_tokens:
+                        del refreshed_tokens['google_ads']
 
     # Check Facebook
     if MCPServer.META_ADS in platforms:
@@ -338,5 +349,8 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Facebook token: {e}")
                     if 'invalid' in e.error.lower():
                         mark_needs_reauth(campaigner_id, AssetType.FACEBOOK_ADS_CAPS)
+                    # Remove failed token from result so MCP manager knows it failed
+                    if 'facebook' in refreshed_tokens:
+                        del refreshed_tokens['facebook']
 
     return refreshed_tokens

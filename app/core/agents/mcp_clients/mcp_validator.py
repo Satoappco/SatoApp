@@ -196,21 +196,50 @@ class MCPValidator:
                     error_detail=f"Expected: {expected_tools}, Found: {tools}"
                 )
 
-            # Execute a simple test - get metadata (lightweight operation)
-            if 'get_metadata' in tools:
+            # Execute a simple test - get metadata or list accounts (tests credentials)
+            test_tool = None
+            test_params = {}
+
+            if 'get_account_summaries' in tools:
+                test_tool = 'get_account_summaries'
+                test_params = {}
+            elif 'get_metadata' in tools:
+                test_tool = 'get_metadata'
+                test_params = {}
+
+            if test_tool:
                 try:
-                    # Try to call get_metadata with minimal params
+                    # Try to call the test tool - this will exercise credentials
                     result = await asyncio.wait_for(
-                        client.call_tool('get_metadata', {}),
-                        timeout=5.0
+                        client.call_tool(test_tool, test_params),
+                        timeout=10.0
                     )
 
+                    # Check for errors in result
                     if result and not getattr(result, 'isError', False):
-                        return MCPValidationResult(
-                            server=server_name,
-                            status=ValidationStatus.SUCCESS,
-                            message=f"Validated {len(found_tools)} tools"
-                        )
+                        # Also check if content contains error messages
+                        content = getattr(result, 'content', [])
+                        error_keywords = ['error', 'failed', 'invalid', 'expired', 'revoked', 'credentials']
+                        has_error = False
+
+                        if isinstance(content, list):
+                            for item in content:
+                                text = str(getattr(item, 'text', '')).lower()
+                                if any(keyword in text for keyword in error_keywords):
+                                    has_error = True
+                                    return MCPValidationResult(
+                                        server=server_name,
+                                        status=ValidationStatus.FAILED,
+                                        message="Credential validation failed",
+                                        error_detail=text[:200]
+                                    )
+
+                        if not has_error:
+                            return MCPValidationResult(
+                                server=server_name,
+                                status=ValidationStatus.SUCCESS,
+                                message=f"Validated {len(found_tools)} tools"
+                            )
                     else:
                         return MCPValidationResult(
                             server=server_name,
@@ -219,13 +248,24 @@ class MCPValidator:
                             error_detail=str(getattr(result, 'content', 'No response'))
                         )
                 except asyncio.TimeoutError:
-                    logger.warning(f"⚠️  Timeout calling get_metadata, but tools are available")
+                    logger.warning(f"⚠️  Timeout calling {test_tool}, but tools are available")
                     # Don't fail validation on timeout - tools exist, just slow
                     return MCPValidationResult(
                         server=server_name,
                         status=ValidationStatus.SUCCESS,
                         message=f"Found {len(found_tools)} tools (validation timed out)"
                     )
+                except Exception as e:
+                    # Catch credential errors
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ['credential', 'auth', 'token', 'expired', 'revoked']):
+                        return MCPValidationResult(
+                            server=server_name,
+                            status=ValidationStatus.FAILED,
+                            message="Credential error during validation",
+                            error_detail=str(e)[:200]
+                        )
+                    raise
 
             # If we can't test, just verify tools exist
             return MCPValidationResult(
@@ -261,20 +301,45 @@ class MCPValidator:
                     error_detail=f"Expected: {expected_tools}, Found: {tools}"
                 )
 
-            # Execute simple test - list customers
-            if 'list_accessible_customers' in tools:
+            # Execute simple test - list accounts (tests credentials)
+            test_tool = None
+            if 'list_accessible_accounts' in tools:
+                test_tool = 'list_accessible_accounts'
+            elif 'list_accessible_customers' in tools:
+                test_tool = 'list_accessible_customers'
+
+            if test_tool:
                 try:
                     result = await asyncio.wait_for(
-                        client.call_tool('list_accessible_customers', {}),
-                        timeout=5.0
+                        client.call_tool(test_tool, {}),
+                        timeout=10.0
                     )
 
+                    # Check for errors in result
                     if result and not getattr(result, 'isError', False):
-                        return MCPValidationResult(
-                            server=server_name,
-                            status=ValidationStatus.SUCCESS,
-                            message=f"Validated {len(found_tools)} tools"
-                        )
+                        # Also check if content contains error messages
+                        content = getattr(result, 'content', [])
+                        error_keywords = ['error', 'failed', 'invalid', 'expired', 'revoked', 'credentials']
+                        has_error = False
+
+                        if isinstance(content, list):
+                            for item in content:
+                                text = str(getattr(item, 'text', '')).lower()
+                                if any(keyword in text for keyword in error_keywords):
+                                    has_error = True
+                                    return MCPValidationResult(
+                                        server=server_name,
+                                        status=ValidationStatus.FAILED,
+                                        message="Credential validation failed",
+                                        error_detail=text[:200]
+                                    )
+
+                        if not has_error:
+                            return MCPValidationResult(
+                                server=server_name,
+                                status=ValidationStatus.SUCCESS,
+                                message=f"Validated {len(found_tools)} tools"
+                            )
                     else:
                         return MCPValidationResult(
                             server=server_name,
@@ -283,12 +348,23 @@ class MCPValidator:
                             error_detail=str(getattr(result, 'content', 'No response'))
                         )
                 except asyncio.TimeoutError:
-                    logger.warning(f"⚠️  Timeout calling list_accessible_customers, but tools are available")
+                    logger.warning(f"⚠️  Timeout calling {test_tool}, but tools are available")
                     return MCPValidationResult(
                         server=server_name,
                         status=ValidationStatus.SUCCESS,
                         message=f"Found {len(found_tools)} tools (validation timed out)"
                     )
+                except Exception as e:
+                    # Catch credential errors
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ['credential', 'auth', 'token', 'expired', 'revoked']):
+                        return MCPValidationResult(
+                            server=server_name,
+                            status=ValidationStatus.FAILED,
+                            message="Credential error during validation",
+                            error_detail=str(e)[:200]
+                        )
+                    raise
 
             return MCPValidationResult(
                 server=server_name,

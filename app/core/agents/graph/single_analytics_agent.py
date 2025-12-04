@@ -844,23 +844,29 @@ Remember: Use the tools available to you to fetch real data before providing ins
         context_parts = []
 
         # Add platform-specific credentials
-        if "google" in platforms:
+        if "google_ads" in platforms or "google" in platforms:
             ga_credentials = task_details.get("google_analytics_credentials", {}) or {}
             property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
-
-            gads_credentials = task_details.get("google_ads_credentials", {}) or {}
-            customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
-
             if property_id != "NOT_PROVIDED":
                 context_parts.append(f"Google Analytics Property ID: {property_id}")
+            else:
+                logger.error("No Google Analytics Property ID provided in credentials")
+        
+        if "google" in platforms or "google_analytics" in platforms:
+            gads_credentials = task_details.get("google_ads_credentials", {}) or {}
+            customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
             if customer_id != "NOT_PROVIDED":
                 context_parts.append(f"Google Ads Customer ID: {customer_id}")
+            else:
+                logger.error("No Google Ads Customer ID provided in credentials")
 
-        if "facebook" in platforms:
+        if "facebook" in platforms or "meta" in platforms or "meta_ads" in platforms or "facebook_ads" in platforms:
             fb_credentials = task_details.get("meta_ads_credentials", {}) or {}
             ad_account_id = fb_credentials.get("ad_account_id", "NOT_PROVIDED")
             if ad_account_id != "NOT_PROVIDED":
                 context_parts.append(f"Facebook Ads Account ID: {ad_account_id}")
+            else:
+                logger.error("No Facebook Ads Account ID provided in credentials")
 
         # Add user context
         if context:
