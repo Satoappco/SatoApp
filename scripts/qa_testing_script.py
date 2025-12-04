@@ -43,6 +43,8 @@ from dotenv import load_dotenv
 try:
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
 
     GSHEETS_AVAILABLE = True
 except ImportError:
@@ -121,65 +123,92 @@ class QATestingScript:
 
         return sheet_id, gid
 
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
+    def _get_gsheets_client(self):
+        """Get authenticated gspread client using OAuth2 or service account."""
+        # Try OAuth2 first
+        client = self._get_oauth2_client()
+        if client:
+            return client
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.client.aclose()
+        # Fall back to service account
+        return self._get_service_account_client()
 
-    def load_data(self) -> pd.DataFrame:
-        """Load the test cases from Google Sheets or Excel file."""
-        if self.is_google_sheets:
-            return self._load_google_sheets()
-        else:
-            return self._load_excel()
+    def _get_oauth2_client(self):
+        """Get gspread client using OAuth2 refresh token."""
+        try:
+            client_id = os.getenv("GOOGLE_SHEETS_CLIENT_ID")
+            client_secret = os.getenv("GOOGLE_SHEETS_CLIENT_SECRET")
+            refresh_token = os.getenv("GOOGLE_SHEETS_REFRESH_TOKEN")
 
-    def _load_excel(self) -> pd.DataFrame:
-        """Load the Excel file with test cases."""
-        if not os.path.exists(self.sheet_url):
-            raise FileNotFoundError(f"Excel file not found: {self.sheet_url}")
+            if not all([client_id, client_secret, refresh_token]):
+                return None
 
-        df = pd.read_excel(self.sheet_url)
+            # Use the existing token refresh function
+            from app.core.oauth.token_refresh import refresh_google_token
 
-        # Validate required columns
-        required_columns = ["Question", "Expected Answer"]
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {missing_columns}")
+            assert refresh_token is not None  # Already checked above
+            token_data = refresh_google_token(refresh_token)
+            access_token = token_data.get("access_token")
 
-        # Add missing optional columns
-        for col in self.columns:
-            if col not in df.columns:
-                df[col] = ""
+            if not access_token:
+                print("❌ Failed to refresh Google Sheets OAuth2 token")
+                return None
 
-        return df
+            creds = Credentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                client_id=client_id,
+                client_secret=client_secret,
+                token_uri="https://oauth2.googleapis.com/token",
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ],
+            )
+
+            return gspread.authorize(creds)
+
+        except Exception as e:
+            print(f"❌ OAuth2 authentication failed: {e}")
+            return None
+
+    def _get_service_account_client(self):
+        """Get gspread client using service account JSON file."""
+        try:
+            scope = [
+                "https://spreadsheets.google.com/feeds",
+                "https://www.googleapis.com/auth/drive",
+            ]
+            creds_path = self.settings.google_sheets_service_account_path or os.getenv(
+                "GOOGLE_SERVICE_ACCOUNT_PATH"
+            )
+            if not creds_path:
+                return None
+
+            creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+            return gspread.authorize(creds)
+
+        except Exception as e:
+            print(f"❌ Service account authentication failed: {e}")
+            return None
 
     def _load_google_sheets(self) -> pd.DataFrame:
         """Load data from Google Sheets."""
         if not GSHEETS_AVAILABLE:
             raise ImportError(
-                "gspread library not available. Install with: pip install gspread oauth2client"
+                "gspread library not available. Install with: pip install gspread oauth2client google-auth"
             )
 
         sheet_id, gid = self._extract_sheet_id_and_gid(self.sheet_url)
 
-        # Authenticate with service account
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds_path = self.settings.google_sheets_service_account_path or os.getenv(
-            "GOOGLE_SERVICE_ACCOUNT_PATH"
-        )
-        if not creds_path:
+        # Try OAuth2 first, then service account
+        client = self._get_gsheets_client()
+        if not client:
             raise ValueError(
-                "Google Sheets service account path not configured. Set GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH or GOOGLE_SERVICE_ACCOUNT_PATH environment variable"
+                "Google Sheets authentication failed. Configure either:\n"
+                "  OAuth2: Set GOOGLE_SHEETS_CLIENT_ID, GOOGLE_SHEETS_CLIENT_SECRET, and GOOGLE_SHEETS_REFRESH_TOKEN\n"
+                "  Service Account: Set GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH or GOOGLE_SERVICE_ACCOUNT_PATH"
             )
-
-        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-        client = gspread.authorize(creds)
 
         # Open the spreadsheet and worksheet
         spreadsheet = client.open_by_key(sheet_id)
@@ -230,26 +259,19 @@ class QATestingScript:
         """Save data to Google Sheets."""
         if not GSHEETS_AVAILABLE:
             raise ImportError(
-                "gspread library not available. Install with: pip install gspread oauth2client"
+                "gspread library not available. Install with: pip install gspread oauth2client google-auth"
             )
 
         sheet_id, gid = self._extract_sheet_id_and_gid(self.sheet_url)
 
-        # Authenticate with service account
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds_path = self.settings.google_sheets_service_account_path or os.getenv(
-            "GOOGLE_SERVICE_ACCOUNT_PATH"
-        )
-        if not creds_path:
+        # Get authenticated client
+        client = self._get_gsheets_client()
+        if not client:
             raise ValueError(
-                "Google Sheets service account path not configured. Set GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH or GOOGLE_SERVICE_ACCOUNT_PATH environment variable"
+                "Google Sheets authentication failed. Configure either:\n"
+                "  OAuth2: Set GOOGLE_SHEETS_CLIENT_ID, GOOGLE_SHEETS_CLIENT_SECRET, and GOOGLE_SHEETS_REFRESH_TOKEN\n"
+                "  Service Account: Set GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH or GOOGLE_SERVICE_ACCOUNT_PATH"
             )
-
-        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-        client = gspread.authorize(creds)
 
         # Open the spreadsheet and worksheet
         spreadsheet = client.open_by_key(sheet_id)
