@@ -41,9 +41,15 @@ def get_json_column_type():
 
 
 def is_using_postgresql():
-    """Check if we're using PostgreSQL database."""
+    """Check if we're using PostgreSQL database.
+
+    Returns False if no database URL is configured (allows module to be imported
+    without DATABASE_URL set, which happens during testing).
+    """
     import os
     database_url = os.getenv("DATABASE_URL", "") or os.getenv("TEST_DATABASE_URL", "")
+    if not database_url:
+        return False  # Default to False if no database configured yet
     return "postgres" in database_url.lower()
 
 

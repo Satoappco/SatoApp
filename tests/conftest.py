@@ -95,8 +95,10 @@ def get_test_database_url(request=None):
         test_url = os.getenv("TEST_DATABASE_URL")
         if test_url:
             # Safety check: ensure it's not accidentally pointing to production
+            # Allow sqlite:///:memory: for testing
             if (
-                "localhost" not in test_url
+                "sqlite:///:memory:" not in test_url
+                and "localhost" not in test_url
                 and "127.0.0.1" not in test_url
                 and "test" not in test_url.lower()
             ):
@@ -106,6 +108,7 @@ def get_test_database_url(request=None):
                     f"Test database URLs must either:\n"
                     f"  1. Contain 'localhost' or '127.0.0.1'\n"
                     f"  2. Contain 'test' in the database name\n"
+                    f"  3. Be 'sqlite:///:memory:' (in-memory database)\n"
                     f"This prevents accidental production database corruption."
                 )
             return test_url
