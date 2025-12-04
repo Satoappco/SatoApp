@@ -228,7 +228,11 @@ class TestChatTraceService:
         self, mock_datetime, mock_flag_modified, service, mock_session
     ):
         """Test completing a conversation."""
-        mock_datetime.utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
+        from datetime import timezone
+
+        mock_datetime.now.return_value = datetime(
+            2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+        )
 
         # Use real dict so it can be modified
         conversation_data = {"status": "active", "message_count": 5}
@@ -242,7 +246,7 @@ class TestChatTraceService:
 
         # Verify conversation was updated
         assert mock_conversation.data["status"] == "completed"
-        assert mock_conversation.data["completed_at"] == "2023-01-01T12:00:00"
+        assert mock_conversation.data["completed_at"] == "2023-01-01T12:00:00+00:00"
         assert mock_conversation.data["message_count"] == 5
         assert result is mock_conversation
         mock_flag_modified.assert_called_once()
@@ -252,7 +256,12 @@ class TestChatTraceService:
     @patch("app.services.chat_trace_service.LangfuseConfig")
     @patch("app.services.chat_trace_service.flag_modified")
     def test_add_message(
-        self, mock_flag_modified, mock_langfuse_config, mock_chat_trace_class, service, mock_session
+        self,
+        mock_flag_modified,
+        mock_langfuse_config,
+        mock_chat_trace_class,
+        service,
+        mock_session,
     ):
         """Test adding a message to conversation."""
         # Mock conversation

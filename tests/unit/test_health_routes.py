@@ -18,14 +18,18 @@ class TestHealthCheck:
         mock_settings.app_version = "1.0.0"
 
         with patch("app.api.v1.routes.health.datetime") as mock_datetime:
-            mock_datetime.utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            from datetime import timezone
+
+            mock_datetime.now.return_value = datetime(
+                2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+            )
 
             result = health_check()
 
             assert result["status"] == "healthy"
             assert result["service"] == "TestApp"
             assert result["version"] == "1.0.0"
-            assert result["timestamp"] == "2023-01-01T12:00:00"
+            assert result["timestamp"] == "2023-01-01T12:00:00+00:00"
 
     @patch("app.api.v1.routes.health.settings")
     def test_health_check_contains_required_fields(self, mock_settings):
@@ -52,14 +56,18 @@ class TestRoot:
         mock_settings.app_version = "1.0.0"
 
         with patch("app.api.v1.routes.health.datetime") as mock_datetime:
-            mock_datetime.utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            from datetime import timezone
+
+            mock_datetime.now.return_value = datetime(
+                2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc
+            )
 
             result = root()
 
             assert result["message"] == "TestApp"
             assert result["version"] == "1.0.0"
             assert result["status"] == "active"
-            assert result["timestamp"] == "2023-01-01T12:00:00"
+            assert result["timestamp"] == "2023-01-01T12:00:00+00:00"
 
     @patch("app.api.v1.routes.health.settings")
     def test_root_contains_required_fields(self, mock_settings):
