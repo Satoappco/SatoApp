@@ -19,17 +19,25 @@ def get_json_column_type():
 
     Returns JSONB for PostgreSQL (better performance and indexing)
     and JSON for other databases like SQLite.
-    """
-    import os
-    # Check both DATABASE_URL and TEST_DATABASE_URL
-    database_url = os.getenv("DATABASE_URL", "") or os.getenv("TEST_DATABASE_URL", "")
 
-    # Use JSONB for PostgreSQL, JSON for everything else (including SQLite)
-    # Check for both postgres:// and postgresql:// schemes
-    if "postgres" in database_url.lower():
-        return postgresql.JSONB(astext_type=Text())
-    else:
-        return JSON()
+    This uses TypeDecorator to defer database detection until runtime.
+    """
+    from sqlalchemy import TypeDecorator
+    import os
+
+    class AdaptiveJSON(TypeDecorator):
+        """JSON type that adapts to the database dialect at runtime."""
+        impl = JSON
+        cache_ok = True
+
+        def load_dialect_impl(self, dialect):
+            # At runtime, check which dialect we're using
+            if dialect.name == 'postgresql':
+                return dialect.type_descriptor(postgresql.JSONB(astext_type=Text()))
+            else:
+                return dialect.type_descriptor(JSON())
+
+    return AdaptiveJSON()
 
 
 def is_using_postgresql():
