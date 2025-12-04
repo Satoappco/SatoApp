@@ -96,6 +96,9 @@ PyJWT[crypto]
 
 # Google Ads dependencies
 google-ads
+# Google Sheets dependencies
+gspread
+oauth2client
 # Facebook dependencies
 facebook-sdk
 requests-oauthlib

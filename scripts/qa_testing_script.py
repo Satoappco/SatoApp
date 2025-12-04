@@ -1,7 +1,7 @@
 """
 QA Testing Script for Chat API
 
-This script processes an Excel table with predefined questions and evaluates chat responses.
+This script processes a Google Sheets or Excel table with predefined questions and evaluates chat responses.
 Columns: type, question, expected_answer, current_answer, previous_answer, rank, suggestion
 
 Process:
@@ -11,10 +11,19 @@ Process:
 4. Use LLM to rank: "both good", "previous better", "current better", "both bad"
 5. Generate suggestions for improvement
 
+Features:
+- Supports both Google Sheets URLs and local Excel files
+- Fail-fast mode: Stop processing a group when one question fails (enabled by default)
+- Groups questions by "Type" column for fail-fast behavior
+
 Authentication:
 - Uses JWT tokens for authentication (not API_TOKEN)
 - Automatically generates a test JWT token if none provided
 - Can also use JWT_TOKEN environment variable or --jwt-token argument
+
+Google Sheets Setup:
+- Requires GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH environment variable pointing to service account JSON
+- Default sheet: https://docs.google.com/spreadsheets/d/1Trpy3H_VvfZfHPky-f47ilwU714kmrem2kWETibECeM/edit?gid=2126514740#gid=2126514740
 """
 
 import os
@@ -22,6 +31,7 @@ import sys
 import json
 import asyncio
 import argparse
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -29,6 +39,14 @@ from datetime import datetime
 import pandas as pd
 import httpx
 from dotenv import load_dotenv
+
+try:
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+
+    GSHEETS_AVAILABLE = True
+except ImportError:
+    GSHEETS_AVAILABLE = False
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,24 +62,28 @@ class QATestingScript:
 
     def __init__(
         self,
-        excel_path: str,
+        sheet_url: str = "https://docs.google.com/spreadsheets/d/1Trpy3H_VvfZfHPky-f47ilwU714kmrem2kWETibECeM/edit?gid=2126514740#gid=2126514740",
         api_base_url: str = "http://localhost:8080",
         jwt_token: Optional[str] = None,
         llm_provider: str = "gemini",
+        fail_fast: bool = True,
     ):
         """
         Initialize the QA testing script.
 
         Args:
-            excel_path: Path to the Excel file with test cases
+            sheet_url: Google Sheets URL or path to Excel file with test cases
             api_base_url: Base URL for the API
             jwt_token: JWT token for authentication
             llm_provider: LLM provider for ranking ("gemini" or "openai")
+            fail_fast: If True, stop processing a group when one question fails
         """
-        self.excel_path = excel_path
+        self.sheet_url = sheet_url
+        self.is_google_sheets = self._is_google_sheets_url(sheet_url)
         self.api_base_url = api_base_url.rstrip("/")
         self.jwt_token = jwt_token
         self.llm_provider = llm_provider
+        self.fail_fast = fail_fast
         self.settings = get_settings()
 
         # Initialize HTTP client
@@ -78,6 +100,24 @@ class QATestingScript:
             "Suggestion",
         ]
 
+    def _is_google_sheets_url(self, url: str) -> bool:
+        """Check if the provided URL is a Google Sheets URL."""
+        return "docs.google.com/spreadsheets" in url
+
+    def _extract_sheet_id_and_gid(self, url: str) -> tuple[str, str]:
+        """Extract spreadsheet ID and sheet GID from Google Sheets URL."""
+        # Extract spreadsheet ID
+        sheet_id_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+        if not sheet_id_match:
+            raise ValueError("Invalid Google Sheets URL: cannot extract spreadsheet ID")
+        sheet_id = sheet_id_match.group(1)
+
+        # Extract GID (sheet ID within the spreadsheet)
+        gid_match = re.search(r"gid=(\d+)", url)
+        gid = gid_match.group(1) if gid_match else "0"  # Default to first sheet
+
+        return sheet_id, gid
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
@@ -86,12 +126,19 @@ class QATestingScript:
         """Async context manager exit."""
         await self.client.aclose()
 
-    def load_excel(self) -> pd.DataFrame:
-        """Load the Excel file with test cases."""
-        if not os.path.exists(self.excel_path):
-            raise FileNotFoundError(f"Excel file not found: {self.excel_path}")
+    def load_data(self) -> pd.DataFrame:
+        """Load the test cases from Google Sheets or Excel file."""
+        if self.is_google_sheets:
+            return self._load_google_sheets()
+        else:
+            return self._load_excel()
 
-        df = pd.read_excel(self.excel_path)
+    def _load_excel(self) -> pd.DataFrame:
+        """Load the Excel file with test cases."""
+        if not os.path.exists(self.sheet_url):
+            raise FileNotFoundError(f"Excel file not found: {self.sheet_url}")
+
+        df = pd.read_excel(self.sheet_url)
 
         # Validate required columns
         required_columns = ["Question", "Expected Answer"]
@@ -106,18 +153,103 @@ class QATestingScript:
 
         return df
 
-    def save_excel(self, df: pd.DataFrame):
+    def _load_google_sheets(self) -> pd.DataFrame:
+        """Load data from Google Sheets."""
+        if not GSHEETS_AVAILABLE:
+            raise ImportError(
+                "gspread library not available. Install with: pip install gspread oauth2client"
+            )
+
+        sheet_id, gid = self._extract_sheet_id_and_gid(self.sheet_url)
+
+        # Authenticate with service account
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds_path = self.settings.google_sheets_service_account_path
+        if not creds_path:
+            raise ValueError(
+                "Google Sheets service account path not configured in settings"
+            )
+
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+        client = gspread.authorize(creds)
+
+        # Open the spreadsheet and worksheet
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet_by_id(int(gid))
+
+        # Get all values
+        data = worksheet.get_all_records()
+
+        df = pd.DataFrame(data)
+
+        # Validate required columns
+        required_columns = ["Question", "Expected Answer"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+
+        # Add missing optional columns
+        for col in self.columns:
+            if col not in df.columns:
+                df[col] = ""
+
+        return df
+
+    def save_data(self, df: pd.DataFrame):
+        """Save the updated DataFrame to Google Sheets or Excel."""
+        if self.is_google_sheets:
+            self._save_google_sheets(df)
+        else:
+            self._save_excel(df)
+
+    def _save_excel(self, df: pd.DataFrame):
         """Save the updated DataFrame to Excel."""
         # Create backup before overwriting
-        if os.path.exists(self.excel_path):
+        if os.path.exists(self.sheet_url):
             backup_path = (
-                f"{self.excel_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                f"{self.sheet_url}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
-            os.rename(self.excel_path, backup_path)
+            os.rename(self.sheet_url, backup_path)
             print(f"✅ Created backup: {backup_path}")
 
-        df.to_excel(self.excel_path, index=False)
-        print(f"✅ Saved results to: {self.excel_path}")
+        df.to_excel(self.sheet_url, index=False)
+        print(f"✅ Saved results to: {self.sheet_url}")
+
+    def _save_google_sheets(self, df: pd.DataFrame):
+        """Save data to Google Sheets."""
+        if not GSHEETS_AVAILABLE:
+            raise ImportError(
+                "gspread library not available. Install with: pip install gspread oauth2client"
+            )
+
+        sheet_id, gid = self._extract_sheet_id_and_gid(self.sheet_url)
+
+        # Authenticate with service account
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds_path = self.settings.google_sheets_service_account_path
+        if not creds_path:
+            raise ValueError(
+                "Google Sheets service account path not configured in settings"
+            )
+
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+        client = gspread.authorize(creds)
+
+        # Open the spreadsheet and worksheet
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet_by_id(int(gid))
+
+        # Clear existing data and update with new data
+        worksheet.clear()
+        worksheet.update([df.columns.tolist()] + df.values.tolist())
+
+        print(f"✅ Saved results to Google Sheets: {self.sheet_url}")
 
     def move_current_to_previous(self, df: pd.DataFrame) -> pd.DataFrame:
         """Move current_answer to previous_answer for all rows."""
@@ -275,43 +407,101 @@ Respond in JSON format:
             f"\n🚀 Processing {total_rows} test cases (rows {start_row} to {end_row - 1})...\n"
         )
 
-        for idx in range(start_row, end_row):
-            row = df.iloc[idx]
-            question = row["Question"]
-            expected_answer = row["Expected Answer"]
-            previous_answer = row["Previous Answer"]
+        # Group by Type if fail_fast is enabled
+        if self.fail_fast and "Type" in df.columns:
+            # Process by groups
+            grouped = df.iloc[start_row:end_row].groupby("Type", sort=False)
+            for group_name, group_df in grouped:
+                print(f"📁 Processing group: {group_name}")
+                group_failed = False
 
-            print(f"[{idx + 1}/{end_row}] Testing: {question[:60]}...")
+                for idx in group_df.index:
+                    if group_failed:
+                        print(
+                            f"  ⏭️  Skipping remaining questions in group '{group_name}' due to previous failure"
+                        )
+                        break
 
-            # Call chat API
-            print(f"  → Calling chat API...")
-            response = await self.call_chat_api(question, customer_id)
-            current_answer = response.get("message", "")
+                    row = df.loc[idx]
+                    question = row["Question"]
+                    expected_answer = row["Expected Answer"]
+                    previous_answer = row["Previous Answer"]
 
-            if response.get("error"):
-                current_answer = f"ERROR: {response['error']}"
+                    print(f"[{idx + 1}/{end_row}] Testing: {question[:60]}...")
 
-            df.at[idx, "Current Answer"] = current_answer
-            print(f"  ✅ Got response: {current_answer[:100]}...")
+                    # Call chat API
+                    print(f"  → Calling chat API...")
+                    response = await self.call_chat_api(question, customer_id)
+                    current_answer = response.get("message", "")
 
-            # Rank with LLM
-            print(f"  → Ranking with LLM...")
-            ranking = await self.rank_with_llm(
-                question=question,
-                expected_answer=expected_answer,
-                current_answer=current_answer,
-                previous_answer=previous_answer,
-            )
+                    if response.get("error"):
+                        current_answer = f"ERROR: {response['error']}"
 
-            df.at[idx, "Rank"] = ranking.get("rank", "both bad")
-            df.at[idx, "Suggestion"] = ranking.get("suggestion", "")
+                    df.at[idx, "Current Answer"] = current_answer
+                    print(f"  ✅ Got response: {current_answer[:100]}...")
 
-            print(f"  ✅ Rank: {ranking.get('rank')}")
-            print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
-            print()
+                    # Rank with LLM
+                    print(f"  → Ranking with LLM...")
+                    ranking = await self.rank_with_llm(
+                        question=question,
+                        expected_answer=expected_answer,
+                        current_answer=current_answer,
+                        previous_answer=previous_answer,
+                    )
 
-            # Save progress after each row
-            self.save_excel(df)
+                    rank = ranking.get("rank", "both bad")
+                    df.at[idx, "Rank"] = rank
+                    df.at[idx, "Suggestion"] = ranking.get("suggestion", "")
+
+                    print(f"  ✅ Rank: {rank}")
+                    print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
+
+                    # Check if this question failed and fail_fast is enabled
+                    if self.fail_fast and rank == "both bad":
+                        group_failed = True
+                        print(
+                            f"  ❌ Question failed with rank '{rank}', skipping remaining questions in group '{group_name}'"
+                        )
+                    print()
+        else:
+            # Process all rows individually (original behavior)
+            for idx in range(start_row, end_row):
+                row = df.iloc[idx]
+                question = row["Question"]
+                expected_answer = row["Expected Answer"]
+                previous_answer = row["Previous Answer"]
+
+                print(f"[{idx + 1}/{end_row}] Testing: {question[:60]}...")
+
+                # Call chat API
+                print(f"  → Calling chat API...")
+                response = await self.call_chat_api(question, customer_id)
+                current_answer = response.get("message", "")
+
+                if response.get("error"):
+                    current_answer = f"ERROR: {response['error']}"
+
+                df.at[idx, "Current Answer"] = current_answer
+                print(f"  ✅ Got response: {current_answer[:100]}...")
+
+                # Rank with LLM
+                print(f"  → Ranking with LLM...")
+                ranking = await self.rank_with_llm(
+                    question=question,
+                    expected_answer=expected_answer,
+                    current_answer=current_answer,
+                    previous_answer=previous_answer,
+                )
+
+                df.at[idx, "Rank"] = ranking.get("rank", "both bad")
+                df.at[idx, "Suggestion"] = ranking.get("suggestion", "")
+
+                print(f"  ✅ Rank: {ranking.get('rank')}")
+                print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
+                print()
+
+        # Save progress after processing
+        self.save_data(df)
 
         return df
 
@@ -333,21 +523,22 @@ Respond in JSON format:
         print("QA Testing Script for Chat API")
         print("=" * 80)
 
-        # Load Excel
-        print(f"\n📂 Loading Excel file: {self.excel_path}")
-        df = self.load_excel()
+        # Load data
+        source_type = "Google Sheets" if self.is_google_sheets else "Excel file"
+        print(f"\n📂 Loading {source_type}: {self.sheet_url}")
+        df = self.load_data()
         print(f"✅ Loaded {len(df)} test cases")
 
         # Move current to previous
         print(f"\n🔄 Moving current answers to previous...")
         df = self.move_current_to_previous(df)
-        self.save_excel(df)
+        self.save_data(df)
 
         # Process test cases
         df = await self.process_test_cases(df, start_row, end_row, customer_id)
 
         # Final save
-        self.save_excel(df)
+        self.save_data(df)
 
         # Print summary
         print("\n" + "=" * 80)
@@ -359,14 +550,19 @@ Respond in JSON format:
         for rank, count in rank_counts.items():
             print(f"  {rank}: {count}")
 
-        print(f"\n✅ Testing complete! Results saved to: {self.excel_path}")
+        print(f"\n✅ Testing complete! Results saved to: {self.sheet_url}")
         print("=" * 80)
 
 
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="QA Testing Script for Chat API")
-    parser.add_argument("excel_path", help="Path to Excel file with test cases")
+    parser.add_argument(
+        "sheet_url",
+        nargs="?",
+        default="https://docs.google.com/spreadsheets/d/1Trpy3H_VvfZfHPky-f47ilwU714kmrem2kWETibECeM/edit?gid=2126514740#gid=2126514740",
+        help="Google Sheets URL or path to Excel file with test cases (default: Sato QA sheet)",
+    )
     parser.add_argument(
         "--api-url",
         default="http://localhost:8080",
@@ -392,6 +588,18 @@ async def main():
         choices=["gemini"],
         default="gemini",
         help="LLM provider for ranking (default: gemini)",
+    )
+    parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        default=True,
+        help="Stop processing a group when one question fails (default: enabled)",
+    )
+    parser.add_argument(
+        "--no-fail-fast",
+        action="store_false",
+        dest="fail_fast",
+        help="Process all questions regardless of failures",
     )
 
     args = parser.parse_args()
@@ -421,10 +629,11 @@ async def main():
 
     # Run the script
     async with QATestingScript(
-        excel_path=args.excel_path,
+        sheet_url=args.sheet_url,
         api_base_url=args.api_url,
         jwt_token=jwt_token,
         llm_provider=args.llm_provider,
+        fail_fast=args.fail_fast,
     ) as script:
         await script.run(
             start_row=args.start_row, end_row=args.end_row, customer_id=args.customer_id
