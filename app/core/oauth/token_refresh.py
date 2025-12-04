@@ -44,7 +44,7 @@ def is_token_expired(expires_at: Optional[datetime], buffer_minutes: int = 5) ->
         return True  # No expiry info = assume expired
 
     buffer = timedelta(minutes=buffer_minutes)
-    return datetime.utcnow() + buffer >= expires_at
+    return datetime.now(timezone.utc) + buffer >= expires_at
 
 
 def refresh_google_token(refresh_token: str) -> Dict[str, any]:
@@ -83,7 +83,7 @@ def refresh_google_token(refresh_token: str) -> Dict[str, any]:
             )
 
         data = response.json()
-        expires_at = datetime.utcnow() + timedelta(seconds=data['expires_in'])
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
 
         logger.info(f"✅ Google token refreshed successfully, expires at {expires_at}")
 
@@ -139,7 +139,7 @@ def refresh_facebook_token(access_token: str) -> Dict[str, any]:
             )
 
         data = response.json()
-        expires_at = datetime.utcnow() + timedelta(seconds=data['expires_in'])
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
 
         logger.info(f"✅ Facebook token refreshed successfully, expires at {expires_at}")
 
@@ -182,7 +182,7 @@ def update_connection_token(
             # Update token (assuming tokens are stored as plain text for now)
             # In production, these should be encrypted
             connection.expires_at = expires_at
-            connection.updated_at = datetime.utcnow()
+            connection.updated_at = datetime.now(timezone.utc)
             connection.needs_reauth = False  # Successfully refreshed
             session.add(connection)
             session.commit()

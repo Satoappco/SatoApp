@@ -190,7 +190,7 @@ async def list_tasks(
                 statement = statement.where(Task.priority == priority_filter)
 
             if is_overdue is not None:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 if is_overdue:
                     # Overdue: due_date is in the past and status is not completed
                     statement = statement.where(
@@ -350,7 +350,7 @@ async def update_task(
             # If status is being set to completed, record completion
             if "status" in update_data and update_data["status"] == TaskStatus.COMPLETED:
                 if task.status != TaskStatus.COMPLETED:
-                    task.completed_at = datetime.utcnow()
+                    task.completed_at = datetime.now(timezone.utc)
                     task.completed_by = current_user.id
 
             # If status is being changed from completed to something else, clear completion

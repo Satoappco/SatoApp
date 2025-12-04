@@ -83,7 +83,7 @@ class MCPValidator:
         Returns:
             Validation result
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             # Get available tools from client
@@ -338,7 +338,7 @@ class MCPValidator:
 
     def _duration_ms(self, start_time: datetime) -> int:
         """Calculate duration in milliseconds."""
-        delta = datetime.utcnow() - start_time
+        delta = datetime.now(timezone.utc) - start_time
         return int(delta.total_seconds() * 1000)
 
     def get_summary(self) -> Dict:

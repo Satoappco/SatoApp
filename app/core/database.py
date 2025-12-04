@@ -115,7 +115,7 @@ class DatabaseManager:
                         elif hasattr(existing_config, key) and key != 'id':  # Don't update the ID
                             setattr(existing_config, key, value)
                     
-                    existing_config.updated_at = datetime.utcnow()
+                    existing_config.updated_at = datetime.now(timezone.utc)
                     session.add(existing_config)
                     session.commit()
                     session.refresh(existing_config)

@@ -65,7 +65,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "crew_start",
             "depth_level": 0,
@@ -77,7 +77,7 @@ class DetailedExecutionLogger:
                 "agents": agents or [],
                 "tasks": tasks or [],
                 "process": process,
-                "start_time": datetime.utcnow().isoformat()
+                "start_time": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "🚀",
             "color": "blue",
@@ -96,7 +96,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "task_start",
             "parent_log_id": parent_log_id,
@@ -110,7 +110,7 @@ class DetailedExecutionLogger:
             "log_metadata": json.dumps({
                 "assigned_agent": assigned_agent,
                 "task_description": task_description[:200] + "..." if len(task_description) > 200 else task_description,
-                "start_time": datetime.utcnow().isoformat()
+                "start_time": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "📋",
             "color": "yellow",
@@ -128,7 +128,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "agent_start",
             "parent_log_id": parent_log_id,
@@ -141,7 +141,7 @@ class DetailedExecutionLogger:
             "log_metadata": json.dumps({
                 "agent_name": agent_name,
                 "task_description": task_description[:200] + "..." if task_description and len(task_description) > 200 else task_description,
-                "start_time": datetime.utcnow().isoformat()
+                "start_time": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "🤖",
             "color": "green",
@@ -159,7 +159,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "agent_thinking",
             "parent_log_id": parent_log_id,
@@ -171,7 +171,7 @@ class DetailedExecutionLogger:
             "log_metadata": json.dumps({
                 "agent_name": agent_name,
                 "thought": thought[:200] + "..." if thought and len(thought) > 200 else thought,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "🧠",
             "color": "purple",
@@ -188,7 +188,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "tool_execution",
             "parent_log_id": parent_log_id,
@@ -204,7 +204,7 @@ class DetailedExecutionLogger:
                 "tool_name": tool_name,
                 "attempt_number": attempt_number,
                 "tool_input": tool_input[:200] + "..." if tool_input and len(tool_input) > 200 else tool_input,
-                "start_time": datetime.utcnow().isoformat()
+                "start_time": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "🔧",
             "color": "blue",
@@ -222,7 +222,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "tool_input",
             "parent_log_id": parent_log_id,
@@ -235,7 +235,7 @@ class DetailedExecutionLogger:
             "log_metadata": json.dumps({
                 "tool_name": tool_name,
                 "input_size": len(tool_input) if tool_input else 0,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "📥",
             "color": "gray",
@@ -252,7 +252,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "tool_output",
             "parent_log_id": parent_log_id,
@@ -267,7 +267,7 @@ class DetailedExecutionLogger:
                 "tool_name": tool_name,
                 "output_size": len(tool_output) if tool_output else 0,
                 "duration_ms": duration_ms,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "📤",
             "color": "gray",
@@ -284,7 +284,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "tool_error",
             "parent_log_id": parent_log_id,
@@ -302,7 +302,7 @@ class DetailedExecutionLogger:
                 "attempt_number": attempt_number,
                 "error_message": error_message,
                 "tool_input": tool_input[:200] + "..." if tool_input and len(tool_input) > 200 else tool_input,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "❌",
             "color": "red",
@@ -319,7 +319,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "delegation",
             "parent_log_id": parent_log_id,
@@ -334,7 +334,7 @@ class DetailedExecutionLogger:
                 "delegated_to": delegated_to,
                 "task": task[:200] + "..." if task and len(task) > 200 else task,
                 "context": context[:200] + "..." if context and len(context) > 200 else context,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "🔄",
             "color": "orange",
@@ -350,7 +350,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "final_answer",
             "parent_log_id": parent_log_id,
@@ -363,7 +363,7 @@ class DetailedExecutionLogger:
             "log_metadata": json.dumps({
                 "agent_name": agent_name,
                 "answer_length": len(final_answer) if final_answer else 0,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "✅",
             "color": "green",
@@ -386,7 +386,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "task_complete",
             "parent_log_id": parent_log_id,
@@ -402,7 +402,7 @@ class DetailedExecutionLogger:
                 "assigned_agent": assigned_agent,
                 "duration_ms": duration_ms,
                 "tools_used": tools_used or [],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "✅",
             "color": "green",
@@ -423,7 +423,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "crew_complete",
             "depth_level": 0,
@@ -437,7 +437,7 @@ class DetailedExecutionLogger:
                 "crew_name": crew_name,
                 "duration_seconds": duration_seconds,
                 "output_length": len(final_output) if final_output else 0,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "✅",
             "color": "green",
@@ -457,7 +457,7 @@ class DetailedExecutionLogger:
         log_data = {
             "session_id": self.session_id,
             "analysis_id": self.analysis_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "sequence_number": self._get_next_sequence(),
             "log_type": "crew_error",
             "depth_level": 0,
@@ -471,7 +471,7 @@ class DetailedExecutionLogger:
                 "crew_name": crew_name,
                 "duration_seconds": duration_seconds,
                 "error_message": error_message,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }),
             "icon": "❌",
             "color": "red",

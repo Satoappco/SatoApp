@@ -113,7 +113,7 @@ Reference specific messages for editing or deletion operations:
 ```python
 # Mark message as deleted
 message = get_message(message_id)
-message.deleted_at = datetime.utcnow()
+message.deleted_at = datetime.now(timezone.utc)
 session.commit()
 ```
 

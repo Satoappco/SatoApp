@@ -63,7 +63,7 @@ Examples:
                 
                 # Update the agent
                 master_agent.backstory = updated_backstory
-                master_agent.updated_at = datetime.utcnow()
+                master_agent.updated_at = datetime.now(timezone.utc)
                 
                 # Ensure delegation is enabled
                 if not master_agent.allow_delegation:

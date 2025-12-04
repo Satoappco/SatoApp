@@ -585,7 +585,7 @@ class GoogleAnalyticsService:
         with get_session() as new_session:
             fresh_connection = new_session.get(Connection, connection_id)
             if fresh_connection:
-                fresh_connection.last_used_at = datetime.utcnow()
+                fresh_connection.last_used_at = datetime.now(timezone.utc)
                 new_session.add(fresh_connection)
                 new_session.commit()
         
@@ -742,7 +742,7 @@ class GoogleAnalyticsService:
             )
             
             # Update last used time
-            connection.last_used_at = datetime.utcnow()
+            connection.last_used_at = datetime.now(timezone.utc)
             session.add(connection)
             session.commit()
             
@@ -975,7 +975,7 @@ class GoogleAnalyticsService:
                     return []
                 
                 # Check if token needs refresh
-                if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=5):
+                if connection.expires_at and connection.expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5):
                     refresh_result = await self.refresh_ga_token(connection_id)
                     if not refresh_result.get("access_token"):
                         return []
@@ -1096,7 +1096,7 @@ class GoogleAnalyticsService:
                     return {"success": False, "error": "Connection not found"}
                 
                 # Check if token needs refresh
-                if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=5):
+                if connection.expires_at and connection.expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5):
                     refresh_result = await self.refresh_ga_token(connection_id)
                     if not refresh_result.get("access_token"):
                         return {"success": False, "error": "Token refresh failed"}

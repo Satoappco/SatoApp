@@ -262,7 +262,7 @@ class MCPClientManager:
             if not self.validation_results:
                 return
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             with get_session() as session:
                 # Update connections if validated successfully

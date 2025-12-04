@@ -361,7 +361,7 @@ class FacebookService:
                 token_hash = self._generate_token_hash(access_token)
 
                 # Calculate expiration time
-                expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
                 # Check for existing connection
                 connection_statement = select(Connection).where(
@@ -380,8 +380,8 @@ class FacebookService:
                     connection.expires_at = expires_at
                     connection.account_email = user_email
                     connection.scopes = self.FACEBOOK_SCOPES
-                    connection.rotated_at = datetime.utcnow()
-                    connection.last_used_at = datetime.utcnow()
+                    connection.rotated_at = datetime.now(timezone.utc)
+                    connection.last_used_at = datetime.now(timezone.utc)
                 else:
                     # Create new connection
                     connection = Connection(
@@ -395,7 +395,7 @@ class FacebookService:
                         token_hash=token_hash,
                         expires_at=expires_at,
                         revoked=False,
-                        last_used_at=datetime.utcnow(),
+                        last_used_at=datetime.now(timezone.utc),
                     )
 
                 session.add(connection)
@@ -689,7 +689,7 @@ class FacebookService:
             buffer_time = timedelta(minutes=5)
             if (
                 connection.expires_at
-                and connection.expires_at < datetime.utcnow() + buffer_time
+                and connection.expires_at < datetime.now(timezone.utc) + buffer_time
             ):
                 # Use refresh lock to prevent simultaneous refresh attempts
                 if connection_id not in self._refresh_locks:
@@ -700,7 +700,7 @@ class FacebookService:
                     session.refresh(connection)  # Reload from DB
                     if not (
                         connection.expires_at
-                        and connection.expires_at < datetime.utcnow() + buffer_time
+                        and connection.expires_at < datetime.now(timezone.utc) + buffer_time
                     ):
                         print(
                             f"🔄 Facebook token was already refreshed by another process"
@@ -721,7 +721,7 @@ class FacebookService:
                             # Update the connection with the new token
                             new_access_token = extended_token["access_token"]
                             new_expires_in = extended_token.get("expires_in", 3600)
-                            new_expires_at = datetime.utcnow() + timedelta(
+                            new_expires_at = datetime.now(timezone.utc) + timedelta(
                                 seconds=new_expires_in
                             )
 
@@ -730,7 +730,7 @@ class FacebookService:
                                 new_access_token
                             )
                             connection.expires_at = new_expires_at
-                            connection.rotated_at = datetime.utcnow()
+                            connection.rotated_at = datetime.now(timezone.utc)
                             session.add(connection)
                             session.commit()
 
@@ -753,7 +753,7 @@ class FacebookService:
                             )
 
             # Update last used time
-            connection.last_used_at = datetime.utcnow()
+            connection.last_used_at = datetime.now(timezone.utc)
             session.add(connection)
             session.commit()
 
@@ -852,7 +852,7 @@ class FacebookService:
             "date_range": {"start": start_date, "end": end_date},
             "data": data.get("data", []),
             "paging": data.get("paging", {}),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _fetch_ad_insights(
@@ -920,7 +920,7 @@ class FacebookService:
             "date_range": {"start": start_date, "end": end_date},
             "data": data.get("data", []),
             "paging": data.get("paging", {}),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def _fetch_page_posts(
@@ -956,7 +956,7 @@ class FacebookService:
             "date_range": {"start": start_date, "end": end_date},
             "data": data.get("data", []),
             "paging": data.get("paging", {}),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def refresh_facebook_token(self, connection_id: int) -> Dict[str, Any]:
@@ -985,7 +985,7 @@ class FacebookService:
             buffer_time = timedelta(minutes=5)
             if (
                 connection.expires_at
-                and connection.expires_at < datetime.utcnow() + buffer_time
+                and connection.expires_at < datetime.now(timezone.utc) + buffer_time
             ):
                 # Use refresh lock to prevent simultaneous refresh attempts
                 if connection_id not in self._refresh_locks:
@@ -996,7 +996,7 @@ class FacebookService:
                     session.refresh(connection)  # Reload from DB
                     if not (
                         connection.expires_at
-                        and connection.expires_at < datetime.utcnow() + buffer_time
+                        and connection.expires_at < datetime.now(timezone.utc) + buffer_time
                     ):
                         print(
                             f"🔄 Facebook token was already refreshed by another process"
@@ -1017,7 +1017,7 @@ class FacebookService:
                             # Update the connection with the new token
                             new_access_token = extended_token["access_token"]
                             new_expires_in = extended_token.get("expires_in", 3600)
-                            new_expires_at = datetime.utcnow() + timedelta(
+                            new_expires_at = datetime.now(timezone.utc) + timedelta(
                                 seconds=new_expires_in
                             )
 
@@ -1026,7 +1026,7 @@ class FacebookService:
                                 new_access_token
                             )
                             connection.expires_at = new_expires_at
-                            connection.rotated_at = datetime.utcnow()
+                            connection.rotated_at = datetime.now(timezone.utc)
                             session.add(connection)
                             session.commit()
 
@@ -1049,7 +1049,7 @@ class FacebookService:
                             )
 
             # Update last used time
-            connection.last_used_at = datetime.utcnow()
+            connection.last_used_at = datetime.now(timezone.utc)
             session.add(connection)
             session.commit()
 

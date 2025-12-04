@@ -119,7 +119,7 @@ async def handle_oauth_callback(
             
             # Check expiration using JWT exp field
             from datetime import datetime
-            if datetime.utcnow().timestamp() > payload.get('exp', 0):
+            if datetime.now(timezone.utc).timestamp() > payload.get('exp', 0):
                 raise HTTPException(
                     status_code=400,
                     detail="OAuth state has expired"
@@ -309,7 +309,7 @@ async def create_facebook_marketing_connection(
             token_hash = facebook_service._generate_token_hash(request.access_token)
 
             # Calculate expiry time (default to 1 hour if not specified)
-            expires_at = datetime.utcnow() + timedelta(seconds=3600)
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=3600)
 
             # Check for existing connection and update if found
             connection_statement = select(Connection).where(
@@ -328,8 +328,8 @@ async def create_facebook_marketing_connection(
                 connection.token_hash = token_hash
                 connection.expires_at = expires_at
                 connection.scopes = facebook_service.FACEBOOK_SCOPES
-                connection.rotated_at = datetime.utcnow()
-                connection.last_used_at = datetime.utcnow()
+                connection.rotated_at = datetime.now(timezone.utc)
+                connection.last_used_at = datetime.now(timezone.utc)
                 connection.revoked = False  # Reactivate if it was revoked
             else:
                 # Create new connection
@@ -344,7 +344,7 @@ async def create_facebook_marketing_connection(
                     scopes=facebook_service.FACEBOOK_SCOPES,
                     expires_at=expires_at,
                     revoked=False,
-                    last_used_at=datetime.utcnow()
+                    last_used_at=datetime.now(timezone.utc)
                 )
 
             session.add(connection)

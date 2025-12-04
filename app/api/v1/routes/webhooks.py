@@ -84,7 +84,7 @@ async def send_dialogcx_custom_event(session_id: str, event_name: str, result: s
         import jwt
         from datetime import datetime, timedelta
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload_jwt = {
             "iss": service_account_email,
             "sub": service_account_email,
@@ -191,7 +191,7 @@ async def send_dialogcx_text_message(session_id: str, message: str):
         import jwt
         from datetime import datetime, timedelta
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload_jwt = {
             "iss": service_account_email,
             "sub": service_account_email,

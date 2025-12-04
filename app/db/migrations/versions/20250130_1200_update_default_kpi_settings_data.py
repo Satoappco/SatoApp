@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.column('updated_at', sa.DateTime)
     )
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Updated seed data matching the image exactly
     seed_data = [

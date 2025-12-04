@@ -70,6 +70,7 @@ class QATestingScript:
         llm_provider: str = "gemini",
         fail_fast: bool = True,
         sheet_name: str = "Automated",
+        save_local: bool = False,
     ):
         """
         Initialize the QA testing script.
@@ -81,6 +82,7 @@ class QATestingScript:
             llm_provider: LLM provider for ranking ("gemini" or "openai")
             fail_fast: If True, stop processing a group when one question fails
             sheet_name: Name of the Google Sheets tab to use (default: "Automated")
+            save_local: If True, save results to local Excel file in reports/ directory instead of remote sheet
         """
         self.sheet_url = sheet_url
         self.is_google_sheets = self._is_google_sheets_url(sheet_url)
@@ -89,6 +91,7 @@ class QATestingScript:
         self.llm_provider = llm_provider
         self.fail_fast = fail_fast
         self.sheet_name = sheet_name
+        self.save_local = save_local
         self.settings = get_settings()
 
         # Initialize HTTP client
@@ -217,11 +220,16 @@ class QATestingScript:
             json_str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
             if json_str:
                 import tempfile
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".json", delete=False
+                ) as f:
                     f.write(json_str)
                     temp_path = f.name
                 try:
-                    creds = ServiceAccountCredentials.from_json_keyfile_name(temp_path, scope)
+                    creds = ServiceAccountCredentials.from_json_keyfile_name(
+                        temp_path, scope
+                    )
                     return gspread.authorize(creds)
                 finally:
                     # Clean up temp file
@@ -286,8 +294,10 @@ class QATestingScript:
         return df
 
     def save_data(self, df: pd.DataFrame):
-        """Save the updated DataFrame to Google Sheets or Excel."""
-        if self.is_google_sheets:
+        """Save the updated DataFrame to Google Sheets, Excel, or local reports directory."""
+        if self.save_local:
+            self._save_local_reports(df)
+        elif self.is_google_sheets:
             self._save_google_sheets(df)
         else:
             self._save_excel(df)
@@ -304,6 +314,22 @@ class QATestingScript:
 
         df.to_excel(self.sheet_url, index=False)
         print(f"✅ Saved results to: {self.sheet_url}")
+
+    def _save_local_reports(self, df: pd.DataFrame):
+        """Save data to local Excel file in reports directory with timestamp."""
+        # Create reports directory if it doesn't exist
+        # Path(__file__) is scripts/qa_testing_script.py, so parent.parent is the sato-be directory
+        reports_dir = Path(__file__).parent.parent / "reports"
+        reports_dir.mkdir(exist_ok=True)
+
+        # Generate timestamped filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"qa_results_{timestamp}.xlsx"
+        filepath = reports_dir / filename
+
+        # Save to Excel
+        df.to_excel(filepath, index=False)
+        print(f"✅ Saved results to local file: {filepath}")
 
     def _save_google_sheets(self, df: pd.DataFrame):
         """Save data to Google Sheets."""
@@ -493,7 +519,7 @@ Respond in JSON format:
         )
 
         # Group by Type if fail_fast is enabled
-        if self.fail_fast and "Type" in df.columns:
+        if self.fail_fast and "Group" in df.columns:
             # Process by groups
             grouped = df.iloc[start_row:end_row].groupby("Group", sort=False)
             for group_name, group_df in grouped:
@@ -542,7 +568,7 @@ Respond in JSON format:
                     print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
 
                     # Check if this question failed and fail_fast is enabled
-                    if self.fail_fast and rank == "both bad":
+                    if self.fail_fast and rank in ["previous better", "both bad"]:
                         group_failed = True
                         print(
                             f"  ❌ Question failed with rank '{rank}', skipping remaining questions in group '{group_name}'"
@@ -635,7 +661,8 @@ Respond in JSON format:
         for rank, count in rank_counts.items():
             print(f"  {rank}: {count}")
 
-        print(f"\n✅ Testing complete! Results saved to: {self.sheet_url}")
+        save_location = "local reports directory" if self.save_local else self.sheet_url
+        print(f"\n✅ Testing complete! Results saved to: {save_location}")
         print("=" * 80)
 
 
@@ -691,6 +718,11 @@ async def main():
         default="Automated",
         help="Name of the Google Sheets tab to use (default: 'Automated')",
     )
+    parser.add_argument(
+        "--save-local",
+        action="store_true",
+        help="Save results to local Excel file in reports/ directory instead of remote sheet",
+    )
 
     args = parser.parse_args()
 
@@ -702,9 +734,9 @@ async def main():
         try:
             # Import here to avoid circular imports
             from app.core.auth import create_access_token
-
+            from datetime import datetime, timedelta, timezone
             jwt_token = create_access_token(
-                data={"sub": "dor.yashar@gmail.com", "user_id": 10}
+                data={"type": "access", "exp" : datetime.now(timezone.utc) + timedelta(minutes=15),"campaigner_id" : "dor.yashar@gmail.com", "user_id": 10}
             )
             print(f"✅ Generated JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
         except Exception as e:
@@ -725,6 +757,7 @@ async def main():
         llm_provider=args.llm_provider,
         fail_fast=args.fail_fast,
         sheet_name=args.sheet_name,
+        save_local=args.save_local,
     ) as script:
         await script.run(
             start_row=args.start_row, end_row=args.end_row, customer_id=args.customer_id

@@ -489,7 +489,7 @@ async def get_available_ga_properties(
             # Check if token needs refresh (with 5-minute buffer)
             from datetime import timedelta
             buffer_time = timedelta(minutes=5)
-            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+            if connection.expires_at and connection.expires_at < datetime.now(timezone.utc) + buffer_time:
                 print(f"🔄 Google Analytics token expired or expiring soon, refreshing...")
                 try:
                     # Refresh the token

@@ -147,7 +147,7 @@ def create_app() -> FastAPI:
     @app.get("/test-webhook")
     def test_webhook():
         """Simple test endpoint to verify deployment"""
-        return {"message": "Webhook endpoint is working!", "timestamp": datetime.utcnow().isoformat()}
+        return {"message": "Webhook endpoint is working!", "timestamp": datetime.now(timezone.utc).isoformat()}
     
     return app
 

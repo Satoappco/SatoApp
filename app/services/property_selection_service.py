@@ -42,7 +42,7 @@ class PropertySelectionService:
                 # Update existing selection
                 existing_selection.selected_property_id = property_id
                 existing_selection.property_name = property_name
-                existing_selection.updated_at = datetime.utcnow()
+                existing_selection.updated_at = datetime.now(timezone.utc)
                 existing_selection.is_active = True
                 session.add(existing_selection)
                 session.commit()
@@ -128,7 +128,7 @@ class PropertySelectionService:
             
             if selection:
                 selection.is_active = False
-                selection.updated_at = datetime.utcnow()
+                selection.updated_at = datetime.now(timezone.utc)
                 session.add(selection)
                 session.commit()
                 

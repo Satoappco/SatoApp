@@ -50,9 +50,9 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
@@ -66,7 +66,7 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
 def create_refresh_token(data: Dict[str, Any]) -> str:
     """Create JWT refresh token"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
     return encoded_jwt
@@ -89,7 +89,7 @@ def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
             raise AuthenticationError("Token has expired")
         
         exp_time = datetime.fromtimestamp(exp)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if exp_time < now:
             print(f"DEBUG: Token expired at {exp_time.isoformat()}, current time {now.isoformat()}")
@@ -206,7 +206,7 @@ def create_user_session(
         session_token=secrets.token_urlsafe(32),
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_at=datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         ip_address=ip_address,
         user_agent=user_agent,
         is_active=True
@@ -225,7 +225,7 @@ def revoke_user_session(session_token: str) -> bool:
         
         if session:
             session.is_active = False
-            session.revoked_at = datetime.utcnow()
+            session.revoked_at = datetime.now(timezone.utc)
             db_session.add(session)
             db_session.commit()
             return True

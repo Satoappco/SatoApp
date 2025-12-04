@@ -110,7 +110,7 @@ async def authenticate_with_google(
                 existing_user.google_id = google_id
                 existing_user.email_verified = email_verified
                 existing_user.avatar_url = avatar_url
-                existing_user.last_login_at = datetime.utcnow()
+                existing_user.last_login_at = datetime.now(timezone.utc)
                 
                 # Merge full_name: prefer Google if admin left it empty or generic
                 if full_name and (not existing_user.full_name or len(existing_user.full_name.strip()) < 3):
@@ -158,7 +158,7 @@ async def authenticate_with_google(
                 #     email_verified=email_verified,
                 #     locale="he-IL",
                 #     timezone="Asia/Jerusalem",
-                #     last_login_at=datetime.utcnow(),
+                #     last_login_at=datetime.now(timezone.utc),
                 #     role=UserRole.OWNER,  # New users become OWNER of their agency
                 #     status=UserStatus.ACTIVE,
                 #     agency_id=agency_id
@@ -242,7 +242,7 @@ async def refresh_token(request: RefreshTokenRequest):
             )
         
         exp_time = datetime.fromtimestamp(exp)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if exp_time < now:
             raise HTTPException(

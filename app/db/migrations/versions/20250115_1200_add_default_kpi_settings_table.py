@@ -49,7 +49,7 @@ def upgrade() -> None:
         sa.column('updated_at', sa.DateTime)
     )
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Seed data for common KPI templates - Updated to match the image
     seed_data = [

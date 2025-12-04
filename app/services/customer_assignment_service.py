@@ -133,7 +133,7 @@ class CustomerAssignmentService:
 
         # Deactivate assignment
         assignment.is_active = False
-        assignment.unassigned_at = datetime.utcnow()
+        assignment.unassigned_at = datetime.now(timezone.utc)
         assignment.unassigned_by_campaigner_id = unassigned_by_id
 
         # If was primary, clear denormalized field

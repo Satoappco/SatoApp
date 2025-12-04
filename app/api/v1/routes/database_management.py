@@ -462,8 +462,8 @@ async def create_kpi_catalog(
                 lite_primary_submetrics=kpi_data.lite_primary_submetrics,
                 lite_secondary_metric=kpi_data.lite_secondary_metric,
                 lite_secondary_submetrics=kpi_data.lite_secondary_submetrics,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(new_kpi)
@@ -516,7 +516,7 @@ async def update_kpi_catalog(
             for key, value in update_data.items():
                 setattr(kpi, key, value)
 
-            kpi.updated_at = datetime.utcnow()
+            kpi.updated_at = datetime.now(timezone.utc)
 
             session.add(kpi)
             session.commit()
@@ -750,8 +750,8 @@ async def create_kpi_goal(
                 secondary_kpi_2=campaign_data.secondary_kpi_2,
                 secondary_kpi_3=campaign_data.secondary_kpi_3,
                 landing_page=campaign_data.landing_page,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(new_campaign)
@@ -798,8 +798,8 @@ async def create_kpi_goal(
                         secondary_kpi_2=_format_kpi_value(kpi_settings, "Secondary", 2),
                         secondary_kpi_3=_format_kpi_value(kpi_settings, "Secondary", 3),
                         landing_page=new_campaign.landing_page,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
                     )
 
                     session.add(new_kpi_value)
@@ -834,8 +834,8 @@ async def create_kpi_goal(
                         secondary_kpi_2=new_campaign.secondary_kpi_2,
                         secondary_kpi_3=new_campaign.secondary_kpi_3,
                         landing_page=new_campaign.landing_page,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
                     )
 
                     session.add(new_kpi_value)
@@ -914,7 +914,7 @@ async def update_kpi_goal(
                     )
                     raise
 
-            campaign.updated_at = datetime.utcnow()
+            campaign.updated_at = datetime.now(timezone.utc)
 
             session.add(campaign)
             session.commit()
@@ -946,7 +946,7 @@ async def update_kpi_goal(
                             else:
                                 setattr(kpi_value, key, value)
 
-                    kpi_value.updated_at = datetime.utcnow()
+                    kpi_value.updated_at = datetime.now(timezone.utc)
                     session.add(kpi_value)
                     session.commit()
                     logger.info(f"✅ Synced KPI value for goal {campaign.id}")
@@ -1069,7 +1069,7 @@ async def bulk_update_kpi_goals(bulk_data: KpiGoalBulkUpdateRequest):
                     new_campaign = KpiGoal(
                         customer_id=item.customer_id,
                         campaign_id=item.campaign_id
-                        or f"campaign_{datetime.utcnow().timestamp()}",
+                        or f"campaign_{datetime.now(timezone.utc).timestamp()}",
                         campaign_name=item.campaign_name,
                         campaign_status=item.campaign_status or "ACTIVE",
                         ad_group_id=item.ad_group_id,
@@ -1090,8 +1090,8 @@ async def bulk_update_kpi_goals(bulk_data: KpiGoalBulkUpdateRequest):
                         secondary_kpi_2=item.secondary_kpi_2,
                         secondary_kpi_3=item.secondary_kpi_3,
                         landing_page=item.landing_page,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
                     )
 
                     session.add(new_campaign)
@@ -1155,7 +1155,7 @@ async def bulk_update_kpi_goals(bulk_data: KpiGoalBulkUpdateRequest):
                     if item.landing_page is not None:
                         campaign.landing_page = item.landing_page
 
-                    campaign.updated_at = datetime.utcnow()
+                    campaign.updated_at = datetime.now(timezone.utc)
                     session.add(campaign)
                     updated_count += 1
                 except Exception as e:
@@ -1363,8 +1363,8 @@ async def create_kpi_value(
                 secondary_kpi_2=campaign_data.get("secondary_kpi_2"),
                 secondary_kpi_3=campaign_data.get("secondary_kpi_3"),
                 landing_page=campaign_data.get("landing_page"),
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(new_campaign)
@@ -1428,7 +1428,7 @@ async def update_kpi_value(
                 if hasattr(campaign, field) and value is not None:
                     setattr(campaign, field, value)
 
-            campaign.updated_at = datetime.utcnow()
+            campaign.updated_at = datetime.now(timezone.utc)
             session.add(campaign)
             session.commit()
             session.refresh(campaign)
@@ -1905,7 +1905,7 @@ async def update_digital_asset(
             for field, value in update_data.items():
                 setattr(asset, field, value)
 
-            asset.updated_at = datetime.utcnow()
+            asset.updated_at = datetime.now(timezone.utc)
 
             session.add(asset)
             session.commit()
@@ -2486,8 +2486,8 @@ async def create_kpi_setting(
                 direction=setting_data.direction,
                 default_value=setting_data.default_value,
                 unit=setting_data.unit,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(new_setting)
@@ -2544,7 +2544,7 @@ async def update_kpi_setting(
             for field, value in update_data.items():
                 setattr(setting, field, value)
 
-            setting.updated_at = datetime.utcnow()
+            setting.updated_at = datetime.now(timezone.utc)
 
             session.add(setting)
             session.commit()
@@ -2820,8 +2820,8 @@ async def create_default_kpi_setting(
                 unit=setting_data.unit,
                 is_active=setting_data.is_active,
                 display_order=setting_data.display_order,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(new_setting)
@@ -2870,7 +2870,7 @@ async def update_default_kpi_setting(
             for field, value in update_data.items():
                 setattr(setting, field, value)
 
-            setting.updated_at = datetime.utcnow()
+            setting.updated_at = datetime.now(timezone.utc)
             session.add(setting)
             session.commit()
             session.refresh(setting)
@@ -3072,8 +3072,8 @@ async def create_audience(
 
             new_audience = Audience(
                 audience_name=audience_data.audience_name,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(new_audience)
@@ -3143,7 +3143,7 @@ async def update_audience(
             if audience_data.audience_name is not None:
                 audience.audience_name = audience_data.audience_name
 
-            audience.updated_at = datetime.utcnow()
+            audience.updated_at = datetime.now(timezone.utc)
 
             session.add(audience)
             session.commit()

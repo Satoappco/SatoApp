@@ -362,7 +362,7 @@ async def delete_worker(
 
             for assignment in assignments_to_deactivate:
                 assignment.is_active = False
-                assignment.unassigned_at = datetime.utcnow()
+                assignment.unassigned_at = datetime.now(timezone.utc)
 
             # Also update old deprecated field for backward compatibility
             customers_to_update = session.exec(
@@ -582,7 +582,7 @@ async def accept_invite(request: AcceptInviteRequest):
                 existing.agency_id = invite.agency_id
                 existing.role = invite.role
                 existing.status = UserStatus.ACTIVE
-                existing.last_login_at = datetime.utcnow()
+                existing.last_login_at = datetime.now(timezone.utc)
                 
                 # Update Google info if provided
                 if google_id:
@@ -599,7 +599,7 @@ async def accept_invite(request: AcceptInviteRequest):
                 # Mark invite as used
                 invite.is_used = True
                 invite.use_count += 1
-                invite.used_at = datetime.utcnow()
+                invite.used_at = datetime.now(timezone.utc)
                 invite.used_by_campaigner_id = existing.id
                 session.add(invite)
                 session.commit()
@@ -637,7 +637,7 @@ async def accept_invite(request: AcceptInviteRequest):
                 role=invite.role,
                 status=UserStatus.ACTIVE,
                 agency_id=invite.agency_id,
-                last_login_at=datetime.utcnow()
+                last_login_at=datetime.now(timezone.utc)
             )
             
             session.add(new_campaigner)
@@ -645,7 +645,7 @@ async def accept_invite(request: AcceptInviteRequest):
             # Mark invite as used
             invite.is_used = True
             invite.use_count += 1
-            invite.used_at = datetime.utcnow()
+            invite.used_at = datetime.now(timezone.utc)
             invite.used_by_campaigner_id = new_campaigner.id
             
             session.commit()
@@ -704,7 +704,7 @@ async def get_invite_info(token: str):
             invite_token, agency = invite
             
             # Check if token is expired
-            if invite_token.expires_at < datetime.utcnow():
+            if invite_token.expires_at < datetime.now(timezone.utc):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="This invitation has expired"

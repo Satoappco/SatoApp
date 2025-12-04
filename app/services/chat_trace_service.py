@@ -142,7 +142,7 @@ class ChatTraceService:
             # Create conversation record
             conversation_data = {
                 "status": "active",
-                "started_at": datetime.utcnow().isoformat(),
+                "started_at": datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
                 "intent": None,
                 "needs_clarification": True,
@@ -241,7 +241,7 @@ class ChatTraceService:
             # Update data fields
             conversation.data.update(updates)
             # Mark as updated
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -295,17 +295,17 @@ class ChatTraceService:
             started_at_str = conversation.data.get("started_at")
             if started_at_str:
                 started_at = datetime.fromisoformat(started_at_str)
-                duration = (datetime.utcnow() - started_at).total_seconds()
+                duration = (datetime.now(timezone.utc) - started_at).total_seconds()
                 conversation.data["duration_seconds"] = duration
 
             # Update status
             conversation.data["status"] = status
-            conversation.data["completed_at"] = datetime.utcnow().isoformat()
+            conversation.data["completed_at"] = datetime.now(timezone.utc).isoformat()
 
             if final_intent:
                 conversation.data["intent"] = final_intent
 
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -323,7 +323,7 @@ class ChatTraceService:
                         if trace:
                             trace.update(
                                 output={"status": status, "final_intent": final_intent},
-                                metadata={"completed_at": datetime.utcnow().isoformat()}
+                                metadata={"completed_at": datetime.now(timezone.utc).isoformat()}
                             )
                 except Exception as e:
                     print(f"⚠️ Failed to update Langfuse trace: {e}")
@@ -440,7 +440,7 @@ class ChatTraceService:
             # Only add explicitly provided tokens to conversation total
             if explicitly_provided_tokens is not None:
                 conversation.data["total_tokens"] += explicitly_provided_tokens
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -556,7 +556,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -670,7 +670,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -825,7 +825,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -946,7 +946,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["tool_usage_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")

@@ -75,7 +75,7 @@ async def list_traces(
     query = select(ChatTrace).where(
         and_(
             ChatTrace.record_type == RecordType.CONVERSATION,
-            ChatTrace.created_at >= datetime.utcnow() - timedelta(days=days)
+            ChatTrace.created_at >= datetime.now(timezone.utc) - timedelta(days=days)
         )
     )
 
@@ -280,7 +280,7 @@ async def get_trace_stats(
     """
     Get summary statistics for traces.
     """
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Total conversations (all users)
     total_conversations = session.exec(

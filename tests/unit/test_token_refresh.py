@@ -18,22 +18,22 @@ class TestTokenExpiration:
 
     def test_expired_token(self):
         """Test that expired token is detected."""
-        expires_at = datetime.utcnow() - timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
         assert is_token_expired(expires_at) is True
 
     def test_valid_token(self):
         """Test that valid token is not expired."""
-        expires_at = datetime.utcnow() + timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         assert is_token_expired(expires_at) is False
 
     def test_token_within_buffer(self):
         """Test that token within buffer period is considered expired."""
-        expires_at = datetime.utcnow() + timedelta(minutes=3)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=3)
         assert is_token_expired(expires_at, buffer_minutes=5) is True
 
     def test_token_outside_buffer(self):
         """Test that token outside buffer period is not expired."""
-        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
         assert is_token_expired(expires_at, buffer_minutes=5) is False
 
     def test_none_expires_at(self):

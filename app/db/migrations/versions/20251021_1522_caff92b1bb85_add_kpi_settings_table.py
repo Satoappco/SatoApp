@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.column('updated_at', sa.DateTime)
     )
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Seed data based on the KPI settings table from the image
     # Each row represents ONE KPI

@@ -41,7 +41,7 @@ class CrewService:
                 "result": str(result),
                 "topic": topic,
                 "execution_time": execution_time,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
