@@ -351,10 +351,10 @@ class ConversationWorkflow:
         # This is faster than character-by-character while still providing smooth display
         # Words are natural boundaries that won't break frontend display logic
         words = assistant_message.split('\n')
-        len_words = len(words)
+        len_words_m1 = len(words) - 1
         for i, word in enumerate(words):
             # Add space after word (except for last word)
-            chunk = word + ('\n' if i < len_words else '')
+            chunk = word + ('\n' if i != len_words_m1 else '')
             yield {"type": "content", "chunk": chunk}
 
 
