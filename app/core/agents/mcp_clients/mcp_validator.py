@@ -108,12 +108,26 @@ class MCPValidator:
             return validation_result
 
         except Exception as e:
+            # Try to extract more details from the error
+            import traceback
+            error_traceback = traceback.format_exc()
+
             logger.error(f"❌ Error validating {server_name}: {e}", exc_info=True)
+
+            # Try to identify which MCP server failed from the traceback
+            failed_server_hint = None
+            if 'google_ads_mcp' in error_traceback or 'ads_mcp' in error_traceback:
+                failed_server_hint = 'google_ads_mcp'
+            elif 'google_analytics_mcp' in error_traceback or 'analytics_mcp' in error_traceback:
+                failed_server_hint = 'google_analytics_mcp'
+            elif 'facebook' in error_traceback.lower() or 'meta' in error_traceback.lower():
+                failed_server_hint = 'facebook_mcp'
+
             return MCPValidationResult(
                 server=server_name,
                 status=ValidationStatus.ERROR,
                 message="Validation error",
-                error_detail=str(e),
+                error_detail=f"{str(e)} | Server hint: {failed_server_hint} | Traceback: {error_traceback[:500]}",
                 duration_ms=self._duration_ms(start_time)
             )
 
