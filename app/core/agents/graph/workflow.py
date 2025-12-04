@@ -350,10 +350,11 @@ class ConversationWorkflow:
         # Yield content word-by-word for better streaming performance
         # This is faster than character-by-character while still providing smooth display
         # Words are natural boundaries that won't break frontend display logic
-        words = assistant_message.split(' ')
+        words = assistant_message.split('\n')
+        len_words = len(words)
         for i, word in enumerate(words):
             # Add space after word (except for last word)
-            chunk = word + (' ' if i < len(words) - 1 else '')
+            chunk = word + ('\n' if i < len_words else '')
             yield {"type": "content", "chunk": chunk}
 
 
