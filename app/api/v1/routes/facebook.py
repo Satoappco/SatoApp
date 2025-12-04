@@ -3,7 +3,7 @@ Facebook API routes for data fetching and connection management
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import select, and_

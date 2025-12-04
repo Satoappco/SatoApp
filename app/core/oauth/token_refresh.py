@@ -5,7 +5,7 @@ Handles automatic refresh of OAuth tokens before they expire.
 Supports Google OAuth (Analytics, Ads) and Facebook/Meta OAuth.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import requests
 from sqlmodel import select

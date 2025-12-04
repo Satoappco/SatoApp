@@ -5,7 +5,7 @@ Wraps CrewAI components to automatically track timing and create detailed logs
 
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from crewai import Agent, Task, Crew, Process
 from crewai.llm import LLM

@@ -11,7 +11,7 @@ This service provides a unified interface for:
 All records stored in single `chat_traces` table with type-specific JSON data.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 from sqlmodel import Session, select, func
 from sqlalchemy import and_, or_

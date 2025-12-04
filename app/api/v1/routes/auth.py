@@ -3,7 +3,7 @@ Authentication routes for JWT token management
 Handles user login, token refresh, and session management
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel
@@ -240,10 +240,10 @@ async def refresh_token(request: RefreshTokenRequest):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired"
             )
-        
-        exp_time = datetime.fromtimestamp(exp)
+
+        exp_time = datetime.fromtimestamp(exp, tz=timezone.utc)
         now = datetime.now(timezone.utc)
-        
+
         if exp_time < now:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

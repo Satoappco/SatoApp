@@ -4,7 +4,7 @@ Handles CRUD operations for tasks
 """
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, and_, or_, func
 from sqlalchemy import JSON

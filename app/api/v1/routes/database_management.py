@@ -9,7 +9,7 @@ Handles CRUD operations for all database tables:
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, and_, Session

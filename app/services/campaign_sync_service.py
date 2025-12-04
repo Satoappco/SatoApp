@@ -8,7 +8,7 @@ import re
 import json
 import logging
 import requests
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import Dict, Any, Optional, List
 from sqlmodel import select, and_, or_, Session
 

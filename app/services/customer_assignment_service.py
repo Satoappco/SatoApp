@@ -2,7 +2,7 @@
 
 from sqlmodel import Session, select
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models.users import (
     Customer,

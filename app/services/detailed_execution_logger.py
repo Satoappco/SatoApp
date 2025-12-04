@@ -5,7 +5,7 @@ Mirrors terminal output for complete debugging visibility
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from threading import Lock
 import uuid

@@ -3,7 +3,7 @@ Health check routes
 """
 
 from fastapi import APIRouter
-from datetime import datetime
+from datetime import datetime, timezone
 from app.config import get_settings
 
 settings = get_settings()

@@ -3,7 +3,7 @@ CrewAI execution business logic service
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from app.core.exceptions import SatoAppException
 from app.config.logging import get_logger

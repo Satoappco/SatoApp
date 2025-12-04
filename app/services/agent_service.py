@@ -3,7 +3,7 @@ Agent management business logic service
 """
 
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime
 from app.core.database import db_manager
 from app.core.exceptions import AgentException
@@ -112,8 +112,10 @@ class AgentService:
         valid_placeholders = {
             "objective",
             "campaigner_id",
+            "campaigner_info",
             "customer_id",
             "customer_name",
+            "customer_info",
             "intent_name",
             "data_sources",
             "data_source",

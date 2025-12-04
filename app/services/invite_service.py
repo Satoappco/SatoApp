@@ -3,7 +3,7 @@ Invite Service for managing team member invitations
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlmodel import select
 from app.models.users import InviteToken, Campaigner, UserRole

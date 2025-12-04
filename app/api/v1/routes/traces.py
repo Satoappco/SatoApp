@@ -4,7 +4,7 @@ Traces API endpoints for viewing chat history and debugging.
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 from sqlmodel import Session, select, func, and_
 from sqlalchemy import desc

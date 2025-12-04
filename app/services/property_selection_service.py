@@ -4,7 +4,7 @@ Handles saving and retrieving selected Google Analytics properties, Facebook pag
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import select, and_
 from app.config.database import get_session
 from app.models.analytics import UserPropertySelection

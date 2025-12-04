@@ -12,7 +12,7 @@ This ensures all agents use the same reliable initialization flow.
 
 import os
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.config.logging import get_logger
 from app.core.oauth.token_refresh import refresh_tokens_for_platforms

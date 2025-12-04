@@ -15,7 +15,7 @@ load_dotenv()
 
 from fastapi import HTTPException, Depends
 from pydantic import BaseModel, ValidationError
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.config import get_settings
 from app.config.database import init_database

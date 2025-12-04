@@ -3,7 +3,7 @@ Common utilities for SatoApp
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 

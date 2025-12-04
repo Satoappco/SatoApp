@@ -71,6 +71,7 @@ class QATestingScript:
         fail_fast: bool = True,
         sheet_name: str = "Automated",
         save_local: bool = False,
+        max_concurrent: int = 5,
     ):
         """
         Initialize the QA testing script.
@@ -83,6 +84,7 @@ class QATestingScript:
             fail_fast: If True, stop processing a group when one question fails
             sheet_name: Name of the Google Sheets tab to use (default: "Automated")
             save_local: If True, save results to local Excel file in reports/ directory instead of remote sheet
+            max_concurrent: Maximum number of concurrent API calls (default: 5)
         """
         self.sheet_url = sheet_url
         self.is_google_sheets = self._is_google_sheets_url(sheet_url)
@@ -92,10 +94,14 @@ class QATestingScript:
         self.fail_fast = fail_fast
         self.sheet_name = sheet_name
         self.save_local = save_local
+        self.max_concurrent = max_concurrent
         self.settings = get_settings()
 
         # Initialize HTTP client
         self.client = httpx.AsyncClient(timeout=120.0)
+
+        # Semaphore for concurrency control
+        self.semaphore = asyncio.Semaphore(max_concurrent)
 
         # Column names
         self.columns = [
@@ -492,6 +498,59 @@ Respond in JSON format:
             print(f"❌ LLM Ranking Error: {str(e)}")
             return {"rank": "both bad", "suggestion": f"Error during ranking: {str(e)}"}
 
+    async def process_single_test_case(
+        self,
+        df: pd.DataFrame,
+        idx: int,
+        customer_id: Optional[int] = None,
+    ) -> tuple[int, str, str, str]:
+        """
+        Process a single test case with concurrency control.
+
+        Args:
+            df: DataFrame with test cases
+            idx: Row index to process
+            customer_id: Optional customer ID
+
+        Returns:
+            Tuple of (idx, current_answer, rank, suggestion)
+        """
+        async with self.semaphore:
+            row = df.loc[idx]
+            question = row["Question"]
+            expected_answer = row["Expected Answer"]
+            previous_answer = row["Previous Answer"]
+
+            print(f"[{idx + 1}] Testing: {question[:60]}...")
+
+            # Call chat API
+            print(f"  → Calling chat API...")
+            response = await self.call_chat_api(question, customer_id)
+            current_answer = response.get("message", "")
+
+            if response.get("error"):
+                current_answer = f"ERROR: {response['error']}"
+
+            print(f"  ✅ Got response: {current_answer[:100]}...")
+
+            # Rank with LLM
+            print(f"  → Ranking with LLM...")
+            ranking = await self.rank_with_llm(
+                question=question,
+                expected_answer=expected_answer,
+                current_answer=current_answer,
+                previous_answer=previous_answer,
+            )
+
+            rank = ranking.get("rank", "both bad")
+            suggestion = ranking.get("suggestion", "")
+
+            print(f"  ✅ Rank: {rank}")
+            print(f"  💡 Suggestion: {suggestion[:80]}...")
+            print()
+
+            return idx, current_answer, rank, suggestion
+
     async def process_test_cases(
         self,
         df: pd.DataFrame,
@@ -520,7 +579,7 @@ Respond in JSON format:
 
         # Group by Type if fail_fast is enabled
         if self.fail_fast and "Group" in df.columns:
-            # Process by groups
+            # Process by groups sequentially (fail_fast within group)
             grouped = df.iloc[start_row:end_row].groupby("Group", sort=False)
             for group_name, group_df in grouped:
                 print(f"📁 Processing group: {group_name}")
@@ -533,39 +592,14 @@ Respond in JSON format:
                         )
                         break
 
-                    row = df.loc[idx]
-                    question = row["Question"]
-                    expected_answer = row["Expected Answer"]
-                    previous_answer = row["Previous Answer"]
-
-                    print(f"[{idx + 1}/{end_row}] Testing: {question[:60]}...")
-
-                    # Call chat API
-                    print(f"  → Calling chat API...")
-                    response = await self.call_chat_api(question, customer_id)
-                    current_answer = response.get("message", "")
-
-                    if response.get("error"):
-                        current_answer = f"ERROR: {response['error']}"
-
-                    df.at[idx, "Current Answer"] = current_answer
-                    print(f"  ✅ Got response: {current_answer[:100]}...")
-
-                    # Rank with LLM
-                    print(f"  → Ranking with LLM...")
-                    ranking = await self.rank_with_llm(
-                        question=question,
-                        expected_answer=expected_answer,
-                        current_answer=current_answer,
-                        previous_answer=previous_answer,
+                    # Process single test case
+                    idx, current_answer, rank, suggestion = await self.process_single_test_case(
+                        df, idx, customer_id
                     )
 
-                    rank = ranking.get("rank", "both bad")
+                    df.at[idx, "Current Answer"] = current_answer
                     df.at[idx, "Rank"] = rank
-                    df.at[idx, "Suggestion"] = ranking.get("suggestion", "")
-
-                    print(f"  ✅ Rank: {rank}")
-                    print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
+                    df.at[idx, "Suggestion"] = suggestion
 
                     # Check if this question failed and fail_fast is enabled
                     if self.fail_fast and rank in ["previous better", "both bad"]:
@@ -573,43 +607,23 @@ Respond in JSON format:
                         print(
                             f"  ❌ Question failed with rank '{rank}', skipping remaining questions in group '{group_name}'"
                         )
-                    print()
         else:
-            # Process all rows individually (original behavior)
-            for idx in range(start_row, end_row):
-                row = df.iloc[idx]
-                question = row["Question"]
-                expected_answer = row["Expected Answer"]
-                previous_answer = row["Previous Answer"]
+            # Process all rows in parallel with concurrency limit
+            print(f"🚀 Processing {total_rows} test cases in parallel (max {self.max_concurrent} concurrent)...")
 
-                print(f"[{idx + 1}/{end_row}] Testing: {question[:60]}...")
+            tasks = [
+                self.process_single_test_case(df, idx, customer_id)
+                for idx in range(start_row, end_row)
+            ]
 
-                # Call chat API
-                print(f"  → Calling chat API...")
-                response = await self.call_chat_api(question, customer_id)
-                current_answer = response.get("message", "")
+            # Execute all tasks in parallel with concurrency control
+            results = await asyncio.gather(*tasks)
 
-                if response.get("error"):
-                    current_answer = f"ERROR: {response['error']}"
-
+            # Update DataFrame with results
+            for idx, current_answer, rank, suggestion in results:
                 df.at[idx, "Current Answer"] = current_answer
-                print(f"  ✅ Got response: {current_answer[:100]}...")
-
-                # Rank with LLM
-                print(f"  → Ranking with LLM...")
-                ranking = await self.rank_with_llm(
-                    question=question,
-                    expected_answer=expected_answer,
-                    current_answer=current_answer,
-                    previous_answer=previous_answer,
-                )
-
-                df.at[idx, "Rank"] = ranking.get("rank", "both bad")
-                df.at[idx, "Suggestion"] = ranking.get("suggestion", "")
-
-                print(f"  ✅ Rank: {ranking.get('rank')}")
-                print(f"  💡 Suggestion: {ranking.get('suggestion')[:80]}...")
-                print()
+                df.at[idx, "Rank"] = rank
+                df.at[idx, "Suggestion"] = suggestion
 
         # Save progress after processing
         self.save_data(df)
@@ -723,6 +737,12 @@ async def main():
         action="store_true",
         help="Save results to local Excel file in reports/ directory instead of remote sheet",
     )
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=5,
+        help="Maximum number of concurrent API calls (default: 5)",
+    )
 
     args = parser.parse_args()
 
@@ -736,7 +756,7 @@ async def main():
             from app.core.auth import create_access_token
             from datetime import datetime, timedelta, timezone
             jwt_token = create_access_token(
-                data={"type": "access", "exp" : datetime.now(timezone.utc) + timedelta(minutes=15),"campaigner_id" : "dor.yashar@gmail.com", "user_id": 10}
+                data={"type": "access", "exp" : datetime.now(timezone.utc) + timedelta(minutes=15), "campaigner_id" : "dor.yashar@gmail.com", "user_id": 10}
             )
             print(f"✅ Generated JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
         except Exception as e:
@@ -758,6 +778,7 @@ async def main():
         fail_fast=args.fail_fast,
         sheet_name=args.sheet_name,
         save_local=args.save_local,
+        max_concurrent=args.max_concurrent,
     ) as script:
         await script.run(
             start_row=args.start_row, end_row=args.end_row, customer_id=args.customer_id

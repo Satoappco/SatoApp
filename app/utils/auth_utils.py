@@ -3,7 +3,7 @@ Authentication utilities
 Helper functions for authentication routes to reduce duplication and improve maintainability
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from app.core.auth import create_access_token, create_refresh_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.models.users import Campaigner

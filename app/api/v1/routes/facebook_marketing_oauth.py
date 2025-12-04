@@ -6,6 +6,7 @@ Handles OAuth flow specifically for Facebook Ads/Marketing (not pages)
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, timezone
 import os
 
 router = APIRouter(prefix="/facebook-marketing-oauth", tags=["facebook-marketing-oauth"])
@@ -116,9 +117,8 @@ async def handle_oauth_callback(
             campaigner_id = payload.get('campaigner_id')
             customer_id = payload.get('customer_id')
             timestamp = payload.get('timestamp')
-            
+
             # Check expiration using JWT exp field
-            from datetime import datetime
             if datetime.now(timezone.utc).timestamp() > payload.get('exp', 0):
                 raise HTTPException(
                     status_code=400,

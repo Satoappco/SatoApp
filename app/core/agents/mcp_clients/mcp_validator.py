@@ -7,7 +7,7 @@ Validates MCP tools after initialization to ensure they are accessible and worki
 import asyncio
 from dataclasses import dataclass
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from app.config.logging import get_logger

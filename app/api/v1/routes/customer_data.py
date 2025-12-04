@@ -4,7 +4,7 @@ Handles RTM Table and Questions Table operations
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import select, and_
 from pydantic import BaseModel, Field

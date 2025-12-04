@@ -2,7 +2,7 @@
 Update Master Agent to include Date & Timeframe Specialist delegation instructions
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import select
 from app.config.database import get_session
 from app.models.agents import AgentConfig

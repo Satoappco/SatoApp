@@ -3,7 +3,7 @@ Unit tests for OAuth token refresh functionality
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 from app.core.oauth.token_refresh import (
     is_token_expired,

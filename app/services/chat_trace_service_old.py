@@ -8,7 +8,7 @@ This service provides a unified interface for:
 - Retrieving conversation history
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 from sqlmodel import Session, select
 from sqlalchemy import and_

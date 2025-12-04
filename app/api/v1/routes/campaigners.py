@@ -3,7 +3,7 @@ Campaigners API routes for managing agency workers and team members
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, EmailStr
 from sqlmodel import select, and_

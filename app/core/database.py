@@ -3,7 +3,7 @@ Database manager for SatoApp - refactored from original database.py
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from sqlmodel import Session, select
 from app.config.database import get_session

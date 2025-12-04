@@ -8,7 +8,7 @@ from typing import Type, List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 import json
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 from app.services.facebook_service import FacebookService

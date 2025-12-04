@@ -4,7 +4,7 @@ Handles Google Ads data fetching and analysis
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional

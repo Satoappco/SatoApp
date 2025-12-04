@@ -5,7 +5,7 @@ Agent management API routes
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 from sqlmodel import select
 
