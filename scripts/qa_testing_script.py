@@ -67,6 +67,7 @@ class QATestingScript:
         jwt_token: Optional[str] = None,
         llm_provider: str = "gemini",
         fail_fast: bool = True,
+        sheet_name: str = "Automated",
     ):
         """
         Initialize the QA testing script.
@@ -77,6 +78,7 @@ class QATestingScript:
             jwt_token: JWT token for authentication
             llm_provider: LLM provider for ranking ("gemini" or "openai")
             fail_fast: If True, stop processing a group when one question fails
+            sheet_name: Name of the Google Sheets tab to use (default: "Automated")
         """
         self.sheet_url = sheet_url
         self.is_google_sheets = self._is_google_sheets_url(sheet_url)
@@ -84,6 +86,7 @@ class QATestingScript:
         self.jwt_token = jwt_token
         self.llm_provider = llm_provider
         self.fail_fast = fail_fast
+        self.sheet_name = sheet_name
         self.settings = get_settings()
 
         # Initialize HTTP client
@@ -167,10 +170,12 @@ class QATestingScript:
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
         ]
-        creds_path = self.settings.google_sheets_service_account_path
+        creds_path = self.settings.google_sheets_service_account_path or os.getenv(
+            "GOOGLE_SERVICE_ACCOUNT_PATH"
+        )
         if not creds_path:
             raise ValueError(
-                "Google Sheets service account path not configured in settings"
+                "Google Sheets service account path not configured. Set GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH or GOOGLE_SERVICE_ACCOUNT_PATH environment variable"
             )
 
         creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
@@ -178,7 +183,10 @@ class QATestingScript:
 
         # Open the spreadsheet and worksheet
         spreadsheet = client.open_by_key(sheet_id)
-        worksheet = spreadsheet.get_worksheet_by_id(int(gid))
+        if self.sheet_name:
+            worksheet = spreadsheet.worksheet(self.sheet_name)
+        else:
+            worksheet = spreadsheet.get_worksheet_by_id(int(gid))
 
         # Get all values
         data = worksheet.get_all_records()
@@ -232,10 +240,12 @@ class QATestingScript:
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
         ]
-        creds_path = self.settings.google_sheets_service_account_path
+        creds_path = self.settings.google_sheets_service_account_path or os.getenv(
+            "GOOGLE_SERVICE_ACCOUNT_PATH"
+        )
         if not creds_path:
             raise ValueError(
-                "Google Sheets service account path not configured in settings"
+                "Google Sheets service account path not configured. Set GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH or GOOGLE_SERVICE_ACCOUNT_PATH environment variable"
             )
 
         creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
@@ -243,7 +253,10 @@ class QATestingScript:
 
         # Open the spreadsheet and worksheet
         spreadsheet = client.open_by_key(sheet_id)
-        worksheet = spreadsheet.get_worksheet_by_id(int(gid))
+        if self.sheet_name:
+            worksheet = spreadsheet.worksheet(self.sheet_name)
+        else:
+            worksheet = spreadsheet.get_worksheet_by_id(int(gid))
 
         # Clear existing data and update with new data
         worksheet.clear()
@@ -601,6 +614,11 @@ async def main():
         dest="fail_fast",
         help="Process all questions regardless of failures",
     )
+    parser.add_argument(
+        "--sheet-name",
+        default="Automated",
+        help="Name of the Google Sheets tab to use (default: 'Automated')",
+    )
 
     args = parser.parse_args()
 
@@ -634,6 +652,7 @@ async def main():
         jwt_token=jwt_token,
         llm_provider=args.llm_provider,
         fail_fast=args.fail_fast,
+        sheet_name=args.sheet_name,
     ) as script:
         await script.run(
             start_row=args.start_row, end_row=args.end_row, customer_id=args.customer_id
