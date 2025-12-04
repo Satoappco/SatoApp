@@ -99,6 +99,7 @@ google-ads
 # Google Sheets dependencies
 gspread
 oauth2client
+pandas==2.3.3
 # Facebook dependencies
 facebook-sdk
 requests-oauthlib
