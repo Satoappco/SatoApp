@@ -148,7 +148,12 @@ class TestNewAssetMetricsSync:
         mock_customer.full_name = "Test Customer"
 
         mock_session.get.return_value = mock_customer
-        mock_session.exec.return_value.all.return_value = []
+
+        # Mock both .all() and .first() to return empty/None
+        mock_exec_result = Mock()
+        mock_exec_result.all.return_value = []
+        mock_exec_result.first.return_value = None
+        mock_session.exec.return_value = mock_exec_result
 
         # Create service
         service = CampaignSyncService()
@@ -176,7 +181,12 @@ class TestNewAssetMetricsSync:
         mock_customer.full_name = "Test Customer"
 
         mock_session.get.return_value = mock_customer
-        mock_session.exec.return_value.all.return_value = []
+
+        # Mock both .all() and .first() to return empty/None
+        mock_exec_result = Mock()
+        mock_exec_result.all.return_value = []
+        mock_exec_result.first.return_value = None
+        mock_session.exec.return_value = mock_exec_result
 
         # Create service
         service = CampaignSyncService()

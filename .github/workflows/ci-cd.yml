@@ -75,7 +75,8 @@ jobs:
 
     - name: Generate test report
       env:
-        TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
+        DATABASE_URL: "sqlite:///:memory:"
+        TEST_DATABASE_URL: "sqlite:///:memory:"
         GEMINI_API_KEY: "dummy-key-for-testing"
       run: pytest tests/ --html=reports/test-report.html --self-contained-html
       if: always()
