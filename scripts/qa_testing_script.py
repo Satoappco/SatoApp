@@ -376,7 +376,7 @@ class QATestingScript:
         return df
 
     async def call_chat_api(
-        self, question: str, customer_id: Optional[int] = None
+        self, question: str, customer_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Call the chat API with a question.
@@ -502,7 +502,7 @@ Respond in JSON format:
         self,
         df: pd.DataFrame,
         idx: int,
-        customer_id: Optional[int] = None,
+        customer_id: Optional[str] = None,
     ) -> tuple[int, str, str, str]:
         """
         Process a single test case with concurrency control.
@@ -556,7 +556,7 @@ Respond in JSON format:
         df: pd.DataFrame,
         start_row: int = 0,
         end_row: Optional[int] = None,
-        customer_id: Optional[int] = None,
+        customer_id: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Process test cases from the DataFrame.
@@ -593,9 +593,12 @@ Respond in JSON format:
                         break
 
                     # Process single test case
-                    idx, current_answer, rank, suggestion = await self.process_single_test_case(
-                        df, idx, customer_id
-                    )
+                    (
+                        idx,
+                        current_answer,
+                        rank,
+                        suggestion,
+                    ) = await self.process_single_test_case(df, idx, customer_id)
 
                     df.at[idx, "Current Answer"] = current_answer
                     df.at[idx, "Rank"] = rank
@@ -609,7 +612,9 @@ Respond in JSON format:
                         )
         else:
             # Process all rows in parallel with concurrency limit
-            print(f"🚀 Processing {total_rows} test cases in parallel (max {self.max_concurrent} concurrent)...")
+            print(
+                f"🚀 Processing {total_rows} test cases in parallel (max {self.max_concurrent} concurrent)..."
+            )
 
             tasks = [
                 self.process_single_test_case(df, idx, customer_id)
@@ -634,7 +639,7 @@ Respond in JSON format:
         self,
         start_row: int = 0,
         end_row: Optional[int] = None,
-        customer_id: Optional[int] = None,
+        customer_id: Optional[str] = None,
     ):
         """
         Run the complete QA testing workflow.
@@ -698,7 +703,16 @@ async def main():
         "--jwt-token", help="JWT authentication token (can also use JWT_TOKEN env var)"
     )
     parser.add_argument(
-        "--customer-id", type=int, help="Customer ID to use for all requests"
+        "--customer-id",
+        type=str,
+        default="AEF",
+        help="Customer ID to use for all requests (default: AEF)",
+    )
+    parser.add_argument(
+        "--campaigner-id",
+        type=str,
+        default="dor.yashar@gmail.com",
+        help="Campaigner ID for JWT token (default: dor.yashar@gmail.com)",
     )
     parser.add_argument(
         "--start-row",
@@ -755,8 +769,14 @@ async def main():
             # Import here to avoid circular imports
             from app.core.auth import create_access_token
             from datetime import datetime, timedelta, timezone
+
             jwt_token = create_access_token(
-                data={"type": "access", "exp" : datetime.now(timezone.utc) + timedelta(minutes=15), "campaigner_id" : "dor.yashar@gmail.com", "user_id": 10}
+                data={
+                    "type": "access",
+                    "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+                    "campaigner_id": args.campaigner_id,
+                    "user_id": 10,
+                }
             )
             print(f"✅ Generated JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
         except Exception as e:
