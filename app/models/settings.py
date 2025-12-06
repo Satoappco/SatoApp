@@ -293,6 +293,71 @@ DEFAULT_SETTINGS = [
         "requires_restart": False
     },
 
+    # Metrics scoring settings
+    {
+        "key": "metric_score_normalizer",
+        "value": "1",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Normalizer (divider) for metric score calculation",
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "metric_weight_cpa",
+        "value": "0.25",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Weight for CPA (Cost Per Acquisition) in score calculation (lower is better)",
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "metric_weight_cvr",
+        "value": "0.20",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Weight for CVR (Conversion Rate) in score calculation (higher is better)",
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "metric_weight_ctr",
+        "value": "0.15",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Weight for CTR (Click-Through Rate) in score calculation (higher is better)",
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "metric_weight_cpc",
+        "value": "0.15",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Weight for CPC (Cost Per Click) in score calculation (lower is better)",
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "metric_weight_cpm",
+        "value": "0.10",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Weight for CPM (Cost Per 1000 Impressions) in score calculation (lower is better)",
+        "is_editable": True,
+        "requires_restart": False
+    },
+    {
+        "key": "metric_weight_cpl",
+        "value": "0.15",
+        "value_type": "float",
+        "category": "performance",
+        "description": "Weight for CPL (Cost Per Lead) in score calculation (lower is better)",
+        "is_editable": True,
+        "requires_restart": False
+    },
+
     # Monitoring settings
     {
         "key": "log_level",
