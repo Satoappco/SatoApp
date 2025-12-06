@@ -854,11 +854,11 @@ Remember: Use the tools available to you to fetch real data before providing ins
         
         if "google" in platforms or "google_analytics" in platforms:
             gads_credentials = task_details.get("google_ads_credentials", {}) or {}
-            customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
+            customer_id = gads_credentials.get("account_id", "NOT_PROVIDED") # or gads_credentials.get("customer_id", "NOT_PROVIDED")
             if customer_id != "NOT_PROVIDED":
-                context_parts.append(f"Google Ads Customer ID: {customer_id}")
+                context_parts.append(f"Google Ads Account ID: {customer_id}")
             else:
-                logger.error("No Google Ads Customer ID provided in credentials")
+                logger.error(f"No Google Ads Customer ID provided in credentials: {gads_credentials}")
 
         if "facebook" in platforms or "meta" in platforms or "meta_ads" in platforms or "facebook_ads" in platforms:
             fb_credentials = task_details.get("meta_ads_credentials", {}) or {}

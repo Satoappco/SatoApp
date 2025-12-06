@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # Options: "crew" (multi-agent CrewAI) or "single" (single agent with all MCP tools)
     analytics_agent_type: str = "single"
 
+    # Agent Configuration
+    use_database_config: bool = False
+
     # Performance Configuration
     max_concurrent_analyses: int = 10
     request_timeout_seconds: int = 30

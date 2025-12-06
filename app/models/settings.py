@@ -159,6 +159,15 @@ DEFAULT_SETTINGS = [
         "is_editable": True,
         "requires_restart": False
     },
+    {
+        "key": "use_database_config",
+        "value": "true",
+        "value_type": "bool",
+        "category": "agent",
+        "description": "Load agent configurations from database instead of using fallback prompts",
+        "is_editable": True,
+        "requires_restart": False
+    },
 
     # Performance settings
     {

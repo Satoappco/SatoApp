@@ -43,7 +43,7 @@ class SQLBasicInfoAgent:
         """
         try:
             from app.config.database import get_session
-            from app.models.analytics import Customer
+            from app.models.users import Customer
             from sqlmodel import select
 
             with get_session() as session:

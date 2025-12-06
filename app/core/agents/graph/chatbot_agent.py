@@ -13,7 +13,7 @@ from ..database.tools import DatabaseTool
 from app.models.users import Campaigner
 from app.services.agent_service import AgentService
 from app.services.chat_trace_service import ChatTraceService
-import os
+from app.config.settings_loader import get_setting_value_simple
 import time
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,15 @@ class ChatbotNode:
         """Load chatbot system prompt from database or use fallback."""
         try:
             # Try to get chatbot orchestrator config from database
-            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator") if os.getenv("USE_DATABASE_CONFIG", "false") == "true" else None
+            # Check database setting first, fall back to environment variable
+            use_db_config = get_setting_value_simple("use_database_config", False)
+
+            if not use_db_config:
+                logger.warning("⚠️  Chatbot orchestrator is not configured to use database config, using fallback")
+                logger.debug(f"🔧 use_database_config is set to {use_db_config} in settings")
+                return self._get_fallback_prompt()
+
+            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator")
 
             if chatbot_config:
                 logger.info("✅ Loaded chatbot orchestrator config from database")

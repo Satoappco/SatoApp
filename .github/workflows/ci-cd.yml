@@ -95,22 +95,115 @@ jobs:
     environment: staging
 
     steps:
-    - name: Deploy to staging
-      run: |
-        echo "🚀 Deploying to staging environment..."
-        echo "✅ Staging deployment completed"
+    - uses: actions/checkout@v4
 
-    - name: Send staging notification
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for GCR
+      run: |
+        gcloud auth configure-docker
+
+    - name: Load and validate environment variables
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        API_TOKEN: ${{ secrets.API_TOKEN }}
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        INTERNAL_AUTH_TOKEN: ${{ secrets.INTERNAL_AUTH_TOKEN }}
+      run: |
+        # Create temporary .env file from secrets
+        cat > .env.dev.cloudrun.yaml << EOF
+        GEMINI_API_KEY: "$GEMINI_API_KEY"
+        API_TOKEN: "$API_TOKEN"
+        DATABASE_URL: "$DATABASE_URL"
+        DB_PASSWORD: "$DB_PASSWORD"
+        INTERNAL_AUTH_TOKEN: "$INTERNAL_AUTH_TOKEN"
+        EOF
+
+        echo "✅ Environment variables configured"
+
+    - name: Build and push Docker image
+      run: |
+        PROJECT_ID=$(gcloud config get-value project)
+        SERVICE_NAME="sato-backend-dev"
+        IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
+
+        gcloud builds submit --tag $IMAGE_NAME .
+
+        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_ENV
+
+    - name: Deploy to Cloud Run (Staging)
+      run: |
+        REGION="me-west1"
+        PROJECT_ID=$(gcloud config get-value project)
+        CLOUD_SQL_INSTANCE="sato-db"
+
+        gcloud run deploy $SERVICE_NAME \
+          --image $IMAGE_NAME \
+          --region=$REGION \
+          --allow-unauthenticated \
+          --memory 4Gi \
+          --cpu 2 \
+          --timeout 600 \
+          --concurrency 5 \
+          --max-instances 2 \
+          --min-instances 0 \
+          --execution-environment gen2 \
+          --cpu-boost \
+          --add-cloudsql-instances $PROJECT_ID:$REGION:$CLOUD_SQL_INSTANCE \
+          --env-vars-file .env.dev.cloudrun.yaml
+
+        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region=$REGION --format="value(status.url)")
+        echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_ENV
+        echo "🌐 Staging URL: $SERVICE_URL"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f .env.dev.cloudrun.yaml
+
+    - name: Send ClickUp success notification
       if: success()
+      env:
+        CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
+        CLICKUP_LIST_ID: ${{ secrets.CLICKUP_LIST_ID }}
       run: |
-        echo "📧 Sending staging deployment success notification"
-        # In real implementation, this would send email/Slack notification
+        curl --request POST \
+          --url "https://api.clickup.com/api/v2/list/${CLICKUP_LIST_ID}/task" \
+          --header "Authorization: ${CLICKUP_API_TOKEN}" \
+          --header 'Content-Type: application/json' \
+          --data "{
+            \"name\": \"✅ Staging Deployment Success - ${GITHUB_SHA:0:7}\",
+            \"description\": \"**Deployment Details:**\n- Branch: ${GITHUB_REF_NAME}\n- Commit: ${GITHUB_SHA}\n- Service URL: ${SERVICE_URL}\n- Triggered by: ${GITHUB_ACTOR}\n- Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\",
+            \"status\": \"complete\",
+            \"priority\": 3,
+            \"tags\": [\"deployment\", \"staging\", \"success\"]
+          }"
 
-    - name: Send staging failure notification
+    - name: Send ClickUp failure notification
       if: failure()
+      env:
+        CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
+        CLICKUP_LIST_ID: ${{ secrets.CLICKUP_LIST_ID }}
       run: |
-        echo "📧 Sending staging deployment failure notification"
-        # In real implementation, this would send email/Slack notification
+        curl --request POST \
+          --url "https://api.clickup.com/api/v2/list/${CLICKUP_LIST_ID}/task" \
+          --header "Authorization: ${CLICKUP_API_TOKEN}" \
+          --header 'Content-Type: application/json' \
+          --data "{
+            \"name\": \"❌ Staging Deployment Failed - ${GITHUB_SHA:0:7}\",
+            \"description\": \"**Deployment Failed:**\n- Branch: ${GITHUB_REF_NAME}\n- Commit: ${GITHUB_SHA}\n- Triggered by: ${GITHUB_ACTOR}\n- Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n\nPlease check the workflow logs for details.\",
+            \"status\": \"to do\",
+            \"priority\": 1,
+            \"tags\": [\"deployment\", \"staging\", \"failed\"]
+          }"
 
   deploy-production:
     needs: test
@@ -119,19 +212,112 @@ jobs:
     environment: production
 
     steps:
-    - name: Deploy to production
-      run: |
-        echo "🚀 Deploying to production environment..."
-        echo "✅ Production deployment completed"
+    - uses: actions/checkout@v4
 
-    - name: Send production notification
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for GCR
+      run: |
+        gcloud auth configure-docker
+
+    - name: Load and validate environment variables
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        API_TOKEN: ${{ secrets.API_TOKEN }}
+        DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
+        INTERNAL_AUTH_TOKEN: ${{ secrets.INTERNAL_AUTH_TOKEN }}
+      run: |
+        # Create temporary .env file from secrets
+        cat > .env.prod.cloudrun.yaml << EOF
+        GEMINI_API_KEY: "$GEMINI_API_KEY"
+        API_TOKEN: "$API_TOKEN"
+        DATABASE_URL: "$DATABASE_URL"
+        DB_PASSWORD: "$DB_PASSWORD"
+        INTERNAL_AUTH_TOKEN: "$INTERNAL_AUTH_TOKEN"
+        EOF
+
+        echo "✅ Environment variables configured"
+
+    - name: Build and push Docker image
+      run: |
+        PROJECT_ID=$(gcloud config get-value project)
+        SERVICE_NAME="sato-backend"
+        IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME"
+
+        gcloud builds submit --tag $IMAGE_NAME .
+
+        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_ENV
+
+    - name: Deploy to Cloud Run (Production)
+      run: |
+        REGION="me-west1"
+        PROJECT_ID=$(gcloud config get-value project)
+        CLOUD_SQL_INSTANCE="sato-db"
+
+        gcloud run deploy $SERVICE_NAME \
+          --image $IMAGE_NAME \
+          --region=$REGION \
+          --allow-unauthenticated \
+          --memory 8Gi \
+          --cpu 4 \
+          --timeout 900 \
+          --concurrency 2 \
+          --max-instances 3 \
+          --min-instances 1 \
+          --execution-environment gen2 \
+          --cpu-boost \
+          --add-cloudsql-instances $PROJECT_ID:$REGION:$CLOUD_SQL_INSTANCE \
+          --env-vars-file .env.prod.cloudrun.yaml
+
+        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region=$REGION --format="value(status.url)")
+        echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_ENV
+        echo "🌐 Production URL: $SERVICE_URL"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f .env.prod.cloudrun.yaml
+
+    - name: Send ClickUp success notification
       if: success()
+      env:
+        CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
+        CLICKUP_LIST_ID: ${{ secrets.CLICKUP_LIST_ID }}
       run: |
-        echo "📧 Sending production deployment success notification"
-        # In real implementation, this would send email/Slack notification
+        curl --request POST \
+          --url "https://api.clickup.com/api/v2/list/${CLICKUP_LIST_ID}/task" \
+          --header "Authorization: ${CLICKUP_API_TOKEN}" \
+          --header 'Content-Type: application/json' \
+          --data "{
+            \"name\": \"🚀 Production Deployment Success - ${GITHUB_SHA:0:7}\",
+            \"description\": \"**Deployment Details:**\n- Branch: ${GITHUB_REF_NAME}\n- Commit: ${GITHUB_SHA}\n- Service URL: ${SERVICE_URL}\n- Triggered by: ${GITHUB_ACTOR}\n- Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\",
+            \"status\": \"complete\",
+            \"priority\": 2,
+            \"tags\": [\"deployment\", \"production\", \"success\"]
+          }"
 
-    - name: Send production failure notification
+    - name: Send ClickUp failure notification
       if: failure()
+      env:
+        CLICKUP_API_TOKEN: ${{ secrets.CLICKUP_API_TOKEN }}
+        CLICKUP_LIST_ID: ${{ secrets.CLICKUP_LIST_ID }}
       run: |
-        echo "📧 Sending production deployment failure notification"
-        # In real implementation, this would send email/Slack notification
+        curl --request POST \
+          --url "https://api.clickup.com/api/v2/list/${CLICKUP_LIST_ID}/task" \
+          --header "Authorization: ${CLICKUP_API_TOKEN}" \
+          --header 'Content-Type: application/json' \
+          --data "{
+            \"name\": \"🔥 PRODUCTION Deployment FAILED - ${GITHUB_SHA:0:7}\",
+            \"description\": \"**CRITICAL: Production Deployment Failed:**\n- Branch: ${GITHUB_REF_NAME}\n- Commit: ${GITHUB_SHA}\n- Triggered by: ${GITHUB_ACTOR}\n- Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n\n⚠️ URGENT: Check workflow logs immediately!\",
+            \"status\": \"to do\",
+            \"priority\": 1,
+            \"tags\": [\"deployment\", \"production\", \"failed\", \"urgent\"]
+          }"

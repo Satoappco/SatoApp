@@ -32,6 +32,7 @@ import json
 import asyncio
 import argparse
 import re
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -96,6 +97,9 @@ class QATestingScript:
         self.save_local = save_local
         self.max_concurrent = max_concurrent
         self.settings = get_settings()
+
+        # Set up logger
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         # Initialize HTTP client
         self.client = httpx.AsyncClient(timeout=120.0)
@@ -193,7 +197,7 @@ class QATestingScript:
             access_token = token_data.get("access_token")
 
             if not access_token:
-                print("❌ Failed to refresh Google Sheets OAuth2 token")
+                self.logger.error("Failed to refresh Google Sheets OAuth2 token")
                 return None
 
             creds = Credentials(
@@ -211,7 +215,7 @@ class QATestingScript:
             return gspread.authorize(creds)
 
         except Exception as e:
-            print(f"❌ OAuth2 authentication failed: {e}")
+            self.logger.error(f"OAuth2 authentication failed: {e}")
             return None
 
     def _get_service_account_client(self):
@@ -253,7 +257,7 @@ class QATestingScript:
             return gspread.authorize(creds)
 
         except Exception as e:
-            print(f"❌ Service account authentication failed: {e}")
+            self.logger.error(f"Service account authentication failed: {e}")
             return None
 
     def _load_google_sheets(self) -> pd.DataFrame:
@@ -316,10 +320,10 @@ class QATestingScript:
                 f"{self.sheet_url}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
             os.rename(self.sheet_url, backup_path)
-            print(f"✅ Created backup: {backup_path}")
+            self.logger.info(f"Created backup: {backup_path}")
 
         df.to_excel(self.sheet_url, index=False)
-        print(f"✅ Saved results to: {self.sheet_url}")
+        self.logger.info(f"Saved results to: {self.sheet_url}")
 
     def _save_local_reports(self, df: pd.DataFrame):
         """Save data to local Excel file in reports directory with timestamp."""
@@ -335,7 +339,7 @@ class QATestingScript:
 
         # Save to Excel
         df.to_excel(filepath, index=False)
-        print(f"✅ Saved results to local file: {filepath}")
+        self.logger.info(f"Saved results to local file: {filepath}")
 
     def _save_google_sheets(self, df: pd.DataFrame):
         """Save data to Google Sheets."""
@@ -366,14 +370,55 @@ class QATestingScript:
         worksheet.clear()
         worksheet.update([df.columns.tolist()] + df.values.tolist())
 
-        print(f"✅ Saved results to Google Sheets: {self.sheet_url}")
+        self.logger.info(f"Saved results to Google Sheets: {self.sheet_url}")
 
     def move_current_to_previous(self, df: pd.DataFrame) -> pd.DataFrame:
         """Move current_answer to previous_answer for all rows."""
         df["Previous Answer"] = df["Current Answer"]
         df["Current Answer"] = ""
-        print("✅ Moved current answers to previous")
+        self.logger.info("Moved current answers to previous")
         return df
+
+    async def fetch_customers(self) -> Dict[str, str]:
+        """
+        Fetch all customers from the API and return a mapping of customer names to IDs.
+
+        Returns:
+            Dictionary mapping customer names to customer IDs
+        """
+        url = f"{self.api_base_url}/api/v1/customers"
+
+        headers = {"Content-Type": "application/json"}
+
+        if self.jwt_token:
+            headers["Authorization"] = f"Bearer {self.jwt_token}"
+
+        try:
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            # Extract customers from the response
+            customers = data.get("customers", [])
+
+            # Create mapping from customer full_name to ID
+            customer_map = {}
+            for customer in customers:
+                if (
+                    isinstance(customer, dict)
+                    and "full_name" in customer
+                    and "id" in customer
+                ):
+                    customer_map[customer["full_name"].strip()] = str(customer["id"])
+
+            self.logger.info(f"Fetched {len(customer_map)} customers")
+            return customer_map
+
+        except httpx.HTTPError as e:
+            self.logger.error(f"Failed to fetch customers: {str(e)}")
+            if hasattr(e, "response") and e.response:
+                self.logger.debug(f"Response: {e.response.text}")
+            return {}
 
     async def call_chat_api(
         self, question: str, customer_id: Optional[str] = None
@@ -403,14 +448,21 @@ class QATestingScript:
         if customer_id:
             payload["customer_id"] = customer_id
 
+        # Debug: Log equivalent curl command
+        curl_cmd = f'curl -X POST "{url}" -H "Content-Type: application/json"'
+        if self.jwt_token:
+            curl_cmd += f' -H "Authorization: Bearer {self.jwt_token[:10]}..."'
+        curl_cmd += f" -d '{json.dumps(payload)}'"
+        self.logger.debug(f"Equivalent curl: {curl_cmd}")
+
         try:
             response = await self.client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
-            print(f"❌ API Error: {str(e)}")
+            self.logger.error(f"API Error: {str(e)}")
             if hasattr(e, "response") and e.response:
-                print(f"Response: {e.response.text}")
+                self.logger.debug(f"Response: {e.response.text}")
             return {"error": str(e), "message": ""}
 
     async def rank_with_llm(
@@ -487,15 +539,15 @@ Respond in JSON format:
             # Validate rank value
             valid_ranks = ["both good", "previous better", "current better", "both bad"]
             if result.get("rank") not in valid_ranks:
-                print(
-                    f"⚠️  Invalid rank: {result.get('rank')}, defaulting to 'both bad'"
+                self.logger.warning(
+                    f"Invalid rank: {result.get('rank')}, defaulting to 'both bad'"
                 )
                 result["rank"] = "both bad"
 
             return result
 
         except Exception as e:
-            print(f"❌ LLM Ranking Error: {str(e)}")
+            self.logger.error(f"LLM Ranking Error: {str(e)}")
             return {"rank": "both bad", "suggestion": f"Error during ranking: {str(e)}"}
 
     async def process_single_test_case(
@@ -521,20 +573,20 @@ Respond in JSON format:
             expected_answer = row["Expected Answer"]
             previous_answer = row["Previous Answer"]
 
-            print(f"[{idx + 1}] Testing: {question[:60]}...")
+            self.logger.info(f"[{idx + 1}] Testing: {question[:60]}...")
 
             # Call chat API
-            print(f"  → Calling chat API...")
+            self.logger.debug(f"  → Calling chat API...")
             response = await self.call_chat_api(question, customer_id)
             current_answer = response.get("message", "")
 
             if response.get("error"):
                 current_answer = f"ERROR: {response['error']}"
 
-            print(f"  ✅ Got response: {current_answer[:100]}...")
+            self.logger.info(f"  ✅ Got response: {current_answer[:100]}...")
 
             # Rank with LLM
-            print(f"  → Ranking with LLM...")
+            self.logger.debug(f"  → Ranking with LLM...")
             ranking = await self.rank_with_llm(
                 question=question,
                 expected_answer=expected_answer,
@@ -545,9 +597,9 @@ Respond in JSON format:
             rank = ranking.get("rank", "both bad")
             suggestion = ranking.get("suggestion", "")
 
-            print(f"  ✅ Rank: {rank}")
-            print(f"  💡 Suggestion: {suggestion[:80]}...")
-            print()
+            self.logger.info(f"  ✅ Rank: {rank}")
+            self.logger.debug(f"  💡 Suggestion: {suggestion[:80]}...")
+            self.logger.debug("")
 
             return idx, current_answer, rank, suggestion
 
@@ -573,8 +625,8 @@ Respond in JSON format:
         end_row = end_row or len(df)
         total_rows = end_row - start_row
 
-        print(
-            f"\n🚀 Processing {total_rows} test cases (rows {start_row} to {end_row - 1})...\n"
+        self.logger.info(
+            f"Processing {total_rows} test cases (rows {start_row} to {end_row - 1})..."
         )
 
         # Group by Type if fail_fast is enabled
@@ -582,13 +634,13 @@ Respond in JSON format:
             # Process by groups sequentially (fail_fast within group)
             grouped = df.iloc[start_row:end_row].groupby("Group", sort=False)
             for group_name, group_df in grouped:
-                print(f"📁 Processing group: {group_name}")
+                self.logger.info(f"Processing group: {group_name}")
                 group_failed = False
 
                 for idx in group_df.index:
                     if group_failed:
-                        print(
-                            f"  ⏭️  Skipping remaining questions in group '{group_name}' due to previous failure"
+                        self.logger.info(
+                            f"Skipping remaining questions in group '{group_name}' due to previous failure"
                         )
                         break
 
@@ -607,13 +659,13 @@ Respond in JSON format:
                     # Check if this question failed and fail_fast is enabled
                     if self.fail_fast and rank in ["previous better", "both bad"]:
                         group_failed = True
-                        print(
-                            f"  ❌ Question failed with rank '{rank}', skipping remaining questions in group '{group_name}'"
+                        self.logger.warning(
+                            f"Question failed with rank '{rank}', skipping remaining questions in group '{group_name}'"
                         )
         else:
             # Process all rows in parallel with concurrency limit
-            print(
-                f"🚀 Processing {total_rows} test cases in parallel (max {self.max_concurrent} concurrent)..."
+            self.logger.info(
+                f"Processing {total_rows} test cases in parallel (max {self.max_concurrent} concurrent)..."
             )
 
             tasks = [
@@ -639,7 +691,7 @@ Respond in JSON format:
         self,
         start_row: int = 0,
         end_row: Optional[int] = None,
-        customer_id: Optional[str] = None,
+        customer_name: Optional[str] = None,
     ):
         """
         Run the complete QA testing workflow.
@@ -647,20 +699,35 @@ Respond in JSON format:
         Args:
             start_row: Starting row index (0-based)
             end_row: Ending row index (exclusive), None for all rows
-            customer_id: Optional customer ID to use for all requests
+            customer_name: Optional customer name to convert to ID
         """
-        print("=" * 80)
-        print("QA Testing Script for Chat API")
-        print("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("QA Testing Script for Chat API")
+        self.logger.info("=" * 80)
+
+        # Convert customer_name to customer_id if provided
+        customer_id = None
+        customer_name = customer_name.strip()
+        if customer_name:
+            self.logger.info(f"Converting customer name '{customer_name}' to ID...")
+            customer_map = await self.fetch_customers()
+            if customer_name in customer_map:
+                customer_id = customer_map[customer_name]
+                self.logger.info(f"Found customer ID: {customer_id}")
+            else:
+                self.logger.warning(
+                    f"Customer name '{customer_name}' not found in available customers"
+                )
+                self.logger.info(f"Available customers: {list(customer_map.keys())}")
 
         # Load data
         source_type = "Google Sheets" if self.is_google_sheets else "Excel file"
-        print(f"\n📂 Loading {source_type}: {self.sheet_url}")
+        self.logger.info(f"Loading {source_type}: {self.sheet_url}")
         df = self.load_data()
-        print(f"✅ Loaded {len(df)} test cases")
+        self.logger.info(f"Loaded {len(df)} test cases")
 
         # Move current to previous
-        print(f"\n🔄 Moving current answers to previous...")
+        self.logger.info(f"Moving current answers to previous...")
         df = self.move_current_to_previous(df)
         self.save_data(df)
 
@@ -671,18 +738,18 @@ Respond in JSON format:
         self.save_data(df)
 
         # Print summary
-        print("\n" + "=" * 80)
-        print("SUMMARY")
-        print("=" * 80)
+        self.logger.info("=" * 80)
+        self.logger.info("SUMMARY")
+        self.logger.info("=" * 80)
 
         rank_counts = df["Rank"].value_counts()
-        print("\nRanking Distribution:")
+        self.logger.info("Ranking Distribution:")
         for rank, count in rank_counts.items():
-            print(f"  {rank}: {count}")
+            self.logger.info(f"  {rank}: {count}")
 
         save_location = "local reports directory" if self.save_local else self.sheet_url
-        print(f"\n✅ Testing complete! Results saved to: {save_location}")
-        print("=" * 80)
+        self.logger.info(f"Testing complete! Results saved to: {save_location}")
+        self.logger.info("=" * 80)
 
 
 async def main():
@@ -703,16 +770,16 @@ async def main():
         "--jwt-token", help="JWT authentication token (can also use JWT_TOKEN env var)"
     )
     parser.add_argument(
-        "--customer-id",
+        "--customer-name",
         type=str,
         default="AEF",
-        help="Customer ID to use for all requests (default: AEF)",
+        help="Customer name to convert to ID for all requests (default: AEF)",
     )
     parser.add_argument(
-        "--campaigner-id",
+        "--campaigner-email",
         type=str,
         default="dor.yashar@gmail.com",
-        help="Campaigner ID for JWT token (default: dor.yashar@gmail.com)",
+        help="Campaigner Email for JWT token (default: dor.yashar@gmail.com)",
     )
     parser.add_argument(
         "--start-row",
@@ -757,14 +824,28 @@ async def main():
         default=5,
         help="Maximum number of concurrent API calls (default: 5)",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set the logging level (default: INFO)",
+    )
 
     args = parser.parse_args()
+
+    # Set up logging
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler()],
+    )
 
     # Get JWT token from args or environment
     jwt_token = args.jwt_token or os.getenv("JWT_TOKEN")
 
     if not jwt_token:
-        print("🔄 No JWT token provided, generating one for testing...")
+        logger = logging.getLogger(__name__)
+        logger.info("No JWT token provided, generating one for testing...")
         try:
             # Import here to avoid circular imports
             from app.core.auth import create_access_token
@@ -774,20 +855,21 @@ async def main():
                 data={
                     "type": "access",
                     "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
-                    "campaigner_id": args.campaigner_id,
-                    "user_id": 10,
+                    "campaigner_id": args.campaigner_email,
+                    # "user_id": 10,
                 }
             )
-            print(f"✅ Generated JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
+            logger.info(f"Generated JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
         except Exception as e:
-            print(f"❌ Failed to generate JWT token: {e}")
-            print("   Set JWT_TOKEN env var or use --jwt-token")
-            print(
-                "   You can generate one manually with: python scripts/generate_test_token.py"
+            logger.error(f"Failed to generate JWT token: {e}")
+            logger.error("Set JWT_TOKEN env var or use --jwt-token")
+            logger.error(
+                "You can generate one manually with: python scripts/generate_test_token.py"
             )
             return
     else:
-        print(f"🔑 Using JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
+        logger = logging.getLogger(__name__)
+        logger.info(f"Using JWT token: {jwt_token[:5]}...{jwt_token[-5:]}")
 
     # Run the script
     async with QATestingScript(
@@ -801,7 +883,9 @@ async def main():
         max_concurrent=args.max_concurrent,
     ) as script:
         await script.run(
-            start_row=args.start_row, end_row=args.end_row, customer_id=args.customer_id
+            start_row=args.start_row,
+            end_row=args.end_row,
+            customer_name=args.customer_name,
         )
 
 
