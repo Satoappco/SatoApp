@@ -562,17 +562,18 @@ async def get_aggregated_metrics(
                         detail="group_by must be 'item_id', 'platform_id', 'item_type', or 'none'"
                     )
 
-            # Select aggregated fields
+            # Select aggregated fields (use COALESCE to convert NULL to 0 for sum operations)
             select_cols = [
-                func.sum(Metrics.clicks).label("total_clicks"),
-                func.sum(Metrics.impressions).label("total_impressions"),
-                func.sum(Metrics.leads).label("total_leads"),
-                func.sum(Metrics.spent).label("total_spent"),
-                func.sum(Metrics.conversions).label("total_conversions"),
-                func.sum(Metrics.conv_val).label("total_conv_val"),
+                func.coalesce(func.sum(Metrics.clicks), 0).label("total_clicks"),
+                func.coalesce(func.sum(Metrics.impressions), 0).label("total_impressions"),
+                func.coalesce(func.sum(Metrics.leads), 0).label("total_leads"),
+                func.coalesce(func.sum(Metrics.spent), 0).label("total_spent"),
+                func.coalesce(func.sum(Metrics.conversions), 0).label("total_conversions"),
+                func.coalesce(func.sum(Metrics.conv_val), 0).label("total_conv_val"),
                 # Reach bounds - min is the highest single day, max is the sum (assumes no overlap)
+                # Note: MAX can still return NULL if all values are NULL, which is okay
                 func.max(Metrics.reach).label("reach_min"),
-                func.sum(Metrics.reach).label("reach_max"),
+                func.coalesce(func.sum(Metrics.reach), 0).label("reach_max"),
             ]
 
             if group_by_cols:
@@ -588,7 +589,7 @@ async def get_aggregated_metrics(
             # Process results and calculate derived metrics
             aggregated_metrics = []
             for row in results:
-                if group_by:
+                if group_by and group_by != "none":
                     if group_by == "item_id":
                         group_info = {
                             "item_id": row[0],
