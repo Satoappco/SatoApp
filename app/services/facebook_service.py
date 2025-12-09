@@ -4,20 +4,18 @@ Handles token storage, refresh, and Facebook API calls
 """
 
 import json
-import hashlib
-import base64
 import requests
 from datetime import datetime, timedelta, timezone
 import os
 import asyncio
 from typing import Dict, Any, Optional, List
-from cryptography.fernet import Fernet
 from sqlmodel import select, and_
 
 from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
 from app.models.users import Campaigner
 from app.core.security import get_secret_key
+from app.utils.security_utils import get_token_crypto
 
 
 class FacebookService:
@@ -44,35 +42,21 @@ class FacebookService:
     ]
 
     def __init__(self):
-        self.encryption_key = self._get_encryption_key()
-        self.cipher_suite = Fernet(self.encryption_key)
+        self.crypto = get_token_crypto()
         self.api_version = os.getenv("FACEBOOK_API_VERSION", "v18.0")
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
 
-    def _get_encryption_key(self) -> bytes:
-        """Get or create encryption key for token storage"""
-        # Use a fixed key based on a known secret for consistency
-        # In production, this should be stored in environment variables
-        fixed_secret = os.getenv(
-            "ANALYTICS_TOKEN_ENCRYPTION_KEY", "sato-analytics-token-encryption-key-2025"
-        )
-
-        # Create a consistent 32-byte key
-        key_bytes = fixed_secret.encode("utf-8")
-        key_bytes = key_bytes.ljust(32, b"0")[:32]
-        return base64.urlsafe_b64encode(key_bytes)
-
     def _encrypt_token(self, token: str) -> bytes:
         """Encrypt token for secure storage"""
-        return self.cipher_suite.encrypt(token.encode())
+        return self.crypto.encrypt_token(token)
 
     def _decrypt_token(self, encrypted_token: bytes) -> str:
         """Decrypt token for use"""
-        return self.cipher_suite.decrypt(encrypted_token).decode()
+        return self.crypto.decrypt_token(encrypted_token)
 
     def _generate_token_hash(self, token: str) -> str:
         """Generate hash for token validation"""
-        return hashlib.sha256(token.encode()).hexdigest()
+        return self.crypto.generate_token_hash(token)
 
     def get_oauth_url(self, redirect_uri: str, state: str = None) -> str:
         """Generate Facebook OAuth URL"""

@@ -4,13 +4,10 @@ Handles token storage, refresh, and Google Ads API calls
 """
 
 import json
-import hashlib
-import base64
 from datetime import datetime, timedelta, timezone
 import os
 import asyncio
 from typing import Dict, Any, Optional, List
-from cryptography.fernet import Fernet
 from google.oauth2.credentials import Credentials
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
@@ -22,6 +19,7 @@ from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
 from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
+from app.utils.security_utils import get_token_crypto
 
 # Google client functions
 def get_google_client_id() -> str:
@@ -51,49 +49,36 @@ class GoogleAdsService:
     ]
     
     def __init__(self):
-        self.encryption_key = self._get_encryption_key()
-        self.cipher_suite = Fernet(self.encryption_key)
-    
-    def _get_encryption_key(self) -> bytes:
-        """Get encryption key for token storage - uses GOOGLE_CLIENT_SECRET"""
-        # Use GOOGLE_CLIENT_SECRET as encryption key (pad to 32 bytes if needed)
-        client_secret = get_google_client_secret()
-        secret_key = client_secret.encode('utf-8')
-        if len(secret_key) < 32:
-            secret_key = secret_key.ljust(32, b'0')  # Pad with zeros
-        elif len(secret_key) > 32:
-            secret_key = secret_key[:32]  # Truncate to 32 bytes
-        return base64.urlsafe_b64encode(secret_key)
-    
+        self.crypto = get_token_crypto()
+
     def _encrypt_token(self, token: str) -> bytes:
         """Encrypt token for secure storage"""
-        return self.cipher_suite.encrypt(token.encode())
-    
+        return self.crypto.encrypt_token(token)
+
     def _decrypt_token(self, encrypted_token) -> str:
         """Decrypt token for use"""
         # Validate input
         if encrypted_token is None:
             raise ValueError("Encrypted token is None - connection may not be properly initialized")
-        
+
         if not isinstance(encrypted_token, (bytes, str)):
             raise ValueError(f"Encrypted token must be bytes or str, got {type(encrypted_token)}")
-        
+
         # Convert to bytes if it's a string
         if isinstance(encrypted_token, str):
             try:
                 encrypted_token = encrypted_token.encode('utf-8')
             except Exception as e:
                 raise ValueError(f"Failed to convert string token to bytes: {e}")
-        
+
         try:
-            decrypted_bytes = self.cipher_suite.decrypt(encrypted_token)
-            return decrypted_bytes.decode('utf-8')
+            return self.crypto.decrypt_token(encrypted_token)
         except Exception as e:
             raise ValueError(f"Failed to decrypt token: {e}")
-    
+
     def _generate_token_hash(self, token: str) -> str:
         """Generate hash for token validation"""
-        return hashlib.sha256(token.encode()).hexdigest()
+        return self.crypto.generate_token_hash(token)
     
     
     async def save_google_ads_connection(
