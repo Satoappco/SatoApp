@@ -15,6 +15,7 @@ from app.config.logging import get_logger
 from app.config.settings import get_settings
 from app.models.analytics import Connection, AssetType
 from app.core.agents.mcp_clients.mcp_registry import MCPServer
+from app.utils.connection_failure_utils import record_connection_failure, record_connection_success
 
 logger = get_logger(__name__)
 
@@ -193,6 +194,9 @@ def update_connection_token(
             session.commit()
             logger.info(f"✅ Updated {asset_type} token for campaigner {campaigner_id}")
 
+            # Record successful token refresh
+            record_connection_success(connection.id, reset_failure_count=True)
+
 
 def mark_needs_reauth(campaigner_id: int, asset_type: AssetType) -> None:
     """Mark a connection as needing re-authentication."""
@@ -217,6 +221,9 @@ def mark_needs_reauth(campaigner_id: int, asset_type: AssetType) -> None:
             session.add(connection)
             session.commit()
             logger.warning(f"⚠️  Marked {asset_type} connection as needs_reauth for campaigner {campaigner_id}")
+
+            # Record connection failure
+            record_connection_failure(connection.id, "token_refresh_failed", also_set_needs_reauth=False)
 
 
 def refresh_tokens_for_platforms(
@@ -277,6 +284,10 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Google Analytics token: {e}")
                     if e.error == 'invalid_grant':
                         mark_needs_reauth(campaigner_id, AssetType.GA4)
+                    else:
+                        # Record failure for other error types
+                        if conn and conn.id:
+                            record_connection_failure(conn.id, f"token_refresh_failed: {e.error}", also_set_needs_reauth=False)
                     # Remove failed token from result so MCP manager knows it failed
                     if 'google_analytics' in refreshed_tokens:
                         del refreshed_tokens['google_analytics']
@@ -313,6 +324,10 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Google Ads token: {e}")
                     if e.error == 'invalid_grant':
                         mark_needs_reauth(campaigner_id, AssetType.GOOGLE_ADS_CAPS)
+                    else:
+                        # Record failure for other error types
+                        if conn and conn.id:
+                            record_connection_failure(conn.id, f"token_refresh_failed: {e.error}", also_set_needs_reauth=False)
                     # Remove failed token from result so MCP manager knows it failed
                     if 'google_ads' in refreshed_tokens:
                         del refreshed_tokens['google_ads']
@@ -349,6 +364,10 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Facebook token: {e}")
                     if 'invalid' in e.error.lower():
                         mark_needs_reauth(campaigner_id, AssetType.FACEBOOK_ADS_CAPS)
+                    else:
+                        # Record failure for other error types
+                        if conn and conn.id:
+                            record_connection_failure(conn.id, f"token_refresh_failed: {e.error}", also_set_needs_reauth=False)
                     # Remove failed token from result so MCP manager knows it failed
                     if 'facebook' in refreshed_tokens:
                         del refreshed_tokens['facebook']

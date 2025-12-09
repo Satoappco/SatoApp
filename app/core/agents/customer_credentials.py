@@ -245,7 +245,6 @@ class CustomerCredentialManager:
                     select(DigitalAsset).where(
                         DigitalAsset.customer_id == customer_id,
                         DigitalAsset.asset_type == AssetType.FACEBOOK_ADS,
-                        Connection.campaigner_id == campaigner_id,
                         DigitalAsset.is_active == True
                     )
                 ).first()

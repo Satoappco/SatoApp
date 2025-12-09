@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from app.config.logging import get_logger
+from app.utils.connection_failure_utils import record_connection_failure, record_connection_success
 
 logger = get_logger(__name__)
 
@@ -31,19 +32,22 @@ class MCPValidationResult:
     message: Optional[str] = None
     error_detail: Optional[str] = None
     duration_ms: Optional[int] = None
+    connection_id: Optional[int] = None  # Connection ID for logging failures
 
 
 class MCPValidator:
     """Validates MCP tools after initialization."""
 
-    def __init__(self, mcp_clients: Dict):
+    def __init__(self, mcp_clients: Dict, connection_ids: Optional[Dict[str, int]] = None):
         """
         Initialize validator.
 
         Args:
             mcp_clients: Dictionary of initialized MCP clients
+            connection_ids: Optional mapping of platform names to connection IDs for failure logging
         """
         self.mcp_clients = mcp_clients
+        self.connection_ids = connection_ids or {}
         self.results: List[MCPValidationResult] = []
 
     async def validate_all(self) -> List[MCPValidationResult]:
@@ -59,14 +63,51 @@ class MCPValidator:
             result = await self._validate_client(server_name, client)
             self.results.append(result)
 
+            # Get connection ID for this server if available
+            connection_id = self._get_connection_id_for_server(server_name)
+            result.connection_id = connection_id
+
             if result.status == ValidationStatus.SUCCESS:
                 logger.info(f"✅ {server_name}: {result.message} ({result.duration_ms}ms)")
+                # Record successful validation
+                if connection_id:
+                    record_connection_success(connection_id, reset_failure_count=True)
             elif result.status == ValidationStatus.FAILED:
                 logger.error(f"❌ {server_name}: {result.message} - {result.error_detail}")
+                # Record validation failure
+                if connection_id:
+                    failure_reason = f"mcp_validation_failed: {result.message}"
+                    record_connection_failure(connection_id, failure_reason, also_set_needs_reauth=False)
             else:
                 logger.warning(f"⚠️  {server_name}: {result.message}")
 
         return self.results
+
+    def _get_connection_id_for_server(self, server_name: str) -> Optional[int]:
+        """
+        Get connection ID for a given server name.
+
+        Args:
+            server_name: MCP server name
+
+        Returns:
+            Connection ID if found, None otherwise
+        """
+        # Try exact match first
+        if server_name in self.connection_ids:
+            return self.connection_ids[server_name]
+
+        # Try fuzzy matching based on platform name
+        server_lower = server_name.lower()
+        for platform_name, conn_id in self.connection_ids.items():
+            platform_lower = platform_name.lower()
+            if (('google_analytics' in server_lower and 'google_analytics' in platform_lower) or
+                ('google_ads' in server_lower and 'google_ads' in platform_lower) or
+                ('facebook' in server_lower and 'facebook' in platform_lower) or
+                ('meta' in server_lower and 'meta' in platform_lower)):
+                return conn_id
+
+        return None
 
     async def _validate_client(
         self,

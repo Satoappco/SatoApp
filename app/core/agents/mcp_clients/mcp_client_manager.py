@@ -57,6 +57,7 @@ class MCPClientManager:
         self.credentials = credentials
         self.clients = None
         self.validation_results: List[MCPValidationResult] = []
+        self.connection_ids: Dict[str, int] = {}  # Map platform names to connection IDs
 
         # Feature flags (can be disabled via env vars)
         self.enable_token_refresh = os.getenv("ENABLE_TOKEN_REFRESH", "true").lower() == "true"
@@ -286,10 +287,13 @@ class MCPClientManager:
 
             logger.info("🔍 Validating MCP clients...")
 
+            # Fetch connection IDs for failure logging
+            await self._fetch_connection_ids()
+
             # Wrap single client in dict for validator
             clients_dict = {"mcp_client": self.clients}
 
-            validator = MCPValidator(clients_dict)
+            validator = MCPValidator(clients_dict, self.connection_ids)
             self.validation_results = await validator.validate_all()
 
             summary = validator.get_summary()
@@ -363,6 +367,41 @@ class MCPClientManager:
                     # Also remove credentials
                     if platform in self.credentials:
                         del self.credentials[platform]
+
+    async def _fetch_connection_ids(self):
+        """Fetch connection IDs for each platform to enable failure logging."""
+        try:
+            with get_session() as session:
+                for platform in self.platforms:
+                    asset_type = None
+
+                    if platform == 'google_analytics':
+                        asset_type = AssetType.GA4
+                    elif platform == 'google_ads':
+                        asset_type = AssetType.GOOGLE_ADS_CAPS
+                    elif platform == 'facebook_ads':
+                        asset_type = AssetType.FACEBOOK_ADS_CAPS
+
+                    if asset_type:
+                        conn = session.exec(
+                            select(Connection)
+                            .join(DigitalAsset)
+                            .where(
+                                and_(
+                                    Connection.campaigner_id == self.campaigner_id,
+                                    DigitalAsset.asset_type == asset_type,
+                                    DigitalAsset.is_active == True,
+                                    Connection.revoked == False
+                                )
+                            )
+                        ).first()
+
+                        if conn:
+                            self.connection_ids[platform] = conn.id
+                            logger.debug(f"🔗 Mapped platform '{platform}' to connection ID {conn.id}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch connection IDs: {e}")
 
     async def _update_validation_timestamps(self):
         """Update last_validated_at timestamp in database for successful validations."""

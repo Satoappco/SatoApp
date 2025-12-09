@@ -60,48 +60,6 @@ class AnalyticsCrew:
         self.user_tokens: Dict[str, str] = {}
         self.mcp_param_list = []
 
-    def _fetch_user_tokens(self, campaigner_id: int):
-        """Fetch OAuth tokens for the user from database."""
-        from app.config.database import get_session
-        from app.models.connections import (
-            FacebookConnection,
-            GoogleAdsConnection,
-            GoogleAnalyticsConnection,
-        )
-        from sqlmodel import select
-
-        try:
-            with get_session() as session:
-                # Fetch Facebook token
-                fb_conn = session.exec(
-                    select(FacebookConnection)
-                    .where(FacebookConnection.campaigner_id == campaigner_id)
-                    .where(FacebookConnection.is_active == True)
-                ).first()
-                if fb_conn:
-                    self.user_tokens["facebook"] = fb_conn.access_token
-
-                # Fetch Google Ads token
-                google_ads_conn = session.exec(
-                    select(GoogleAdsConnection)
-                    .where(GoogleAdsConnection.campaigner_id == campaigner_id)
-                    .where(GoogleAdsConnection.is_active == True)
-                ).first()
-                if google_ads_conn:
-                    self.user_tokens["google_ads"] = google_ads_conn.access_token
-
-                # Fetch Google Analytics token
-                ga_conn = session.exec(
-                    select(GoogleAnalyticsConnection)
-                    .where(GoogleAnalyticsConnection.campaigner_id == campaigner_id)
-                    .where(GoogleAnalyticsConnection.is_active == True)
-                ).first()
-                if ga_conn:
-                    self.user_tokens["google_analytics"] = ga_conn.access_token
-
-        except Exception as e:
-            print(f"⚠️  Failed to fetch user tokens: {e}")
-
     def _initialize_mcp_clients(
         self,
         platforms: List[str],

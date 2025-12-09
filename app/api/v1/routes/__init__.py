@@ -22,6 +22,7 @@ from . import property_selections
 from . import digital_assets
 from . import campaigners
 from . import customers
+from . import connections
 from . import crewai
 from . import database_management
 from . import customer_data
@@ -39,7 +40,7 @@ __all__ = [
     "facebook", "facebook_oauth",
     "facebook_page_oauth", "facebook_marketing_oauth", "admin",
     "agencies", "property_selections", "digital_assets", "campaigners",
-    "customers", "crewai", "database_management", "customer_data",
+    "customers", "connections", "crewai", "database_management", "customer_data",
     "countries_currencies", "oauth_state", "campaign_sync", "logs",
     "customer_assignments", "metrics", "tasks"
 ]

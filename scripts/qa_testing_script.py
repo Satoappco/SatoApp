@@ -2,14 +2,15 @@
 QA Testing Script for Chat API
 
 This script processes a Google Sheets or Excel table with predefined questions and evaluates chat responses.
-Columns: type, question, expected_answer, current_answer, previous_answer, rank, suggestion
+Columns: type, question, expected_answer, current_answer, previous_answer, rank, suggestion, chat_trace_link, log_link
 
 Process:
 1. Move current_answer to previous_answer
 2. Call chat route for each question using JWT authentication (without reusing thread_id)
 3. Save response in current_answer
-4. Use LLM to rank: "both good", "previous better", "current better", "both bad"
-5. Generate suggestions for improvement
+4. Capture thread_id and generate chat trace and log links
+5. Use LLM to rank: "both good", "previous better", "current better", "both bad"
+6. Generate suggestions for improvement
 
 Features:
 - Supports both Google Sheets URLs and local Excel files
@@ -116,6 +117,8 @@ class QATestingScript:
             "Previous Answer",
             "Rank",
             "Suggestion",
+            "Chat Trace Link",
+            "Log Link",
         ]
 
     async def __aenter__(self):
@@ -465,6 +468,29 @@ class QATestingScript:
                 self.logger.debug(f"Response: {e.response.text}")
             return {"error": str(e), "message": ""}
 
+    def _generate_trace_url(self, thread_id: str) -> str:
+        """Generate trace viewer URL for a thread_id."""
+        frontend_url = self.settings.frontend_url or "http://localhost:3000"
+        return f"{frontend_url}/traces/{thread_id}"
+
+    def _generate_log_url(self, start_time: datetime, end_time: datetime) -> str:
+        """Generate URL for fetching logs in the trace timeframe."""
+        from datetime import timedelta
+
+        # Add 5 minute buffer before and after
+        buffered_start = start_time - timedelta(minutes=5)
+        buffered_end = end_time + timedelta(minutes=5)
+
+        # Format as ISO strings
+        start_str = buffered_start.isoformat()
+        end_str = buffered_end.isoformat()
+
+        # Construct log API URL
+        base_url = self.api_base_url
+        log_url = f"{base_url}/api/v1/logs/timerange?start_time={start_str}&end_time={end_str}&max_results=5000"
+
+        return log_url
+
     async def rank_with_llm(
         self,
         question: str,
@@ -555,7 +581,7 @@ Respond in JSON format:
         df: pd.DataFrame,
         idx: int,
         customer_id: Optional[str] = None,
-    ) -> tuple[int, str, str, str]:
+    ) -> tuple[int, str, str, str, str, str]:
         """
         Process a single test case with concurrency control.
 
@@ -565,7 +591,7 @@ Respond in JSON format:
             customer_id: Optional customer ID
 
         Returns:
-            Tuple of (idx, current_answer, rank, suggestion)
+            Tuple of (idx, current_answer, rank, suggestion, trace_link, log_link)
         """
         async with self.semaphore:
             row = df.loc[idx]
@@ -575,10 +601,22 @@ Respond in JSON format:
 
             self.logger.info(f"[{idx + 1}] Testing: {question[:60]}...")
 
-            # Call chat API
+            # Call chat API and capture start time
+            start_time = datetime.now()
             self.logger.debug(f"  → Calling chat API...")
             response = await self.call_chat_api(question, customer_id)
+            end_time = datetime.now()
+
             current_answer = response.get("message", "")
+            thread_id = response.get("thread_id", "")
+
+            # Generate trace and log URLs
+            trace_link = ""
+            log_link = ""
+            if thread_id:
+                trace_link = self._generate_trace_url(thread_id)
+                log_link = self._generate_log_url(start_time, end_time)
+                self.logger.debug(f"  🔗 Trace: {trace_link}")
 
             if response.get("error"):
                 current_answer = f"ERROR: {response['error']}"
@@ -601,7 +639,7 @@ Respond in JSON format:
             self.logger.debug(f"  💡 Suggestion: {suggestion[:80]}...")
             self.logger.debug("")
 
-            return idx, current_answer, rank, suggestion
+            return idx, current_answer, rank, suggestion, trace_link, log_link
 
     async def process_test_cases(
         self,
@@ -650,11 +688,15 @@ Respond in JSON format:
                         current_answer,
                         rank,
                         suggestion,
+                        trace_link,
+                        log_link,
                     ) = await self.process_single_test_case(df, idx, customer_id)
 
                     df.at[idx, "Current Answer"] = current_answer
                     df.at[idx, "Rank"] = rank
                     df.at[idx, "Suggestion"] = suggestion
+                    df.at[idx, "Chat Trace Link"] = trace_link
+                    df.at[idx, "Log Link"] = log_link
 
                     # Check if this question failed and fail_fast is enabled
                     if self.fail_fast and rank in ["previous better", "both bad"]:
@@ -677,10 +719,12 @@ Respond in JSON format:
             results = await asyncio.gather(*tasks)
 
             # Update DataFrame with results
-            for idx, current_answer, rank, suggestion in results:
+            for idx, current_answer, rank, suggestion, trace_link, log_link in results:
                 df.at[idx, "Current Answer"] = current_answer
                 df.at[idx, "Rank"] = rank
                 df.at[idx, "Suggestion"] = suggestion
+                df.at[idx, "Chat Trace Link"] = trace_link
+                df.at[idx, "Log Link"] = log_link
 
         # Save progress after processing
         self.save_data(df)
