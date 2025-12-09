@@ -33,6 +33,7 @@ class MCPValidationResult:
     error_detail: Optional[str] = None
     duration_ms: Optional[int] = None
     connection_id: Optional[int] = None  # Connection ID for logging failures
+    platform: Optional[str] = None  # Platform name (google_analytics, google_ads, facebook_ads) for easy identification
 
 
 class MCPValidator:
@@ -63,9 +64,11 @@ class MCPValidator:
             result = await self._validate_client(server_name, client)
             self.results.append(result)
 
-            # Get connection ID for this server if available
+            # Get connection ID and platform for this server
             connection_id = self._get_connection_id_for_server(server_name)
+            platform = self._get_platform_from_server(server_name)
             result.connection_id = connection_id
+            result.platform = platform
 
             if result.status == ValidationStatus.SUCCESS:
                 logger.info(f"✅ {server_name}: {result.message} ({result.duration_ms}ms)")
@@ -106,6 +109,27 @@ class MCPValidator:
                 ('facebook' in server_lower and 'facebook' in platform_lower) or
                 ('meta' in server_lower and 'meta' in platform_lower)):
                 return conn_id
+
+        return None
+
+    def _get_platform_from_server(self, server_name: str) -> Optional[str]:
+        """
+        Extract platform name from server name.
+
+        Args:
+            server_name: MCP server name
+
+        Returns:
+            Platform name (google_analytics, google_ads, facebook_ads) or None
+        """
+        server_lower = server_name.lower()
+
+        if 'google_analytics' in server_lower or 'google-analytics' in server_lower or 'analytics_mcp' in server_lower:
+            return 'google_analytics'
+        elif 'google_ads' in server_lower or 'google-ads' in server_lower or 'ads_mcp' in server_lower:
+            return 'google_ads'
+        elif 'facebook' in server_lower or 'meta' in server_lower:
+            return 'facebook_ads'
 
         return None
 

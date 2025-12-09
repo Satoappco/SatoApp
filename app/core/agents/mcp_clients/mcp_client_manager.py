@@ -309,48 +309,24 @@ class MCPClientManager:
             from app.core.agents.mcp_clients.mcp_validator import ValidationStatus
             for result in self.validation_results:
                 if result.status in [ValidationStatus.FAILED, ValidationStatus.ERROR]:
-                    # Check error details to identify which platform failed
-                    error_detail = str(result.error_detail or '').lower()
-                    server_name = result.server.lower()
+                    # Use the platform field directly - no regex parsing needed!
+                    platform = result.platform
 
-                    # Extract server hint if present
-                    server_hint = None
-                    if 'server hint:' in error_detail:
-                        # Parse "Server hint: google_ads_mcp" from error_detail
-                        import re
-                        hint_match = re.search(r'server hint:\s*(\w+)', error_detail)
-                        if hint_match:
-                            server_hint = hint_match.group(1).lower()
-                            logger.info(f"🔍 Detected failed server from hint: {server_hint}")
-
-                    # Check if error mentions specific platform or server
-                    if server_hint == 'google_analytics_mcp' or 'google_analytics' in server_name or 'google-analytics' in error_detail or 'analytics_mcp' in error_detail:
-                        if 'google_analytics' not in platforms_to_remove:
-                            platforms_to_remove.append('google_analytics')
+                    if platform and platform in self.platforms:
+                        # We know exactly which platform failed
+                        if platform not in platforms_to_remove:
+                            platforms_to_remove.append(platform)
                         logger.error(
-                            f"❌ Google Analytics validation failed: {result.message}"
+                            f"❌ {platform} validation failed: {result.message}"
                         )
-                        logger.debug(f"   Detail: {result.error_detail}")
-                    elif server_hint == 'google_ads_mcp' or 'google_ads' in server_name or 'google-ads' in error_detail or 'ads_mcp' in error_detail:
-                        if 'google_ads' not in platforms_to_remove:
-                            platforms_to_remove.append('google_ads')
-                        logger.error(
-                            f"❌ Google Ads validation failed: {result.message}"
-                        )
-                        logger.debug(f"   Detail: {result.error_detail}")
-                    elif server_hint == 'facebook_mcp' or 'facebook' in server_name or 'facebook' in error_detail or 'meta' in error_detail:
-                        if 'facebook_ads' not in platforms_to_remove:
-                            platforms_to_remove.append('facebook_ads')
-                        logger.error(
-                            f"❌ Facebook validation failed: {result.message}"
-                        )
-                        logger.debug(f"   Detail: {result.error_detail}")
+                        if result.error_detail:
+                            logger.debug(f"   Detail: {result.error_detail}")
                     else:
-                        # Can't determine which platform - log the error but remove all platforms to be safe
+                        # Cannot determine platform - log error and remove all to be safe
                         logger.error(
                             f"❌ MCP validation failed but cannot determine platform: {result.message}"
                         )
-                        logger.error(f"   Error detail (first 200 chars): {str(result.error_detail)[:200]}")
+                        logger.error(f"   Server: {result.server}, Error: {result.error_detail[:200] if result.error_detail else 'None'}")
                         # Remove all platforms since we can't isolate the failure
                         platforms_to_remove.extend([p for p in self.platforms if p not in platforms_to_remove])
 
