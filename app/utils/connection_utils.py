@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 import logging
 from sqlmodel import select, and_
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType
+from app.models.analytics import Connection, DigitalAsset, AssetType, AuthType
 
 logger = logging.getLogger(__name__)
 
@@ -168,11 +168,11 @@ def get_user_connections_summary(campaigner_id: int, customer_id: int) -> Dict[s
 def validate_connection_access(campaigner_id: int, connection_id: int) -> bool:
     """
     Validate that a user has access to a specific connection
-    
+
     Args:
         campaigner_id: User ID
         connection_id: Connection ID
-        
+
     Returns:
         True if user has access, False otherwise
     """
@@ -186,6 +186,236 @@ def validate_connection_access(campaigner_id: int, connection_id: int) -> bool:
                 Connection.revoked == False
             )
         )
-        
+
         result = session.exec(statement).first()
         return result is not None
+
+
+# ========================================
+# Centralized Connection Query Functions
+# ========================================
+
+def get_connection_for_save(
+    digital_asset_id: int,
+    campaigner_id: int,
+    auth_type: AuthType,
+    session: Optional[Any] = None
+) -> Optional[Connection]:
+    """
+    Get existing connection for save/update operations.
+    Used to check if a connection already exists before creating or updating.
+
+    Args:
+        digital_asset_id: Digital asset ID
+        campaigner_id: Campaigner ID
+        auth_type: Authentication type (OAUTH2, API_KEY, etc.)
+        session: Optional database session (creates new one if not provided)
+
+    Returns:
+        Connection if found, None otherwise
+    """
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+        session.__enter__()
+
+    try:
+        statement = select(Connection).where(
+            and_(
+                Connection.digital_asset_id == digital_asset_id,
+                Connection.campaigner_id == campaigner_id,
+                Connection.auth_type == auth_type
+            )
+        )
+        return session.exec(statement).first()
+    finally:
+        if close_session:
+            session.__exit__(None, None, None)
+
+
+def get_active_connection(
+    digital_asset_id: int,
+    customer_id: int,
+    campaigner_id: int,
+    session: Optional[Any] = None
+) -> Optional[Connection]:
+    """
+    Get active (non-revoked) connection for credential fetching.
+    Used by credential managers to fetch connection details for MCP initialization.
+
+    Args:
+        digital_asset_id: Digital asset ID
+        customer_id: Customer ID
+        campaigner_id: Campaigner ID
+        session: Optional database session (creates new one if not provided)
+
+    Returns:
+        Connection if found and not revoked, None otherwise
+    """
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+        session.__enter__()
+
+    try:
+        statement = select(Connection).where(
+            and_(
+                Connection.digital_asset_id == digital_asset_id,
+                Connection.customer_id == customer_id,
+                Connection.campaigner_id == campaigner_id,
+                Connection.revoked != True
+            )
+        )
+        return session.exec(statement).first()
+    finally:
+        if close_session:
+            session.__exit__(None, None, None)
+
+
+def get_connection_by_platform(
+    platform: str,
+    campaigner_id: int,
+    customer_id: Optional[int] = None,
+    session: Optional[Any] = None
+) -> Optional[Connection]:
+    """
+    Get connection by platform name (google_analytics, google_ads, facebook).
+    Used for MCP client initialization and failure logging.
+
+    Args:
+        platform: Platform name ('google_analytics', 'google_ads', 'facebook', 'facebook_ads')
+        campaigner_id: Campaigner ID
+        customer_id: Customer ID (optional - filters by it if provided)
+        session: Optional database session (creates new one if not provided)
+
+    Returns:
+        Connection if found, None otherwise
+    """
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+        session.__enter__()
+
+    try:
+        # Map platform to asset type
+        platform_to_asset_type = {
+            'google_analytics': AssetType.ANALYTICS,
+            'google_ads': AssetType.ADVERTISING,
+            'facebook': AssetType.SOCIAL_MEDIA,
+            'facebook_ads': AssetType.SOCIAL_MEDIA,  # Alias
+        }
+
+        asset_type = platform_to_asset_type.get(platform)
+        if not asset_type:
+            logger.warning(f"Unknown platform: {platform}")
+            return None
+
+        # Build where conditions
+        conditions = [
+            DigitalAsset.asset_type == asset_type,
+            Connection.campaigner_id == campaigner_id,
+            Connection.revoked == False,
+            DigitalAsset.is_active == True
+        ]
+
+        # Add customer_id filter if provided
+        if customer_id is not None:
+            conditions.append(DigitalAsset.customer_id == customer_id)
+
+        statement = select(Connection).join(
+            DigitalAsset,
+            Connection.digital_asset_id == DigitalAsset.id
+        ).where(and_(*conditions))
+
+        return session.exec(statement).first()
+    finally:
+        if close_session:
+            session.__exit__(None, None, None)
+
+
+def get_connections_by_asset_type(
+    asset_type: AssetType,
+    customer_id: int,
+    campaigner_id: int,
+    session: Optional[Any] = None
+) -> List[Connection]:
+    """
+    Get all active connections for a specific asset type.
+
+    Args:
+        asset_type: Asset type (ANALYTICS, ADVERTISING, SOCIAL_MEDIA)
+        customer_id: Customer ID
+        campaigner_id: Campaigner ID
+        session: Optional database session (creates new one if not provided)
+
+    Returns:
+        List of active connections
+    """
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+        session.__enter__()
+
+    try:
+        statement = select(Connection).join(
+            DigitalAsset,
+            Connection.digital_asset_id == DigitalAsset.id
+        ).where(
+            and_(
+                DigitalAsset.asset_type == asset_type,
+                DigitalAsset.customer_id == customer_id,
+                Connection.campaigner_id == campaigner_id,
+                Connection.revoked == False,
+                DigitalAsset.is_active == True
+            )
+        ).order_by(Connection.rotated_at.desc())  # Most recently rotated first
+
+        return session.exec(statement).all()
+    finally:
+        if close_session:
+            session.__exit__(None, None, None)
+
+
+def get_all_active_connections(
+    customer_id: int,
+    campaigner_id: int,
+    session: Optional[Any] = None
+) -> List[Connection]:
+    """
+    Get all active connections for a customer and campaigner.
+
+    Args:
+        customer_id: Customer ID
+        campaigner_id: Campaigner ID
+        session: Optional database session (creates new one if not provided)
+
+    Returns:
+        List of all active connections
+    """
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+        session.__enter__()
+
+    try:
+        statement = select(Connection).join(
+            DigitalAsset,
+            Connection.digital_asset_id == DigitalAsset.id
+        ).where(
+            and_(
+                DigitalAsset.customer_id == customer_id,
+                Connection.campaigner_id == campaigner_id,
+                Connection.revoked == False,
+                DigitalAsset.is_active == True
+            )
+        ).order_by(Connection.last_used_at.desc())  # Most recently used first
+
+        return session.exec(statement).all()
+    finally:
+        if close_session:
+            session.__exit__(None, None, None)

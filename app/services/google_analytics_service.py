@@ -29,6 +29,7 @@ from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
 from app.utils.security_utils import get_token_crypto
+from app.utils.connection_utils import get_connection_for_save
 
 # Google client functions
 def get_google_client_id() -> str:
@@ -180,15 +181,13 @@ class GoogleAnalyticsService:
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
             now = datetime.now(timezone.utc)
             
-            # Check for existing connection first
-            connection_statement = select(Connection).where(
-                and_(
-                    Connection.digital_asset_id == digital_asset.id,
-                    Connection.campaigner_id == campaigner_id,
-                    Connection.revoked == False
-                )
+            # Check for existing connection using centralized query
+            connection = get_connection_for_save(
+                digital_asset_id=digital_asset.id,
+                campaigner_id=campaigner_id,
+                auth_type=AuthType.OAUTH2,
+                session=session
             )
-            connection = session.exec(connection_statement).first()
             
             if connection:
                 print(f"DEBUG: Updating existing connection {connection.id}")

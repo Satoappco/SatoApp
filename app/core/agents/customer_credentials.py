@@ -8,6 +8,7 @@ from app.config.database import get_session
 from app.models.analytics import DigitalAsset, Connection, AssetType
 from app.services.google_ads_service import GoogleAdsService
 from app.services.facebook_service import FacebookService
+from app.utils.connection_utils import get_active_connection
 
 logger = logging.getLogger(__name__)
 
@@ -90,15 +91,13 @@ class CustomerCredentialManager:
                     logger.warning(f"⚠️  [CredentialManager] No GA4 asset found for customer {customer_id}")
                     return None
 
-                # Get the connection for this digital asset
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == ga_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked != True
-                    )
-                ).first()
+                # Get the connection using centralized query
+                connection = get_active_connection(
+                    digital_asset_id=ga_asset.id,
+                    customer_id=customer_id,
+                    campaigner_id=campaigner_id,
+                    session=session
+                )
 
                 if not connection or not connection.refresh_token_enc:
                     logger.warning(f"⚠️  [CredentialManager] No active connection for GA4 asset")
@@ -175,15 +174,13 @@ class CustomerCredentialManager:
                     logger.warning(f"⚠️  [CredentialManager] No Google Ads asset found for customer {customer_id}")
                     return None
 
-                # Get the connection for this digital asset
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == gads_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked != True
-                    )
-                ).first()
+                # Get the connection using centralized query
+                connection = get_active_connection(
+                    digital_asset_id=gads_asset.id,
+                    customer_id=customer_id,
+                    campaigner_id=campaigner_id,
+                    session=session
+                )
 
                 if not connection or not connection.refresh_token_enc:
                     logger.warning(f"⚠️  [CredentialManager] No active connection for Google Ads asset")
@@ -253,15 +250,13 @@ class CustomerCredentialManager:
                     logger.warning(f"⚠️  [CredentialManager] No Facebook Ads asset found for customer {customer_id}")
                     return None
 
-                # Get the connection for this digital asset
-                connection = session.exec(
-                    select(Connection).where(
-                        Connection.digital_asset_id == fb_asset.id,
-                        Connection.customer_id == customer_id,
-                        Connection.campaigner_id == campaigner_id,
-                        Connection.revoked != True
-                    )
-                ).first()
+                # Get the connection using centralized query
+                connection = get_active_connection(
+                    digital_asset_id=fb_asset.id,
+                    customer_id=customer_id,
+                    campaigner_id=campaigner_id,
+                    session=session
+                )
 
                 if not connection or not connection.access_token_enc:
                     logger.warning(f"⚠️  [CredentialManager] No active connection for Facebook Ads asset")

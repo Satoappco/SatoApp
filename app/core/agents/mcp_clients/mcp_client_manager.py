@@ -20,6 +20,7 @@ from app.core.agents.mcp_clients.mcp_registry import MCPServer, MCPSelector
 from app.core.agents.mcp_clients.mcp_validator import MCPValidator, MCPValidationResult
 from app.config.database import get_session
 from app.models.analytics import Connection, AssetType, DigitalAsset
+from app.utils.connection_utils import get_connection_by_platform
 from sqlmodel import select, and_
 
 logger = get_logger(__name__)
@@ -373,32 +374,17 @@ class MCPClientManager:
         try:
             with get_session() as session:
                 for platform in self.platforms:
-                    asset_type = None
+                    # Use centralized query to get connection
+                    conn = get_connection_by_platform(
+                        platform=platform,
+                        campaigner_id=self.campaigner_id,
+                        customer_id=None,  # Not filtering by customer_id
+                        session=session
+                    )
 
-                    if platform == 'google_analytics':
-                        asset_type = AssetType.GA4
-                    elif platform == 'google_ads':
-                        asset_type = AssetType.GOOGLE_ADS_CAPS
-                    elif platform == 'facebook_ads':
-                        asset_type = AssetType.FACEBOOK_ADS_CAPS
-
-                    if asset_type:
-                        conn = session.exec(
-                            select(Connection)
-                            .join(DigitalAsset)
-                            .where(
-                                and_(
-                                    Connection.campaigner_id == self.campaigner_id,
-                                    DigitalAsset.asset_type == asset_type,
-                                    DigitalAsset.is_active == True,
-                                    Connection.revoked == False
-                                )
-                            )
-                        ).first()
-
-                        if conn:
-                            self.connection_ids[platform] = conn.id
-                            logger.debug(f"🔗 Mapped platform '{platform}' to connection ID {conn.id}")
+                    if conn:
+                        self.connection_ids[platform] = conn.id
+                        logger.debug(f"🔗 Mapped platform '{platform}' to connection ID {conn.id}")
 
         except Exception as e:
             logger.error(f"❌ Failed to fetch connection IDs: {e}")
@@ -414,27 +400,24 @@ class MCPClientManager:
             with get_session() as session:
                 # Update connections if validated successfully
                 for result in self.validation_results:
-                    asset_type = None
+                    platform = None
 
+                    # Map server name to platform
                     if 'google_analytics' in result.server.lower():
-                        asset_type = AssetType.GA4
+                        platform = 'google_analytics'
                     elif 'google_ads' in result.server.lower():
-                        asset_type = AssetType.GOOGLE_ADS_CAPS
+                        platform = 'google_ads'
                     elif 'facebook' in result.server.lower():
-                        asset_type = AssetType.FACEBOOK_ADS_CAPS
+                        platform = 'facebook_ads'
 
-                    if asset_type and result.status.value == 'success':
-                        conn = session.exec(
-                            select(Connection)
-                            .join(DigitalAsset)
-                            .where(
-                                and_(
-                                    Connection.campaigner_id == self.campaigner_id,
-                                    DigitalAsset.asset_type == asset_type,
-                                    DigitalAsset.is_active == True
-                                )
-                            )
-                        ).first()
+                    if platform and result.status.value == 'success':
+                        # Use centralized query to get connection
+                        conn = get_connection_by_platform(
+                            platform=platform,
+                            campaigner_id=self.campaigner_id,
+                            customer_id=None,
+                            session=session
+                        )
 
                         if conn:
                             conn.last_validated_at = now
