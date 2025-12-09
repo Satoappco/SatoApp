@@ -22,9 +22,10 @@ from app.config.database import get_session
 
 
 @pytest.fixture
-def test_connection(test_db):
+def test_connection(db_session):
     """Create a test connection in database."""
-    with get_session() as session:
+    session = db_session
+    with session:
         # Create digital asset
         asset = DigitalAsset(
             customer_id=1,
