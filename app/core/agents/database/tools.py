@@ -103,7 +103,8 @@ class DatabaseTool:
         query = """
         SELECT c.id, c.full_name, c.status, c.contact_email, c.phone,
                c.website_url, c.facebook_page_url, c.instagram_page_url,
-               c.assigned_campaigner_id, c.is_active, c.created_at
+               c.assigned_campaigner_id, c.is_active, c.created_at,
+               c.importance, c.budget, c.campaign_health, c.last_work_date
         FROM customers c
         JOIN campaigners camp ON camp.agency_id = c.agency_id
         WHERE camp.id = :campaigner_id
@@ -129,7 +130,7 @@ class DatabaseTool:
         SELECT c.id, c.full_name, c.status, c.contact_email, c.phone, c.address,
                c.opening_hours, c.website_url, c.facebook_page_url, c.instagram_page_url,
                c.assigned_campaigner_id, c.is_active, c.created_at, c.updated_at,
-               c.llm_engine_preference
+               c.llm_engine_preference, c.importance, c.budget, c.campaign_health, c.last_work_date
         FROM customers c
         JOIN campaigners camp ON camp.agency_id = c.agency_id
         WHERE c.id = :customer_id

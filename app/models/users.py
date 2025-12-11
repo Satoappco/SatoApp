@@ -169,6 +169,12 @@ class Customer(BaseModel, table=True):
     # Active status
     is_active: bool = Field(default=True, description="Whether this customer record is active")
 
+    # Priority calculation fields
+    importance: int = Field(default=3, description="Client importance level (1-5, where 5 is most important)")
+    budget: float = Field(default=0.0, description="Monthly budget in customer's currency")
+    campaign_health: int = Field(default=3, description="Campaign health score (1=bad, 5=excellent)")
+    last_work_date: Optional[datetime] = Field(default=None, description="Date of last work on this customer")
+
 
 class CampaignerSession(BaseModel, table=True):
     """Campaigner authentication sessions for JWT token management"""
