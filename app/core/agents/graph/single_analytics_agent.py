@@ -10,6 +10,7 @@ from ..customer_credentials import CustomerCredentialManager
 from ..mcp_clients.mcp_registry import MCPSelector
 from app.services.chat_trace_service import ChatTraceService
 import time
+from app.core.agents.schemas import ga4_schema
 
 logger = logging.getLogger(__name__)
 
@@ -548,14 +549,39 @@ IMPORTANT Tool Usage Guidelines:
   Example: match_type=1 (CORRECT) not match_type=1.0 (WRONG)
   Common integer parameters: match_type, limit, offset, page_size
 
-COMMON DIMENSION NAMES (Google Analytics 4):
-- For campaigns: use sessionCampaignName or sessionCampaignId (NOT campaign or campaignId)
-- For source: use sessionSource or firstUserSource (NOT source)
-- For medium: use sessionMedium (NOT medium)
-- For combined source/medium: use sessionSourceMedium
-- For date: use date
-- For country: use country
-When you get a "Field X is not valid" error, the API usually suggests the correct field name - use it!
+GOOGLE ANALYTICS 4 DIMENSIONS & METRICS REFERENCE:
+
+You have access to a comprehensive GA4 schema covering 200+ metrics and dimensions.
+Reference: https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema
+
+COMMON DIMENSION NAMES:
+- Campaigns: sessionCampaignName, sessionCampaignId, campaignName (NOT campaign/campaignId)
+- Source: sessionSource, firstUserSource, source
+- Medium: sessionMedium, firstUserMedium, medium
+- Combined: sessionSourceMedium, firstUserSourceMedium, sourceMedium
+- Date/Time: date (YYYYMMDD), dateHour, year, month, day, hour
+- Geography: country, region, city, continent
+- Device: deviceCategory, deviceModel, operatingSystem, browser
+- Pages: pagePath, pageTitle, landingPage, hostName
+- Users: userId, newVsReturning, userAgeBracket, userGender
+- Events: eventName, linkUrl, searchTerm, videoTitle
+- E-commerce: itemName, itemBrand, itemCategory, transactionId
+
+COMMON METRICS:
+- Users: activeUsers, newUsers, totalUsers, active1DayUsers, active7DayUsers, active28DayUsers
+- Sessions: sessions, engagedSessions, sessionsPerUser, bounceRate, engagementRate
+- Engagement: screenPageViews, userEngagementDuration, averageSessionDuration, eventCount
+- Conversions: conversions, userConversionRate, sessionConversionRate, eventValue
+- Revenue: totalRevenue, purchaseRevenue, averagePurchaseRevenue, totalAdRevenue
+- E-commerce: transactions, itemsPurchased, itemsViewed, addToCarts, checkouts, cartToViewRate
+- Traffic: organicGoogleSearchClicks, organicGoogleSearchImpressions, organicGoogleSearchClickThroughRate
+- Google Ads: sessionGoogleAdsCampaignName, sessionGoogleAdsKeyword, sessionGoogleAdsQuery
+
+IMPORTANT NAMING CONVENTIONS:
+- Session-scoped: Use sessionCampaignName, sessionSource, sessionMedium for session attribution
+- First User-scoped: Use firstUserSource, firstUserMedium for user acquisition
+- Google Ads: Always prefix with sessionGoogleAds* or firstUserGoogleAds*
+- When you get "Field X is not valid" error, check the schema or use the API's suggested name
 
 IMPORTANT FILTERING TIPS:
 - For paid/CPC campaigns from Google: filter by sessionSourceMedium EQUALS "google / cpc" (exact match)
@@ -837,7 +863,10 @@ Remember: Use the tools available to you to fetch real data before providing ins
             await self._disconnect_mcp_clients()
 
     def _build_context_string(self, task_details: Dict[str, Any]) -> str:
-        """Build context string with credentials and account IDs."""
+        """Build context string with credentials and account IDs.
+
+        Also includes helpful schema references for GA4 when relevant.
+        """
         context = task_details.get("context", {})
         platforms = task_details.get("platforms", [])
 
@@ -851,7 +880,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 context_parts.append(f"Google Analytics Property ID: {property_id}")
             else:
                 logger.error("No Google Analytics Property ID provided in credentials")
-        
+
         if "google" in platforms or "google_analytics" in platforms:
             gads_credentials = task_details.get("google_ads_credentials", {}) or {}
             customer_id = gads_credentials.get("account_id", "NOT_PROVIDED") # or gads_credentials.get("customer_id", "NOT_PROVIDED")
@@ -877,6 +906,11 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 context_parts.append(f"Agency: {agency.get('name')}")
             if campaigner:
                 context_parts.append(f"Campaigner: {campaigner.get('full_name')}")
+
+        # Add GA4 schema helper note if Google Analytics is available
+        if "google" in platforms or "google_analytics" in platforms:
+            context_parts.append("\n📚 GA4 Schema Available: The comprehensive GA4 metrics and dimensions schema is available in the system prompt above.")
+            context_parts.append("   Use the dimension/metric names exactly as specified to avoid 'Field X is not valid' errors.")
 
         return "\n".join(context_parts)
 
