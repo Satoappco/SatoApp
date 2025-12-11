@@ -16,6 +16,7 @@ from app.models.analytics import KpiGoal, DigitalAsset, Connection, UserProperty
 from app.config.database import get_session
 from app.config.logging import get_logger
 from app.services.customer_assignment_service import CustomerAssignmentService
+from app.utils.priority_utils import CustomerPriorityData, compute_priority_scores
 
 logger = get_logger(__name__)
 
@@ -38,6 +39,9 @@ class CustomerCreate(BaseModel):
     llm_engine_preference: Optional[str] = Field(None, max_length=50, description="Preferred LLM engine")
     enable_meta: Optional[bool] = Field(None, description="Enable Meta/Facebook marketing features")
     enable_google: Optional[bool] = Field(None, description="Enable Google marketing features")
+    importance: Optional[int] = Field(3, ge=1, le=5, description="Client importance level (1-5)")
+    budget: Optional[float] = Field(0.0, ge=0, description="Monthly budget")
+    campaign_health: Optional[int] = Field(3, ge=1, le=5, description="Campaign health score (1=bad, 5=excellent)")
 
 
 class CustomerUpdate(BaseModel):
@@ -56,6 +60,10 @@ class CustomerUpdate(BaseModel):
     enable_google: Optional[bool] = Field(None, description="Enable Google marketing features")
     status: Optional[CustomerStatus] = None
     is_active: Optional[bool] = None
+    importance: Optional[int] = Field(None, ge=1, le=5, description="Client importance level (1-5)")
+    budget: Optional[float] = Field(None, ge=0, description="Monthly budget")
+    campaign_health: Optional[int] = Field(None, ge=1, le=5, description="Campaign health score (1=bad, 5=excellent)")
+    last_work_date: Optional[datetime] = Field(None, description="Date of last work on this customer")
 
 
 # ===== API Endpoints =====
@@ -116,6 +124,27 @@ async def get_customers(
                         })
                 customer_campaigners[customer.id] = campaigners
 
+            # Compute priority scores for all customers
+            priority_data = []
+            for customer in customers:
+                priority_data.append(CustomerPriorityData(
+                    customer_id=customer.id,
+                    name=customer.full_name,
+                    importance=customer.importance,
+                    budget=customer.budget,
+                    campaign_health=customer.campaign_health,
+                    last_work_date=customer.last_work_date
+                ))
+
+            # Calculate priority scores
+            priority_scores = {}
+            if priority_data:
+                try:
+                    scores = compute_priority_scores(priority_data)
+                    priority_scores = {s["customer_id"]: s for s in scores}
+                except ValueError as e:
+                    logger.warning(f"Priority calculation skipped: {str(e)}")
+
             return {
                 "success": True,
                 "customers": [
@@ -141,6 +170,12 @@ async def get_customers(
                         "agency_name": customer.agency_name,
                         "assigned_campaigners": customer_campaigners.get(customer.id, []),
                         "primary_campaigner_id": customer.primary_campaigner_id,
+                        "importance": customer.importance,
+                        "budget": customer.budget,
+                        "campaign_health": customer.campaign_health,
+                        "last_work_date": customer.last_work_date.isoformat() if customer.last_work_date else None,
+                        "priority": priority_scores.get(customer.id, {}).get("score", 0),
+                        "priority_details": priority_scores.get(customer.id, {}),
                         "created_at": customer.created_at.isoformat() if customer.created_at else None,
                         "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
                     }
@@ -295,7 +330,10 @@ async def create_customer(
                 enable_google=request.enable_google,
                 agency_name=agency_name,  # Denormalized agency name
                 status=CustomerStatus.ACTIVE,
-                is_active=True
+                is_active=True,
+                importance=request.importance if request.importance is not None else 3,
+                budget=request.budget if request.budget is not None else 0.0,
+                campaign_health=request.campaign_health if request.campaign_health is not None else 3
             )
 
             session.add(new_customer)
