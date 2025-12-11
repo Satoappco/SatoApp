@@ -235,13 +235,44 @@ class ConversationWorkflow:
         if messages:
             last_message = messages[-1]
             if hasattr(last_message, "content"):
-                try:
-                    # Only save if it's an AI message (not user message)
-                    if last_message.type == "ai":
-                        self.message_history.add_ai_message(last_message.content)
-                        logger.debug(f"💾 [Workflow] AI message saved to PostgreSQL")
-                except Exception as e:
-                    logger.error(f"❌ [Workflow] Failed to save AI message to PostgreSQL: {e}")
+                # Only save if it's an AI message (not user message)
+                if last_message.type == "ai":
+                    # Try to save with retry on connection errors
+                    max_save_attempts = 3
+                    for save_attempt in range(1, max_save_attempts + 1):
+                        try:
+                            self.message_history.add_ai_message(last_message.content)
+                            logger.debug(f"💾 [Workflow] AI message saved to PostgreSQL")
+                            break  # Success, exit retry loop
+                        except Exception as e:
+                            error_msg = str(e).lower()
+                            is_connection_error = any(keyword in error_msg for keyword in [
+                                "connection", "lost", "closed", "timeout", "disconnected"
+                            ])
+
+                            if is_connection_error and save_attempt < max_save_attempts:
+                                logger.warning(f"⚠️  [Workflow] PostgreSQL connection error (attempt {save_attempt}/{max_save_attempts}): {e}")
+                                logger.info(f"🔄 [Workflow] Reconnecting to PostgreSQL...")
+
+                                # Reinitialize message history with fresh connection
+                                try:
+                                    connection_string = get_database_url()
+                                    session_id = f"campaigner_{self.campaigner.id}_thread_{self.thread_id}"
+                                    self.message_history = PostgresChatMessageHistory(
+                                        connection_string=connection_string,
+                                        session_id=session_id
+                                    )
+                                    logger.info(f"✅ [Workflow] PostgreSQL connection refreshed")
+                                    # Continue to next attempt
+                                except Exception as reconnect_error:
+                                    logger.error(f"❌ [Workflow] Failed to reconnect to PostgreSQL: {reconnect_error}")
+                                    if save_attempt >= max_save_attempts:
+                                        logger.error(f"❌ [Workflow] All save attempts exhausted")
+                                        break
+                            else:
+                                # Not a connection error or max attempts reached
+                                logger.error(f"❌ [Workflow] Failed to save AI message to PostgreSQL: {e}")
+                                break
 
         logger.info(
             f"✅ [Workflow] Graph completed | "

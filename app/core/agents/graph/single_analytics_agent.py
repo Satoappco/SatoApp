@@ -618,6 +618,15 @@ DATE FORMATS - CRITICAL:
 - To filter search ads: use ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' OR check if ad_group_ad.ad.responsive_search_ad IS NOT NULL
 - When filtering by ad type in WHERE clause, ALWAYS use the full enum value exactly as shown above
 
+**Google Ads GAQL Field Names (CRITICAL - correct syntax):**
+- Resource references do NOT need .id suffix in most cases
+- CORRECT: ad_group_ad.ad_group, ad_group_ad.campaign, ad_group_ad.ad
+- WRONG: ad_group_ad.ad_group.id, ad_group_ad.campaign.id, ad_group_ad.ad.id
+- The system automatically provides the resource name/ID without needing .id
+- Exception: Some fields like ad_group_ad.ad.id or campaign.id in SELECT are valid for getting numeric IDs
+- But in FROM clause or joins, use resource name without .id: FROM ad_group_ad, FROM campaign
+- Example CORRECT query: SELECT ad_group_ad.ad_group, ad_group_ad.campaign, metrics.ctr FROM ad_group_ad
+
 ERROR HANDLING - THIS IS CRITICAL FOR SUCCESS:
 When a tool call fails with an error, you MUST analyze the error and retry with corrected parameters.
 You have up to 15 iterations - use them to debug and fix issues!
@@ -797,9 +806,63 @@ Analyze the error above and retry with corrected parameters NOW."""
                 early_stopping_method="generate"  # Generate final answer
             )
 
-            # Execute agent
+            # Execute agent with retry wrapper
+            # The inner agent has retry logic via handle_tool_error, but we also
+            # need to ensure exceptions don't immediately terminate execution
+            attempt_num = 0
+            max_agent_attempts = 3
+            last_error = None
+            current_query = query  # Track the current query with context
+
             try:
-                result = await agent_executor.ainvoke({"input": query})
+                # Try to execute the agent, allowing it to retry failed tool calls internally
+                while attempt_num < max_agent_attempts:
+                    attempt_num += 1
+                    try:
+                        logger.info(f"🔄 [SingleAnalyticsAgent] Agent execution attempt {attempt_num}/{max_agent_attempts}")
+                        result = await agent_executor.ainvoke({"input": current_query})
+                        # If we get here, execution succeeded
+                        break
+                    except Exception as e:
+                        last_error = e
+                        error_msg = str(e)
+
+                        # Check if this is a tool error that should trigger retry
+                        is_tool_error = "ToolException" in type(e).__name__ or "Error calling tool" in error_msg
+
+                        if is_tool_error and attempt_num < max_agent_attempts:
+                            logger.warning(f"⚠️  [SingleAnalyticsAgent] Tool error on attempt {attempt_num}/{max_agent_attempts}")
+                            logger.warning(f"   Error: {error_msg[:200]}...")
+
+                            # Add the error context to the next attempt
+                            current_query = f"""{query}
+
+PREVIOUS ATTEMPT #{attempt_num} FAILED with error:
+{error_msg}
+
+INSTRUCTIONS FOR RETRY #{attempt_num + 1}:
+1. Read the error message carefully
+2. Identify the specific problem (e.g., unrecognized field names, invalid enum values)
+3. Fix the issue in your tool parameters
+4. Retry the tool call with corrected parameters
+
+Common fixes for Google Ads GAQL errors:
+- Unrecognized field 'ad_group_ad.ad_group.id' → Use 'ad_group_ad.ad_group' instead (no .id suffix)
+- Unrecognized field 'ad_group_ad.campaign.id' → Use 'ad_group_ad.campaign' instead (no .id suffix)
+- Invalid enum 'SEARCH_AD' → Use 'RESPONSIVE_SEARCH_AD' instead
+- Unrecognized field 'segments.audience_id' → Check GAQL documentation for correct audience field names
+
+Now retry with the correct parameters."""
+                            # Continue to next attempt with updated query
+                            continue
+                        else:
+                            # Not a tool error, or max attempts reached - re-raise
+                            raise
+
+                if last_error and attempt_num >= max_agent_attempts:
+                    # All attempts exhausted
+                    logger.error(f"❌ [SingleAnalyticsAgent] All {max_agent_attempts} attempts failed")
+                    raise last_error
 
                 # Log tool calls from intermediate_steps
                 if trace_service and thread_id and "intermediate_steps" in result:
