@@ -3,47 +3,165 @@ Pytest configuration and shared fixtures for Sato AI testing
 """
 
 import os
+import time
 import pytest
 import asyncio
 from typing import Generator, AsyncGenerator
 from unittest.mock import Mock, MagicMock, patch
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.exc import OperationalError
+from sqlmodel import Session
 
+# Mock Google Auth BEFORE any app imports to prevent credential errors in CI/CD
+# This must happen before importing any app code that uses Google APIs
+os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
+
+# Patch google.auth.default immediately, before any app imports
+# This prevents errors during module-level initialization in workflow.py
+_mock_credentials = Mock()
+_mock_credentials.valid = True
+_mock_credentials.token = "mock-token"
+_mock_credentials.refresh = Mock()
+
+# Start patching before imports
+_google_auth_patch = patch("google.auth.default", return_value=(_mock_credentials, "test-project"))
+_google_service_account_patch = patch("google.oauth2.service_account.Credentials.from_service_account_file", return_value=_mock_credentials)
+_google_oauth_creds_patch = patch("google.oauth2.credentials.Credentials", return_value=_mock_credentials)
+
+_google_auth_patch.start()
+_google_service_account_patch.start()
+_google_oauth_creds_patch.start()
+
+# Set up E2E database BEFORE app imports (for SQLite :memory: tests)
+# This ensures the app uses the same database file for all connections
+_temp_db_file = None
+if os.getenv("DATABASE_URL") == "sqlite:///:memory:":
+    import tempfile
+    _temp_db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    os.environ["DATABASE_URL"] = f"sqlite:///{_temp_db_file.name}"
+
+# Now safe to import app code
 from app.config.settings import Settings
 from app.models.base import BaseModel
 
-
-# Test database configuration
-TEST_DATABASE_URL = "sqlite:///:memory:"
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# Create tables if using SQLite
+if os.getenv("DATABASE_URL", "").startswith("sqlite"):
+    _db_url = os.getenv("DATABASE_URL")
+    _engine = create_engine(_db_url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    BaseModel.metadata.create_all(bind=_engine)
+    _engine.dispose()
 
 
-@pytest.fixture(scope="session")
-def test_engine():
-    """Create test database engine"""
-    engine = create_engine(
-        TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=False,
-    )
+@pytest.fixture(scope="session", autouse=True)
+def mock_google_auth():
+    """Mock Google authentication globally to prevent credential errors in CI/CD.
 
-    # Create all tables
-    BaseModel.metadata.create_all(bind=engine)
+    This fixture keeps the module-level patches active throughout the test session.
+    The patches are started at module level (before imports) to handle module-level
+    initialization in app code (like workflow.py:517).
+    """
+    # Patches are already started at module level above
+    # Just yield to keep them active during the test session
+    yield _google_auth_patch
+
+    # Stop patches after all tests complete
+    _google_auth_patch.stop()
+    _google_service_account_patch.stop()
+    _google_oauth_creds_patch.stop()
+
+
+def is_integration_test(request):
+    """Check if current test is an integration test"""
+    # Check if test file is in integration directory
+    if "integration" in str(request.fspath):
+        return True
+    # Check if test has integration marker
+    if request.node.get_closest_marker("integration"):
+        return True
+    return False
+
+
+def get_test_database_url(request=None):
+    """Get appropriate database URL for test type
+
+    SAFETY: This function will NEVER use DATABASE_URL (production database).
+    It only uses TEST_DATABASE_URL to prevent accidental production database corruption.
+    """
+    # Check if this is an integration test
+    if request and is_integration_test(request):
+        # Use PostgreSQL for integration tests
+        # ALWAYS use TEST_DATABASE_URL, never production DATABASE_URL
+        test_url = os.getenv("TEST_DATABASE_URL")
+        if test_url:
+            # Safety check: ensure it's not accidentally pointing to production
+            # Allow sqlite:///:memory: for testing
+            if (
+                "sqlite:///:memory:" not in test_url
+                and "localhost" not in test_url
+                and "127.0.0.1" not in test_url
+                and "test" not in test_url.lower()
+            ):
+                raise RuntimeError(
+                    f"SAFETY ERROR: TEST_DATABASE_URL appears to point to a production database!\n"
+                    f"URL: {test_url}\n"
+                    f"Test database URLs must either:\n"
+                    f"  1. Contain 'localhost' or '127.0.0.1'\n"
+                    f"  2. Contain 'test' in the database name\n"
+                    f"  3. Be 'sqlite:///:memory:' (in-memory database)\n"
+                    f"This prevents accidental production database corruption."
+                )
+            return test_url
+
+        # Fallback to default local test database
+        return "postgresql://postgres:postgres@localhost:5433/postgres"
+
+    # Use SQLite for unit tests (faster)
+    return "sqlite:///:memory:"
+
+
+@pytest.fixture(scope="function")
+def test_engine(request):
+    """Create test database engine based on test type"""
+    db_url = get_test_database_url(request)
+
+    # Configure engine based on database type
+    if db_url.startswith("sqlite"):
+        engine = create_engine(
+            db_url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=False,
+        )
+        # Create tables immediately for SQLite
+        BaseModel.metadata.create_all(bind=engine)
+    else:
+        # PostgreSQL configuration
+        engine = create_engine(
+            db_url,
+            echo=False,
+            pool_pre_ping=True,
+        )
+
+        # Wait for PostgreSQL to be ready and create tables with retry
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            try:
+                BaseModel.metadata.create_all(bind=engine)
+                break  # Success
+            except OperationalError as e:
+                if attempt == max_attempts - 1:
+                    raise  # Re-raise on final attempt
+                time.sleep(1)  # Wait 1 second before retry
 
     yield engine
 
     # Clean up
-    BaseModel.metadata.drop_all(bind=engine)
+    try:
+        BaseModel.metadata.drop_all(bind=engine)
+    except OperationalError:
+        pass  # Ignore errors during cleanup
+    engine.dispose()
 
 
 @pytest.fixture(scope="function")
@@ -61,7 +179,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture(scope="function")
-def mock_settings():
+def mock_settings(request):
     """Mock settings for testing"""
     settings = Mock(spec=Settings)
     settings.secret_key = "test-secret-key"
@@ -69,7 +187,7 @@ def mock_settings():
     settings.google_client_secret = "test-google-client-secret"
     settings.facebook_app_id = "test-facebook-app-id"
     settings.facebook_app_secret = "test-facebook-app-secret"
-    settings.database_url = TEST_DATABASE_URL
+    settings.database_url = get_test_database_url(request)
     settings.jwt_access_token_expire_minutes = 60
     settings.jwt_refresh_token_expire_days = 7
     return settings

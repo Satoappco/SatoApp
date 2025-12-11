@@ -3,7 +3,7 @@ Common utilities for SatoApp
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 
@@ -16,7 +16,7 @@ def generate_session_id() -> str:
 
 def get_current_timestamp() -> str:
     """Get current timestamp in ISO format"""
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def extract_dialogcx_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -56,7 +56,7 @@ def should_trigger_crew_analysis(message: str) -> bool:
 def format_execution_time(start_time: datetime, end_time: Optional[datetime] = None) -> float:
     """Format execution time in seconds"""
     if end_time is None:
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
     
     return (end_time - start_time).total_seconds()
 

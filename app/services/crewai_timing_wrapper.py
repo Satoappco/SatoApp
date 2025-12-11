@@ -5,7 +5,7 @@ Wraps CrewAI components to automatically track timing and create detailed logs
 
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from crewai import Agent, Task, Crew, Process
 from crewai.llm import LLM
@@ -135,7 +135,7 @@ class TimedAgent(Agent):
     def _log_step(self, step_type: str, data: Dict[str, Any]):
         """Log a detailed execution step"""
         step = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "step_type": step_type,
             "agent_role": self.role,
             "data": data
@@ -178,7 +178,7 @@ class TimedAgent(Agent):
             # Create patched function
             def create_patched_func(orig_func, t_name):
                 def patched_func(*args, **kwargs):
-                    tool_start = datetime.utcnow()
+                    tool_start = datetime.now(timezone.utc)
                     
                     logger.info(f"🔧 Tool {t_name} called by agent {self.role}")
                     
@@ -214,7 +214,7 @@ class TimedAgent(Agent):
                         ):
                             result = orig_func(*args, **kwargs)
                         
-                        tool_end = datetime.utcnow()
+                        tool_end = datetime.now(timezone.utc)
                         duration_ms = int((tool_end - tool_start).total_seconds() * 1000)
                         
                         # Parse result to extract meaningful data
@@ -238,7 +238,7 @@ class TimedAgent(Agent):
                         return result
                         
                     except Exception as e:
-                        tool_end = datetime.utcnow()
+                        tool_end = datetime.now(timezone.utc)
                         duration_ms = int((tool_end - tool_start).total_seconds() * 1000)
                         
                         # Parse error to extract meaningful details
@@ -588,7 +588,7 @@ class TimedCrew(Crew):
     
     def kickoff(self, inputs: Dict[str, Any] = None) -> Any:
         """Execute crew with comprehensive timing and detailed logging"""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         logger.info(f"🚀 Starting CrewAI execution for session {self._session_id}")
         logger.info(f"Agents: {[agent.role for agent in self.agents]}")
@@ -650,7 +650,7 @@ class TimedCrew(Crew):
             ):
                 result = super().kickoff(inputs)
             
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             duration = (end_time - start_time).total_seconds()
             
             # Log crew completion with detailed logger
@@ -679,7 +679,7 @@ class TimedCrew(Crew):
             return result
             
         except Exception as e:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             duration = (end_time - start_time).total_seconds()
             
             # Log crew error with detailed logger

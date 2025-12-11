@@ -15,7 +15,7 @@ load_dotenv()
 
 from fastapi import HTTPException, Depends
 from pydantic import BaseModel, ValidationError
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.config import get_settings
 from app.config.database import init_database
@@ -147,7 +147,7 @@ def create_app() -> FastAPI:
     @app.get("/test-webhook")
     def test_webhook():
         """Simple test endpoint to verify deployment"""
-        return {"message": "Webhook endpoint is working!", "timestamp": datetime.utcnow().isoformat()}
+        return {"message": "Webhook endpoint is working!", "timestamp": datetime.now(timezone.utc).isoformat()}
     
     return app
 

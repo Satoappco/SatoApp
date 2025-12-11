@@ -14,8 +14,8 @@ class TestNewAssetMetricsSync:
     """Test that new assets automatically sync 90 days of metrics"""
 
     @pytest.mark.asyncio
-    @patch('app.services.google_ads_service.CampaignSyncService')
-    @patch('app.services.google_ads_service.get_session')
+    @patch("app.services.campaign_sync_service.CampaignSyncService")
+    @patch("app.services.google_ads_service.get_session")
     async def test_google_ads_connection_triggers_90_day_sync(
         self, mock_get_session, mock_sync_service_class
     ):
@@ -28,7 +28,7 @@ class TestNewAssetMetricsSync:
         mock_sync_service.sync_metrics_new.return_value = {
             "success": True,
             "metrics_upserted": 100,
-            "error_details": []
+            "error_details": [],
         }
         mock_sync_service_class.return_value = mock_sync_service
 
@@ -40,8 +40,13 @@ class TestNewAssetMetricsSync:
         mock_connection.id = 1
 
         # Mock upsert_digital_asset
-        with patch('app.services.google_ads_service.upsert_digital_asset', return_value=mock_digital_asset):
-            with patch('app.services.google_ads_service.PropertySelectionService'):
+        with patch(
+            "app.services.digital_asset_service.upsert_digital_asset",
+            return_value=mock_digital_asset,
+        ):
+            with patch(
+                "app.services.property_selection_service.PropertySelectionService"
+            ):
                 # Create service and call save_google_ads_connection
                 service = GoogleAdsService()
                 result = await service.save_google_ads_connection(
@@ -52,20 +57,18 @@ class TestNewAssetMetricsSync:
                     access_token="test_token",
                     refresh_token="test_refresh",
                     expires_in=3600,
-                    account_email="test@example.com"
+                    account_email="test@example.com",
                 )
 
         # Verify sync was called (it will auto-detect and sync 90 days for new asset)
-        mock_sync_service.sync_metrics_new.assert_called_once_with(
-            customer_id=1
-        )
+        mock_sync_service.sync_metrics_new.assert_called_once_with(customer_id=1)
 
         # Verify connection was created successfully
         assert result["success"] is True
 
     @pytest.mark.asyncio
-    @patch('app.services.facebook_service.CampaignSyncService')
-    @patch('app.services.facebook_service.get_session')
+    @patch("app.services.campaign_sync_service.CampaignSyncService")
+    @patch("app.services.facebook_service.get_session")
     async def test_facebook_connection_triggers_90_day_sync(
         self, mock_get_session, mock_sync_service_class
     ):
@@ -78,7 +81,7 @@ class TestNewAssetMetricsSync:
         mock_sync_service.sync_metrics_new.return_value = {
             "success": True,
             "metrics_upserted": 150,
-            "error_details": []
+            "error_details": [],
         }
         mock_sync_service_class.return_value = mock_sync_service
 
@@ -92,14 +95,27 @@ class TestNewAssetMetricsSync:
         mock_connection.id = 1
 
         # Mock the API calls
-        with patch.object(FacebookService, '_get_user_pages', return_value=[
-            {'id': 'page_123', 'name': 'Test Page', 'username': 'testpage'}
-        ]):
-            with patch.object(FacebookService, '_get_user_ad_accounts', return_value=[
-                {'id': 'act_123', 'name': 'Test Ad Account', 'currency': 'USD'}
-            ]):
-                with patch('app.services.facebook_service.upsert_digital_asset', return_value=mock_digital_asset):
-                    with patch('app.services.facebook_service.PropertySelectionService'):
+        with patch.object(
+            FacebookService,
+            "_get_user_pages",
+            return_value=[
+                {"id": "page_123", "name": "Test Page", "username": "testpage"}
+            ],
+        ):
+            with patch.object(
+                FacebookService,
+                "_get_user_ad_accounts",
+                return_value=[
+                    {"id": "act_123", "name": "Test Ad Account", "currency": "USD"}
+                ],
+            ):
+                with patch(
+                    "app.services.digital_asset_service.upsert_digital_asset",
+                    return_value=mock_digital_asset,
+                ):
+                    with patch(
+                        "app.services.property_selection_service.PropertySelectionService"
+                    ):
                         # Create service and call save_facebook_connection
                         service = FacebookService()
                         result = await service.save_facebook_connection(
@@ -108,18 +124,16 @@ class TestNewAssetMetricsSync:
                             access_token="test_token",
                             expires_in=3600,
                             user_name="Test User",
-                            user_email="test@example.com"
+                            user_email="test@example.com",
                         )
 
         # Verify sync was called (it will auto-detect and sync 90 days for new asset)
-        mock_sync_service.sync_metrics_new.assert_called_once_with(
-            customer_id=1
-        )
+        mock_sync_service.sync_metrics_new.assert_called_once_with(customer_id=1)
 
         # Verify connection was created successfully
         assert "connections" in result
 
-    @patch('app.services.campaign_sync_service.get_session')
+    @patch("app.services.campaign_sync_service.get_session")
     def test_sync_metrics_new_auto_detects_gaps(self, mock_get_session):
         """Test that sync_metrics_new automatically detects missing dates"""
         from app.services.campaign_sync_service import CampaignSyncService
@@ -134,7 +148,12 @@ class TestNewAssetMetricsSync:
         mock_customer.full_name = "Test Customer"
 
         mock_session.get.return_value = mock_customer
-        mock_session.exec.return_value.all.return_value = []
+
+        # Mock both .all() and .first() to return empty/None
+        mock_exec_result = Mock()
+        mock_exec_result.all.return_value = []
+        mock_exec_result.first.return_value = None
+        mock_session.exec.return_value = mock_exec_result
 
         # Create service
         service = CampaignSyncService()
@@ -147,7 +166,7 @@ class TestNewAssetMetricsSync:
         assert "metrics_upserted" in result
         assert "customers_processed" in result
 
-    @patch('app.services.campaign_sync_service.get_session')
+    @patch("app.services.campaign_sync_service.get_session")
     def test_sync_metrics_new_no_params(self, mock_get_session):
         """Test that sync_metrics_new works without customer_id (syncs all customers)"""
         from app.services.campaign_sync_service import CampaignSyncService
@@ -162,7 +181,12 @@ class TestNewAssetMetricsSync:
         mock_customer.full_name = "Test Customer"
 
         mock_session.get.return_value = mock_customer
-        mock_session.exec.return_value.all.return_value = []
+
+        # Mock both .all() and .first() to return empty/None
+        mock_exec_result = Mock()
+        mock_exec_result.all.return_value = []
+        mock_exec_result.first.return_value = None
+        mock_session.exec.return_value = mock_exec_result
 
         # Create service
         service = CampaignSyncService()
@@ -175,8 +199,8 @@ class TestNewAssetMetricsSync:
         assert "metrics_upserted" in result
 
     @pytest.mark.asyncio
-    @patch('app.services.google_ads_service.CampaignSyncService')
-    @patch('app.services.google_ads_service.get_session')
+    @patch("app.services.campaign_sync_service.CampaignSyncService")
+    @patch("app.services.google_ads_service.get_session")
     async def test_connection_creation_continues_on_sync_failure(
         self, mock_get_session, mock_sync_service_class
     ):
@@ -196,9 +220,27 @@ class TestNewAssetMetricsSync:
         mock_connection = Mock()
         mock_connection.id = 1
 
-        # Mock upsert_digital_asset
-        with patch('app.services.google_ads_service.upsert_digital_asset', return_value=mock_digital_asset):
-            with patch('app.services.google_ads_service.PropertySelectionService'):
+        # Mock the session query to return None (no existing connection)
+        mock_session.exec().first.return_value = None
+
+        # Track created connections to set their IDs
+        created_connections = []
+
+        def mock_add(obj):
+            if hasattr(obj, "__class__") and "Connection" in str(obj.__class__):
+                obj.id = 1  # Set the ID for testing
+                created_connections.append(obj)
+
+        mock_session.add.side_effect = mock_add
+        mock_session.refresh.return_value = None
+
+        with patch(
+            "app.services.digital_asset_service.upsert_digital_asset",
+            return_value=mock_digital_asset,
+        ):
+            with patch(
+                "app.services.property_selection_service.PropertySelectionService"
+            ):
                 # Create service and call save_google_ads_connection
                 service = GoogleAdsService()
                 result = await service.save_google_ads_connection(
@@ -209,7 +251,28 @@ class TestNewAssetMetricsSync:
                     access_token="test_token",
                     refresh_token="test_refresh",
                     expires_in=3600,
-                    account_email="test@example.com"
+                    account_email="test@example.com",
+                )
+
+        # Mock upsert_digital_asset
+        with patch(
+            "app.services.digital_asset_service.upsert_digital_asset",
+            return_value=mock_digital_asset,
+        ):
+            with patch(
+                "app.services.property_selection_service.PropertySelectionService"
+            ):
+                # Create service and call save_google_ads_connection
+                service = GoogleAdsService()
+                result = await service.save_google_ads_connection(
+                    campaigner_id=1,
+                    customer_id=1,
+                    account_id="123-456-7890",
+                    account_name="Test Account",
+                    access_token="test_token",
+                    refresh_token="test_refresh",
+                    expires_in=3600,
+                    account_email="test@example.com",
                 )
 
         # Verify connection was still created successfully despite sync failure

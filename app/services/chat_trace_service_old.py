@@ -8,7 +8,7 @@ This service provides a unified interface for:
 - Retrieving conversation history
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 from sqlmodel import Session, select
 from sqlalchemy import and_
@@ -115,7 +115,7 @@ class ChatTraceService:
                 customer_id=customer_id,
                 langfuse_trace_id=langfuse_trace_id,
                 langfuse_trace_url=langfuse_trace_url,
-                started_at=datetime.utcnow(),
+                started_at=datetime.now(timezone.utc),
                 status="active",
                 extra_metadata=metadata or {}
             )
@@ -164,14 +164,14 @@ class ChatTraceService:
 
             # Update conversation
             conversation.status = status
-            conversation.completed_at = datetime.utcnow()
+            conversation.completed_at = datetime.now(timezone.utc)
 
             if final_intent:
                 conversation.intent = final_intent
 
             # Calculate duration
             if conversation.started_at:
-                duration = (datetime.utcnow() - conversation.started_at).total_seconds()
+                duration = (datetime.now(timezone.utc) - conversation.started_at).total_seconds()
                 conversation.duration_seconds = duration
 
             session.add(conversation)
@@ -187,7 +187,7 @@ class ChatTraceService:
                         if trace:
                             trace.update(
                                 output={"status": status, "final_intent": final_intent},
-                                metadata={"completed_at": datetime.utcnow().isoformat()}
+                                metadata={"completed_at": datetime.now(timezone.utc).isoformat()}
                             )
                 except Exception as e:
                     print(f"⚠️ Failed to update Langfuse trace: {e}")

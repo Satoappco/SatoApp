@@ -4,7 +4,7 @@ Traces API endpoints for viewing chat history and debugging.
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 from sqlmodel import Session, select, func, and_
 from sqlalchemy import desc
@@ -75,7 +75,7 @@ async def list_traces(
     query = select(ChatTrace).where(
         and_(
             ChatTrace.record_type == RecordType.CONVERSATION,
-            ChatTrace.created_at >= datetime.utcnow() - timedelta(days=days)
+            ChatTrace.created_at >= datetime.now(timezone.utc) - timedelta(days=days)
         )
     )
 
@@ -280,7 +280,7 @@ async def get_trace_stats(
     """
     Get summary statistics for traces.
     """
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Total conversations (all users)
     total_conversations = session.exec(

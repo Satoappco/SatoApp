@@ -3,7 +3,7 @@ Unit tests for OAuth token refresh functionality
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 from app.core.oauth.token_refresh import (
     is_token_expired,
@@ -18,27 +18,45 @@ class TestTokenExpiration:
 
     def test_expired_token(self):
         """Test that expired token is detected."""
-        expires_at = datetime.utcnow() - timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
         assert is_token_expired(expires_at) is True
 
     def test_valid_token(self):
         """Test that valid token is not expired."""
-        expires_at = datetime.utcnow() + timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         assert is_token_expired(expires_at) is False
 
     def test_token_within_buffer(self):
         """Test that token within buffer period is considered expired."""
-        expires_at = datetime.utcnow() + timedelta(minutes=3)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=3)
         assert is_token_expired(expires_at, buffer_minutes=5) is True
 
     def test_token_outside_buffer(self):
         """Test that token outside buffer period is not expired."""
-        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
         assert is_token_expired(expires_at, buffer_minutes=5) is False
 
     def test_none_expires_at(self):
         """Test that None expires_at is considered expired."""
         assert is_token_expired(None) is True
+
+    def test_naive_datetime_expires_at(self):
+        """Test that timezone-naive expires_at is handled correctly."""
+        # Create a naive datetime (no timezone info) - assume UTC for this test
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires_at_naive = now_utc + timedelta(hours=1)
+
+        # Should not raise TypeError and should work correctly
+        assert is_token_expired(expires_at_naive) is False
+
+    def test_naive_datetime_expired(self):
+        """Test that timezone-naive expired datetime is detected."""
+        # Create a naive datetime in the past - assume UTC for this test
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires_at_naive = now_utc - timedelta(hours=1)
+
+        # Should not raise TypeError and should detect expiration
+        assert is_token_expired(expires_at_naive) is True
 
 
 class TestGoogleTokenRefresh:

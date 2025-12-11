@@ -2,14 +2,16 @@
 Constants for SatoApp - Agent types, data sources, tools, countries and currencies
 """
 
-from typing import Dict, List, NamedTuple, Set
+from typing import Dict, List, NamedTuple, Set, Optional
 from enum import Enum
 
 
 # ===== COUNTRY AND CURRENCY CONSTANTS =====
 
+
 class CountryInfo(NamedTuple):
     """Country information with English and Hebrew names"""
+
     code: str
     name_en: str
     name_he: str
@@ -18,6 +20,7 @@ class CountryInfo(NamedTuple):
 
 class CurrencyInfo(NamedTuple):
     """Currency information with English and Hebrew names"""
+
     code: str
     name_en: str
     name_he: str
@@ -118,12 +121,12 @@ CURRENCIES: Dict[str, CurrencyInfo] = {
 }
 
 
-def get_country_by_code(code: str) -> CountryInfo:
+def get_country_by_code(code: str) -> Optional[CountryInfo]:
     """Get country information by country code"""
     return COUNTRIES.get(code.upper())
 
 
-def get_currency_by_code(code: str) -> CurrencyInfo:
+def get_currency_by_code(code: str) -> Optional[CurrencyInfo]:
     """Get currency information by currency code"""
     return CURRENCIES.get(code.upper())
 
@@ -180,15 +183,17 @@ def get_countries_for_currency(currency_code: str) -> List[CountryInfo]:
         "HKD": ["HK"],
         "NZD": ["NZ"],
     }
-    
+
     country_codes = currency_country_mapping.get(currency_code.upper(), [])
     return [COUNTRIES[code] for code in country_codes if code in COUNTRIES]
 
 
 # ===== AGENT SYSTEM CONSTANTS =====
 
+
 class DataSource(str, Enum):
     """Data source types enum"""
+
     GA4 = "ga4"
     GOOGLE_ADS = "google_ads"
     FACEBOOK_ADS = "facebook_ads"
@@ -207,6 +212,7 @@ class DataSource(str, Enum):
 
 class ToolName(str, Enum):
     """Tool names enum"""
+
     GA4_ANALYTICS_TOOL = "ga4_analytics_tool"
     GOOGLE_ADS_TOOL = "google_ads_tool"
     FACEBOOK_TOOL = "facebook_tool"
@@ -223,8 +229,7 @@ class ToolName(str, Enum):
 VALID_DATA_SOURCES = [source.value for source in DataSource]
 
 
-
-#TODO: Fix agent name/type confusion in below function
+# TODO: Fix agent name/type confusion in below function
 # def get_data_sources_for_agent(agent_name: str) -> List[str]:
 #     """Get data sources for a specific agent type"""
 #     data_source_mapping = {
@@ -283,21 +288,21 @@ VALID_DATA_SOURCES = [source.value for source in DataSource]
 #             DataSource.FACEBOOK_ADS
 #         ]
 #     }
-    
+
 #     return data_source_mapping.get(agent_name, [])
 
-#TODO: Fix agent name/type confusion in below function
+# TODO: Fix agent name/type confusion in below function
 # def should_include_agent(agent_name: str, data_sources: List[str], user_question: str) -> bool:
 #     """Determine if an agent should be included based on context"""
 #     # Get expected data sources for this agent
 #     expected_sources = get_data_sources_for_agent(agent_name)
-    
+
 #     # Check if any expected data sources are present
 #     has_relevant_sources = any(source in data_sources for source in expected_sources)
-    
+
 #     # Check if user question contains relevant keywords
 #     question_lower = user_question.lower()
-    
+
 #     keyword_mapping = {
 #         AgentType.GA4_ANALYST: ["analytics", "ga4", "google analytics", "traffic", "visitors", "sessions"],
 #         AgentType.GOOGLE_ADS_SPECIALIST: ["google ads", "adwords", "ads", "campaign", "keywords", "bidding"],
@@ -310,25 +315,26 @@ VALID_DATA_SOURCES = [source.value for source in DataSource]
 #         AgentType.ANALYTICS_SPECIALIST: ["analytics", "data", "metrics", "kpi", "reporting"],
 #         AgentType.REPORTING_SPECIALIST: ["report", "dashboard", "summary", "analysis", "insights"]
 #     }
-    
+
 #     has_relevant_keywords = any(keyword in question_lower for keyword in keyword_mapping.get(agent_name, []))
-    
+
 #     return has_relevant_sources or has_relevant_keywords
 
 
 # ===== DATA SOURCE VALIDATION =====
 
+
 def validate_data_sources(data_sources: List[str]) -> tuple[List[str], List[str]]:
     """Validate data sources and return valid and invalid ones"""
     valid_sources = []
     invalid_sources = []
-    
+
     for source in data_sources:
         if source in VALID_DATA_SOURCES:
             valid_sources.append(source)
         else:
             invalid_sources.append(source)
-    
+
     return valid_sources, invalid_sources
 
 
@@ -336,7 +342,7 @@ def get_data_source_suggestions(invalid_source: str) -> List[str]:
     """Get suggestions for invalid data source names"""
     suggestions = []
     invalid_lower = invalid_source.lower()
-    
+
     # Common misspellings and variations
     suggestion_map = {
         "google analytics": [DataSource.GA4],
@@ -353,27 +359,32 @@ def get_data_source_suggestions(invalid_source: str) -> List[str]:
         "shopify": [DataSource.ECOMMERCE],
         "woocommerce": [DataSource.ECOMMERCE],
         "salesforce": [DataSource.CRM],
-        "hubspot": [DataSource.CRM]
+        "hubspot": [DataSource.CRM],
     }
-    
+
     for key, suggestions_list in suggestion_map.items():
         if key in invalid_lower:
             suggestions.extend([s.value for s in suggestions_list])
-    
+
     # If no specific suggestions, return similar valid sources
     if not suggestions:
         for valid_source in VALID_DATA_SOURCES:
-            if invalid_lower in valid_source.lower() or valid_source.lower() in invalid_lower:
+            if (
+                invalid_lower in valid_source.lower()
+                or valid_source.lower() in invalid_lower
+            ):
                 suggestions.append(valid_source)
-    
+
     return list(set(suggestions))  # Remove duplicates
 
 
 # ===== COUNTRY AND CURRENCY UTILITY FUNCTIONS =====
 
+
 # Enums for easy validation
 class CountryCode(str, Enum):
     """Country codes enum"""
+
     ISRAEL = "IL"
     UNITED_STATES = "US"
     UNITED_KINGDOM = "GB"
@@ -425,6 +436,7 @@ class CountryCode(str, Enum):
 
 class CurrencyCode(str, Enum):
     """Currency codes enum"""
+
     ISRAELI_SHEKEL = "ILS"
     US_DOLLAR = "USD"
     EURO = "EUR"

@@ -24,6 +24,7 @@ from .routes import (
     digital_assets,
     campaigners,
     customers,
+    connections,
     # crewai,
     database_management,
     customer_data,
@@ -69,6 +70,7 @@ api_router.include_router(property_selections.router, tags=["property-selections
 api_router.include_router(digital_assets.router, tags=["digital-assets"])
 api_router.include_router(campaigners.router, tags=["campaigners"])
 api_router.include_router(customers.router, tags=["customers"])
+api_router.include_router(connections.router, tags=["connections"])
 api_router.include_router(database_management.router, tags=["database-management"])
 api_router.include_router(customer_data.router, tags=["customer-data"])
 api_router.include_router(chat_router, tags=["chat"])

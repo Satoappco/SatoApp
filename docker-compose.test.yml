@@ -1,0 +1,18 @@
+services:
+  # PostgreSQL for integration tests
+  postgres-test:
+    image: postgres:13
+    container_name: sato-postgres-test
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command: postgres -p 5433
+    network_mode: host
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5433 -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    tmpfs:
+      - /var/lib/postgresql/data

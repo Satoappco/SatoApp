@@ -58,8 +58,8 @@ class TestCalculatorTool:
         assert len(tool.description) > 0
         assert tool.args_schema == CalculatorInput
 
-        # Verify Pydantic schema
-        assert hasattr(CalculatorInput, "expression")
+        # Verify Pydantic schema (Pydantic V2)
+        assert "expression" in CalculatorInput.model_fields
 
     def test_calculator_input_schema(self):
         """Test CalculatorInput Pydantic schema"""
@@ -156,7 +156,7 @@ class TestCalculatorTool:
     def test_calculator_invalid_syntax(self):
         """Test invalid syntax error"""
         tool = CalculatorTool()
-        result = tool._run("2 + + 2")
+        result = tool._run("2 + * 2")  # Invalid: two operators in a row
         assert "Calculation error" in result
         assert "Invalid mathematical expression" in result
 

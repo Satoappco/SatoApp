@@ -824,7 +824,7 @@ async def test_health():
     return {
         "status": "healthy",
         "service": "crewai-test",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 

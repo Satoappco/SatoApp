@@ -3,7 +3,7 @@ CrewAI execution business logic service
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from app.core.exceptions import SatoAppException
 from app.config.logging import get_logger
@@ -41,7 +41,7 @@ class CrewService:
                 "result": str(result),
                 "topic": topic,
                 "execution_time": execution_time,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:

@@ -2,10 +2,17 @@
 
 import logging
 from typing import Optional, Type
+from langchain.tools import BaseTool as LangChainBaseTool
 from crewai.tools import BaseTool as CrewAIBaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Field as PydanticField
 import ast
 import operator
+
+# Import at module level for easier mocking in tests
+try:
+    from app.services.chat_trace_service import ChatTraceService
+except ImportError:
+    ChatTraceService = None
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +22,7 @@ class CalculatorInput(BaseModel):
     expression: str = Field(..., description="Mathematical expression to evaluate")
 
 
-class CalculatorTool(CrewAIBaseTool):
+class CalculatorTool(LangChainBaseTool, CrewAIBaseTool):
     """Tool for performing mathematical calculations.
 
     This tool can evaluate mathematical expressions safely using Python's
@@ -52,8 +59,8 @@ class CalculatorTool(CrewAIBaseTool):
     args_schema: Type[BaseModel] = CalculatorInput
 
     # Thread ID for tracing (optional)
-    thread_id: Optional[str] = Field(default=None, description="Thread ID for tracing")
-    level: int = Field(default=1, description="Hierarchy level for tracing")
+    thread_id: Optional[str] = PydanticField(default=None, description="Thread ID for tracing")
+    level: int = PydanticField(default=1, description="Hierarchy level for tracing")
 
     # Supported operators
     _operators = {
@@ -65,6 +72,7 @@ class CalculatorTool(CrewAIBaseTool):
         ast.Mod: operator.mod,
         ast.Pow: operator.pow,
         ast.USub: operator.neg,  # Unary minus
+        ast.UAdd: operator.pos,  # Unary plus
     }
 
     def _run(self, expression: str, **kwargs) -> str:
@@ -98,9 +106,8 @@ class CalculatorTool(CrewAIBaseTool):
             logger.info(f"✅ [CalculatorTool] Result: {output}")
 
             # Trace tool usage if thread_id is available
-            if self.thread_id:
+            if self.thread_id and ChatTraceService:
                 try:
-                    from app.services.chat_trace_service import ChatTraceService
                     trace_service = ChatTraceService()
                     trace_service.add_tool_usage(
                         thread_id=self.thread_id,
@@ -128,9 +135,8 @@ class CalculatorTool(CrewAIBaseTool):
             latency_ms = int((time.time() - start_time) * 1000)
 
             # Trace tool usage failure if thread_id is available
-            if self.thread_id:
+            if self.thread_id and ChatTraceService:
                 try:
-                    from app.services.chat_trace_service import ChatTraceService
                     trace_service = ChatTraceService()
                     trace_service.add_tool_usage(
                         thread_id=self.thread_id,

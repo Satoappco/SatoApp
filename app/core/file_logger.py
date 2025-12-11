@@ -14,7 +14,7 @@ import gzip
 from logging.handlers import RotatingFileHandler
 
 # Configuration
-LOG_DIR = os.getenv("LOG_DIR", "/app/logs")
+LOG_DIR = os.getenv("LOG_DIR", "./logs")  # Default to local logs directory
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "sato.log")
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", 10 * 1024 * 1024))  # 10MB default
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", 10))  # Keep 10 backup files

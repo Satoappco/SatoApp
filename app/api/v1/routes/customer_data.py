@@ -4,7 +4,7 @@ Handles RTM Table and Questions Table operations
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import select, and_
 from pydantic import BaseModel, Field
@@ -570,8 +570,8 @@ async def get_customer_info(
                     link_8=None,
                     link_9=None,
                     link_10=None,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc)
                 )
             
             # Create empty Questions data if none exists
@@ -591,8 +591,8 @@ async def get_customer_info(
                     q8=None,
                     q9=None,
                     q10=None,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc)
                 )
 
             # Get assigned campaigners for this customer

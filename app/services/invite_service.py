@@ -3,7 +3,7 @@ Invite Service for managing team member invitations
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlmodel import select
 from app.models.users import InviteToken, Campaigner, UserRole
@@ -22,7 +22,7 @@ class InviteService:
     ) -> InviteToken:
         """Generate secure invite token"""
         token = str(uuid.uuid4())
-        expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
         
         invite = InviteToken(
             token=token,
@@ -47,7 +47,7 @@ class InviteService:
         if invite.is_used and invite.use_count >= invite.max_uses:
             return False, "This invitation has already been used", None
         
-        if invite.expires_at < datetime.utcnow():
+        if invite.expires_at < datetime.now(timezone.utc):
             return False, "This invitation has expired", None
         
         return True, "", invite
@@ -64,7 +64,7 @@ class InviteService:
         
         invite.is_used = True
         invite.use_count += 1
-        invite.used_at = datetime.utcnow()
+        invite.used_at = datetime.now(timezone.utc)
         invite.used_by_campaigner_id = used_by_campaigner_id
         
         session.add(invite)
@@ -78,7 +78,7 @@ class InviteService:
             select(InviteToken)
             .where(InviteToken.agency_id == agency_id)
             .where(InviteToken.is_used == False)
-            .where(InviteToken.expires_at > datetime.utcnow())
+            .where(InviteToken.expires_at > datetime.now(timezone.utc))
         ).all()
         
         return list(invites)

@@ -33,27 +33,27 @@ class SingleAnalyticsAgent:
             self.llm_kwargs['model'] = llm.model
 
         # Get other kwargs if available
-        if hasattr(llm, '_lc_kwargs'):
+        if hasattr(llm, '_lc_kwargs') and isinstance(llm._lc_kwargs, dict):
             self.llm_kwargs.update(llm._lc_kwargs)
 
         self.mcp_client: Optional[MCPClient] = None
         self.credential_manager = CustomerCredentialManager()
 
-    # def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
-    #     """Fetch customer's enabled platforms from digital_assets table."""
-    #     return self.credential_manager.fetch_customer_platforms(customer_id)
+    def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
+        """Fetch customer's enabled platforms from digital_assets table."""
+        return self.credential_manager.fetch_customer_platforms(customer_id)
 
-    # def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-    #     """Fetch customer's Google Analytics refresh token and property ID."""
-    #     return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
+    def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Analytics refresh token and property ID."""
+        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
 
-    # def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-    #     """Fetch customer's Google Ads credentials."""
-    #     return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
+    def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Ads credentials."""
+        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
 
-    # def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
-    #     """Fetch customer's Facebook/Meta Ads access token."""
-    #     return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
+    def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Facebook/Meta Ads access token."""
+        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
 
     async def _initialize_mcp_clients(self, task_details: Dict[str, Any], thread_id: Optional[str] = None, level: int = 1):
         """Initialize and connect MultiServerMCPClient using MCP Client Manager.
@@ -531,6 +531,13 @@ Current Date and Time: {current_datetime}
 
 {context_str}
 
+CRITICAL AUTHORIZATION INSTRUCTIONS:
+- The account IDs listed above are already authorized and ready to use
+- Use these IDs DIRECTLY in your tool calls WITHOUT asking for user confirmation
+- DO NOT ask the user to verify or confirm the account IDs before using them
+- The user has already granted access to these accounts and expects you to use them immediately
+- If an account ID is provided in the context above, use it automatically in your queries
+
 Your tasks:
 1. Analyze the user's question to understand what data they need
 2. Use the appropriate MCP tools to fetch data from the relevant platforms
@@ -844,23 +851,29 @@ Remember: Use the tools available to you to fetch real data before providing ins
         context_parts = []
 
         # Add platform-specific credentials
-        if "google" in platforms:
+        if "google_ads" in platforms or "google" in platforms:
             ga_credentials = task_details.get("google_analytics_credentials", {}) or {}
             property_id = ga_credentials.get("property_id", "NOT_PROVIDED")
-
-            gads_credentials = task_details.get("google_ads_credentials", {}) or {}
-            customer_id = gads_credentials.get("customer_id", "NOT_PROVIDED")
-
             if property_id != "NOT_PROVIDED":
                 context_parts.append(f"Google Analytics Property ID: {property_id}")
+            else:
+                logger.error("No Google Analytics Property ID provided in credentials")
+        
+        if "google" in platforms or "google_analytics" in platforms:
+            gads_credentials = task_details.get("google_ads_credentials", {}) or {}
+            customer_id = gads_credentials.get("account_id", "NOT_PROVIDED") # or gads_credentials.get("customer_id", "NOT_PROVIDED")
             if customer_id != "NOT_PROVIDED":
-                context_parts.append(f"Google Ads Customer ID: {customer_id}")
+                context_parts.append(f"Google Ads Account ID: {customer_id}")
+            else:
+                logger.error(f"No Google Ads Customer ID provided in credentials: {gads_credentials}")
 
-        if "facebook" in platforms:
+        if "facebook" in platforms or "meta" in platforms or "meta_ads" in platforms or "facebook_ads" in platforms:
             fb_credentials = task_details.get("meta_ads_credentials", {}) or {}
             ad_account_id = fb_credentials.get("ad_account_id", "NOT_PROVIDED")
             if ad_account_id != "NOT_PROVIDED":
                 context_parts.append(f"Facebook Ads Account ID: {ad_account_id}")
+            else:
+                logger.error("No Facebook Ads Account ID provided in credentials")
 
         # Add user context
         if context:
@@ -920,15 +933,6 @@ Remember: Use the tools available to you to fetch real data before providing ins
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_in_new_loop)
                 return future.result()
-        except RuntimeError as e:
+        except RuntimeError:
             # No running event loop - create a new one
-            return {
-                "status": "error",
-                "result": "There was internal error in the analytics agent execution.",
-                "message": f"Single analytics agent execution failed: {str(e)}",
-                "error_type": type(e).__name__,
-                "agent": "single_analytics_agent",
-                "platforms": [],
-                "task_received": task
-            }
-            # return asyncio.run(self._execute_async(task))
+            return asyncio.run(self._execute_async(task))

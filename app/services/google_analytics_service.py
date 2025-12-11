@@ -4,14 +4,11 @@ Handles token storage, refresh, and GA4 API calls
 """
 
 import json
-import hashlib
-import base64
 from datetime import datetime, timedelta, timezone
 import os
 import asyncio
 from typing import Dict, Any, Optional, List
 import requests
-from cryptography.fernet import Fernet
 from google.oauth2.credentials import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import (
@@ -31,6 +28,8 @@ from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
 from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
+from app.utils.security_utils import get_token_crypto
+from app.utils.connection_utils import get_connection_for_save
 
 # Google client functions
 def get_google_client_id() -> str:
@@ -67,57 +66,37 @@ class GoogleAnalyticsService:
     # Each service should only use its own scopes to avoid scope conflicts
     
     def __init__(self):
-        self.encryption_key = self._get_encryption_key()
-        self.cipher_suite = Fernet(self.encryption_key)
-    
-    def _get_encryption_key(self) -> bytes:
-        """Get encryption key for token storage - uses GOOGLE_CLIENT_SECRET"""
-        # Use GOOGLE_CLIENT_SECRET as encryption key (pad to 32 bytes if needed)
-        client_secret = get_google_client_secret()
-        secret_key = client_secret.encode('utf-8')
-        if len(secret_key) < 32:
-            secret_key = secret_key.ljust(32, b'0')  # Pad with zeros
-        elif len(secret_key) > 32:
-            secret_key = secret_key[:32]  # Truncate to 32 bytes
-        return base64.urlsafe_b64encode(secret_key)
-    
+        self.crypto = get_token_crypto()
+
     def _encrypt_token(self, token: str) -> bytes:
         """Encrypt token for secure storage"""
-        return self.cipher_suite.encrypt(token.encode())
-    
+        return self.crypto.encrypt_token(token)
+
     def _decrypt_token(self, encrypted_token) -> str:
         """Decrypt token for use"""
         # Validate input
         if encrypted_token is None:
             raise ValueError("Encrypted token is None - connection may not be properly initialized")
-        
+
         if not isinstance(encrypted_token, (bytes, str)):
             raise ValueError(f"Encrypted token must be bytes or str, got {type(encrypted_token)}")
-        
+
         # Convert to bytes if it's a string
         if isinstance(encrypted_token, str):
             try:
                 encrypted_token = encrypted_token.encode('utf-8')
             except Exception as e:
                 raise ValueError(f"Failed to convert string token to bytes: {e}")
-        
+
         try:
-            return self.cipher_suite.decrypt(encrypted_token).decode()
+            return self.crypto.decrypt_token(encrypted_token)
         except Exception as e:
             print(f"Warning: Failed to decrypt token with current key: {e}")
-            # Try with the old encryption method as fallback
-            try:
-                # Use the old fixed key method
-                old_key = base64.urlsafe_b64encode(b"sato-analytics-token-encryption-key-2025".ljust(32, b'0')[:32])
-                old_cipher = Fernet(old_key)
-                return old_cipher.decrypt(encrypted_token).decode()
-            except Exception as e2:
-                print(f"Warning: Failed to decrypt token with old key too: {e2}")
-                raise e  # Re-raise the original error
-    
+            raise e
+
     def _generate_token_hash(self, token: str) -> str:
         """Generate hash for token validation"""
-        return hashlib.sha256(token.encode()).hexdigest()
+        return self.crypto.generate_token_hash(token)
     
     def _extract_date_from_tool_result(self, tool_result: str) -> str:
         """Extract YYYY-MM-DD date from DateConversionTool result"""
@@ -202,15 +181,13 @@ class GoogleAnalyticsService:
             expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
             now = datetime.now(timezone.utc)
             
-            # Check for existing connection first
-            connection_statement = select(Connection).where(
-                and_(
-                    Connection.digital_asset_id == digital_asset.id,
-                    Connection.campaigner_id == campaigner_id,
-                    Connection.revoked == False
-                )
+            # Check for existing connection using centralized query
+            connection = get_connection_for_save(
+                digital_asset_id=digital_asset.id,
+                campaigner_id=campaigner_id,
+                auth_type=AuthType.OAUTH2,
+                session=session
             )
-            connection = session.exec(connection_statement).first()
             
             if connection:
                 print(f"DEBUG: Updating existing connection {connection.id}")
@@ -585,7 +562,7 @@ class GoogleAnalyticsService:
         with get_session() as new_session:
             fresh_connection = new_session.get(Connection, connection_id)
             if fresh_connection:
-                fresh_connection.last_used_at = datetime.utcnow()
+                fresh_connection.last_used_at = datetime.now(timezone.utc)
                 new_session.add(fresh_connection)
                 new_session.commit()
         
@@ -742,7 +719,7 @@ class GoogleAnalyticsService:
             )
             
             # Update last used time
-            connection.last_used_at = datetime.utcnow()
+            connection.last_used_at = datetime.now(timezone.utc)
             session.add(connection)
             session.commit()
             
@@ -975,7 +952,7 @@ class GoogleAnalyticsService:
                     return []
                 
                 # Check if token needs refresh
-                if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=5):
+                if connection.expires_at and connection.expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5):
                     refresh_result = await self.refresh_ga_token(connection_id)
                     if not refresh_result.get("access_token"):
                         return []
@@ -1096,7 +1073,7 @@ class GoogleAnalyticsService:
                     return {"success": False, "error": "Connection not found"}
                 
                 # Check if token needs refresh
-                if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=5):
+                if connection.expires_at and connection.expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5):
                     refresh_result = await self.refresh_ga_token(connection_id)
                     if not refresh_result.get("access_token"):
                         return {"success": False, "error": "Token refresh failed"}

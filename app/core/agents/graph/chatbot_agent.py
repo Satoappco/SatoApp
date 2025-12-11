@@ -13,7 +13,7 @@ from ..database.tools import DatabaseTool
 from app.models.users import Campaigner
 from app.services.agent_service import AgentService
 from app.services.chat_trace_service import ChatTraceService
-import os
+from app.config.settings_loader import get_setting_value_simple
 import time
 
 logger = logging.getLogger(__name__)
@@ -28,11 +28,12 @@ class ChatbotNode:
         self.system_prompt = self._load_system_prompt()
 
         # Only format system prompt if conversation_state is provided
-        if conversation_state and hasattr(conversation_state, 'campaigner'):
-            self.formatted_system_prompt = self._format_system_prompt(conversation_state.campaigner, conversation_state.customer_id)
+        if conversation_state and conversation_state.get('campaigner', None) is not None:
+            self.formatted_system_prompt = self._format_system_prompt(conversation_state.get('campaigner'), conversation_state.get('customer_id'))
         else:
             # Use generic system prompt for module-level initialization
-            logger.warning("⚠️  [ChatbotNode] conversation_state not provided, using generic system prompt")
+            error_msg = "conversation_state not provided" if not conversation_state else f"campaigner not in conversation_state: {conversation_state}"
+            logger.warning(f"⚠️  [ChatbotNode] {error_msg}, using generic system prompt")
             self.formatted_system_prompt = self.system_prompt
         logger.debug(f"✅ [ChatbotNode] System prompt loaded: {self.formatted_system_prompt}")
         self.num_retries = 5
@@ -81,7 +82,15 @@ class ChatbotNode:
         """Load chatbot system prompt from database or use fallback."""
         try:
             # Try to get chatbot orchestrator config from database
-            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator") if os.getenv("USE_DATABASE_CONFIG", "false") == "true" else None
+            # Check database setting first, fall back to environment variable
+            use_db_config = get_setting_value_simple("use_database_config", False)
+
+            if not use_db_config:
+                logger.warning("⚠️  Chatbot orchestrator is not configured to use database config, using fallback")
+                logger.debug(f"🔧 use_database_config is set to {use_db_config} in settings")
+                return self._get_fallback_prompt()
+
+            chatbot_config = self.agent_service.get_agent_config("chatbot_orchestrator")
 
             if chatbot_config:
                 logger.info("✅ Loaded chatbot orchestrator config from database")

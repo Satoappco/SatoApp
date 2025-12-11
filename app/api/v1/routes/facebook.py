@@ -3,7 +3,7 @@ Facebook API routes for data fetching and connection management
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import select, and_
@@ -125,7 +125,7 @@ async def revoke_facebook_connection(
             statement = select(Connection).where(
                 and_(
                     Connection.id == connection_id,
-                    Connection.user_id == 5  # Demo user ID
+                    Connection.campaigner_id == current_user.id
                 )
             )
             connection = session.exec(statement).first()
@@ -407,7 +407,7 @@ async def get_available_facebook_pages(
             # Check if token is expired or expiring soon, and refresh if needed
             from datetime import timedelta
             buffer_time = timedelta(minutes=5)
-            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+            if connection.expires_at and connection.expires_at < datetime.now(timezone.utc) + buffer_time:
                 print(f"🔄 Facebook token expired or expiring soon, refreshing...")
                 try:
                     # Refresh the token using the service method
@@ -501,7 +501,7 @@ async def get_available_facebook_ad_accounts(
             
             # Check if token is expired or expiring soon, and refresh if needed
             buffer_time = timedelta(minutes=5)
-            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+            if connection.expires_at and connection.expires_at < datetime.now(timezone.utc) + buffer_time:
                 print(f"🔄 Facebook token expired or expiring soon, refreshing...")
                 try:
                     # Refresh the token using the service method

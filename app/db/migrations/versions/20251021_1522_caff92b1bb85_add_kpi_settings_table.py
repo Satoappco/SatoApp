@@ -8,7 +8,7 @@ Create Date: 2025-10-21 15:22:40.927974
 from alembic import op
 import sqlalchemy as sa
 import sqlmodel
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # revision identifiers, used by Alembic.
@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.column('updated_at', sa.DateTime)
     )
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Seed data based on the KPI settings table from the image
     # Each row represents ONE KPI

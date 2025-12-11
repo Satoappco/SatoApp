@@ -5,16 +5,17 @@ Handles automatic refresh of OAuth tokens before they expire.
 Supports Google OAuth (Analytics, Ads) and Facebook/Meta OAuth.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import requests
 from sqlmodel import select
 
 from app.config.database import get_session
 from app.config.logging import get_logger
-from app.config.settings import settings
+from app.config.settings import get_settings
 from app.models.analytics import Connection, AssetType
 from app.core.agents.mcp_clients.mcp_registry import MCPServer
+from app.utils.connection_failure_utils import record_connection_failure, record_connection_success
 
 logger = get_logger(__name__)
 
@@ -43,8 +44,13 @@ def is_token_expired(expires_at: Optional[datetime], buffer_minutes: int = 5) ->
     if not expires_at:
         return True  # No expiry info = assume expired
 
+    # Ensure expires_at is timezone-aware for comparison
+    if expires_at.tzinfo is None:
+        # If naive, assume UTC
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
     buffer = timedelta(minutes=buffer_minutes)
-    return datetime.utcnow() + buffer >= expires_at
+    return datetime.now(timezone.utc) + buffer >= expires_at
 
 
 def refresh_google_token(refresh_token: str) -> Dict[str, any]:
@@ -61,11 +67,12 @@ def refresh_google_token(refresh_token: str) -> Dict[str, any]:
         OAuthRefreshError: If refresh fails
     """
     try:
+        settings = get_settings()
         response = requests.post(
             'https://oauth2.googleapis.com/token',
             data={
-                'client_id': settings.GOOGLE_CLIENT_ID,
-                'client_secret': settings.GOOGLE_CLIENT_SECRET,
+                'client_id': settings.google_client_id,
+                'client_secret': settings.google_client_secret,
                 'refresh_token': refresh_token,
                 'grant_type': 'refresh_token'
             },
@@ -82,7 +89,7 @@ def refresh_google_token(refresh_token: str) -> Dict[str, any]:
             )
 
         data = response.json()
-        expires_at = datetime.utcnow() + timedelta(seconds=data['expires_in'])
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
 
         logger.info(f"✅ Google token refreshed successfully, expires at {expires_at}")
 
@@ -94,6 +101,11 @@ def refresh_google_token(refresh_token: str) -> Dict[str, any]:
 
     except requests.RequestException as e:
         logger.error(f"❌ Network error refreshing Google token: {e}")
+        raise OAuthRefreshError(provider="google", error="network_error", error_description=str(e))
+    except OAuthRefreshError:
+        raise  # Re-raise OAuth errors as-is
+    except Exception as e:
+        logger.error(f"❌ Unexpected error refreshing Google token: {e}")
         raise OAuthRefreshError(provider="google", error="network_error", error_description=str(e))
 
 
@@ -111,12 +123,13 @@ def refresh_facebook_token(access_token: str) -> Dict[str, any]:
         OAuthRefreshError: If refresh fails
     """
     try:
+        settings = get_settings()
         response = requests.get(
             'https://graph.facebook.com/v18.0/oauth/access_token',
             params={
                 'grant_type': 'fb_exchange_token',
-                'client_id': settings.FACEBOOK_APP_ID,
-                'client_secret': settings.FACEBOOK_APP_SECRET,
+                'client_id': settings.facebook_app_id,
+                'client_secret': settings.facebook_app_secret,
                 'fb_exchange_token': access_token
             },
             timeout=10
@@ -132,7 +145,7 @@ def refresh_facebook_token(access_token: str) -> Dict[str, any]:
             )
 
         data = response.json()
-        expires_at = datetime.utcnow() + timedelta(seconds=data['expires_in'])
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
 
         logger.info(f"✅ Facebook token refreshed successfully, expires at {expires_at}")
 
@@ -175,11 +188,14 @@ def update_connection_token(
             # Update token (assuming tokens are stored as plain text for now)
             # In production, these should be encrypted
             connection.expires_at = expires_at
-            connection.updated_at = datetime.utcnow()
+            connection.updated_at = datetime.now(timezone.utc)
             connection.needs_reauth = False  # Successfully refreshed
             session.add(connection)
             session.commit()
             logger.info(f"✅ Updated {asset_type} token for campaigner {campaigner_id}")
+
+            # Record successful token refresh
+            record_connection_success(connection.id, reset_failure_count=True)
 
 
 def mark_needs_reauth(campaigner_id: int, asset_type: AssetType) -> None:
@@ -205,6 +221,9 @@ def mark_needs_reauth(campaigner_id: int, asset_type: AssetType) -> None:
             session.add(connection)
             session.commit()
             logger.warning(f"⚠️  Marked {asset_type} connection as needs_reauth for campaigner {campaigner_id}")
+
+            # Record connection failure
+            record_connection_failure(connection.id, "token_refresh_failed", also_set_needs_reauth=False)
 
 
 def refresh_tokens_for_platforms(
@@ -265,6 +284,13 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Google Analytics token: {e}")
                     if e.error == 'invalid_grant':
                         mark_needs_reauth(campaigner_id, AssetType.GA4)
+                    else:
+                        # Record failure for other error types
+                        if conn and conn.id:
+                            record_connection_failure(conn.id, f"token_refresh_failed: {e.error}", also_set_needs_reauth=False)
+                    # Remove failed token from result so MCP manager knows it failed
+                    if 'google_analytics' in refreshed_tokens:
+                        del refreshed_tokens['google_analytics']
 
     # Check Google Ads
     if MCPServer.GOOGLE_ADS_OFFICIAL in platforms:
@@ -298,6 +324,13 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Google Ads token: {e}")
                     if e.error == 'invalid_grant':
                         mark_needs_reauth(campaigner_id, AssetType.GOOGLE_ADS_CAPS)
+                    else:
+                        # Record failure for other error types
+                        if conn and conn.id:
+                            record_connection_failure(conn.id, f"token_refresh_failed: {e.error}", also_set_needs_reauth=False)
+                    # Remove failed token from result so MCP manager knows it failed
+                    if 'google_ads' in refreshed_tokens:
+                        del refreshed_tokens['google_ads']
 
     # Check Facebook
     if MCPServer.META_ADS in platforms:
@@ -331,5 +364,12 @@ def refresh_tokens_for_platforms(
                     logger.error(f"❌ Failed to refresh Facebook token: {e}")
                     if 'invalid' in e.error.lower():
                         mark_needs_reauth(campaigner_id, AssetType.FACEBOOK_ADS_CAPS)
+                    else:
+                        # Record failure for other error types
+                        if conn and conn.id:
+                            record_connection_failure(conn.id, f"token_refresh_failed: {e.error}", also_set_needs_reauth=False)
+                    # Remove failed token from result so MCP manager knows it failed
+                    if 'facebook' in refreshed_tokens:
+                        del refreshed_tokens['facebook']
 
     return refreshed_tokens

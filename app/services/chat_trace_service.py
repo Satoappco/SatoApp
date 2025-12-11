@@ -11,7 +11,7 @@ This service provides a unified interface for:
 All records stored in single `chat_traces` table with type-specific JSON data.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 from sqlmodel import Session, select, func
 from sqlalchemy import and_, or_
@@ -142,7 +142,7 @@ class ChatTraceService:
             # Create conversation record
             conversation_data = {
                 "status": "active",
-                "started_at": datetime.utcnow().isoformat(),
+                "started_at": datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
                 "intent": None,
                 "needs_clarification": True,
@@ -241,7 +241,7 @@ class ChatTraceService:
             # Update data fields
             conversation.data.update(updates)
             # Mark as updated
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -295,17 +295,17 @@ class ChatTraceService:
             started_at_str = conversation.data.get("started_at")
             if started_at_str:
                 started_at = datetime.fromisoformat(started_at_str)
-                duration = (datetime.utcnow() - started_at).total_seconds()
+                duration = (datetime.now(timezone.utc) - started_at).total_seconds()
                 conversation.data["duration_seconds"] = duration
 
             # Update status
             conversation.data["status"] = status
-            conversation.data["completed_at"] = datetime.utcnow().isoformat()
+            conversation.data["completed_at"] = datetime.now(timezone.utc).isoformat()
 
             if final_intent:
                 conversation.data["intent"] = final_intent
 
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -323,7 +323,7 @@ class ChatTraceService:
                         if trace:
                             trace.update(
                                 output={"status": status, "final_intent": final_intent},
-                                metadata={"completed_at": datetime.utcnow().isoformat()}
+                                metadata={"completed_at": datetime.now(timezone.utc).isoformat()}
                             )
                 except Exception as e:
                     print(f"⚠️ Failed to update Langfuse trace: {e}")
@@ -384,7 +384,11 @@ class ChatTraceService:
                 )
             ).one()
 
-            # Count tokens if not provided
+            # Save original tokens_used value (for conversation total tracking)
+            # We only add explicitly provided tokens to the conversation total
+            explicitly_provided_tokens = tokens_used
+
+            # Count tokens if not provided (for the message record itself)
             if tokens_used is None and content:
                 tokens_used = self.count_tokens(content, model or "gpt-4")
 
@@ -416,6 +420,7 @@ class ChatTraceService:
                 "latency_ms": latency_ms,
                 "level": level,
                 "langfuse_generation_id": langfuse_generation_id,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": metadata or {}
             }
 
@@ -432,9 +437,10 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["message_count"] += 1
-            if tokens_used:
-                conversation.data["total_tokens"] += tokens_used
-            conversation.updated_at = datetime.utcnow()
+            # Only add explicitly provided tokens to conversation total
+            if explicitly_provided_tokens is not None:
+                conversation.data["total_tokens"] += explicitly_provided_tokens
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -532,6 +538,7 @@ class ChatTraceService:
                 "task_index": task_index,
                 "task_description": task_description,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": metadata or {}
             }
 
@@ -549,7 +556,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -640,6 +647,7 @@ class ChatTraceService:
                 "content": content,
                 "agent_name": chatbot_name,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": {
                     "llm_model": llm_model,
                     "system_prompt": system_prompt,  # Full prompt in metadata
@@ -662,7 +670,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -789,6 +797,7 @@ class ChatTraceService:
                 "agent_name": agent_name,
                 "agent_role": agent_role,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": {
                     "agent_role": agent_role,
                     "agent_goal": agent_goal,
@@ -816,7 +825,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["agent_step_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")
@@ -919,6 +928,7 @@ class ChatTraceService:
                 "error": error,
                 "latency_ms": latency_ms,
                 "level": level,
+                "conversation_id": conversation.id,  # For backwards compatibility with tests
                 "extra_metadata": metadata or {}
             }
 
@@ -936,7 +946,7 @@ class ChatTraceService:
 
             # Update conversation metrics
             conversation.data["tool_usage_count"] += 1
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = datetime.now(timezone.utc)
 
             # Mark data as modified for SQLAlchemy to detect the change
             flag_modified(conversation, "data")

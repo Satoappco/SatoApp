@@ -2,7 +2,7 @@
 Authentication utilities for JWT tokens and Google OAuth
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -10,6 +10,7 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from google.auth.transport import requests
 from google.oauth2 import id_token
+from sqlmodel import select
 from app.config.settings import get_settings
 from app.models.users import Campaigner, CampaignerSession
 from app.config.database import get_session
@@ -50,11 +51,11 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({"exp": expire, "type": "access"})
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    to_encode.update({"exp": int(expire.timestamp()), "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
     
     # Log token creation for debugging
@@ -66,8 +67,8 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
 def create_refresh_token(data: Dict[str, Any]) -> str:
     """Create JWT refresh token"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": int(expire.timestamp()), "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -87,10 +88,10 @@ def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
         if exp is None:
             print("DEBUG: Token has no expiration claim")
             raise AuthenticationError("Token has expired")
-        
-        exp_time = datetime.fromtimestamp(exp)
-        now = datetime.utcnow()
-        
+
+        exp_time = datetime.fromtimestamp(exp, tz=timezone.utc)
+        now = datetime.now(timezone.utc)
+
         if exp_time < now:
             print(f"DEBUG: Token expired at {exp_time.isoformat()}, current time {now.isoformat()}")
             raise AuthenticationError("Token has expired")
@@ -206,7 +207,7 @@ def create_user_session(
         session_token=secrets.token_urlsafe(32),
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_at=datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         ip_address=ip_address,
         user_agent=user_agent,
         is_active=True
@@ -217,19 +218,20 @@ def create_user_session(
 
 def revoke_user_session(session_token: str) -> bool:
     """Revoke a user session"""
-    
+
     with get_session() as db_session:
-        session = db_session.query(CampaignerSession).filter(
+        statement = select(CampaignerSession).where(
             CampaignerSession.session_token == session_token
-        ).first()
-        
+        )
+        session = db_session.exec(statement).first()
+
         if session:
             session.is_active = False
-            session.revoked_at = datetime.utcnow()
+            session.revoked_at = datetime.now(timezone.utc)
             db_session.add(session)
             db_session.commit()
             return True
-    
+
     return False
 
 

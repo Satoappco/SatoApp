@@ -3,7 +3,7 @@ Health check routes
 """
 
 from fastapi import APIRouter
-from datetime import datetime
+from datetime import datetime, timezone
 from app.config import get_settings
 
 settings = get_settings()
@@ -17,7 +17,7 @@ def health_check():
         "status": "healthy",
         "service": settings.app_name,
         "version": settings.app_version,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -28,5 +28,5 @@ def root():
         "message": settings.app_name,
         "version": settings.app_version,
         "status": "active",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }

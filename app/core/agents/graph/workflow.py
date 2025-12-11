@@ -350,10 +350,12 @@ class ConversationWorkflow:
         # Yield content word-by-word for better streaming performance
         # This is faster than character-by-character while still providing smooth display
         # Words are natural boundaries that won't break frontend display logic
-        words = assistant_message.split(' ')
+        words = [assistant_message] #.split() TODO: restore
+        len_words_m1 = len(words) - 1
         for i, word in enumerate(words):
             # Add space after word (except for last word)
-            chunk = word + (' ' if i < len(words) - 1 else '')
+            adding = ' ' if i != len_words_m1 else ''
+            chunk = word + adding
             yield {"type": "content", "chunk": chunk}
 
 
@@ -516,8 +518,9 @@ def get_graph():
 try:
     graph = build_graph()
 except Exception as e:
-    # During testing, graph will be built lazily
-    # if not os.getenv("OPENAI_API_KEY"):
-    #     graph = None
-    # else:
+    # During testing or when credentials are not available, graph will be built lazily
+    import os
+    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        graph = None
+    else:
         raise

@@ -8,11 +8,62 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# Backend URL and API token from environment
+# Backend URL from environment
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
-API_TOKEN = os.getenv("API_TOKEN", "sato_universal_prod_k8j9h6g5f4d3s2a1p0o9i8u7y6t5r4e3w2q1z0x9c8v7b6n5m4")
+RUN_REMOTE_E2E = os.getenv("RUN_REMOTE_E2E_TESTS", "false").lower() == "true"
 
+# Skip all tests unless explicitly enabled
+# This prevents these tests from running during CI unless specifically requested
+pytestmark = pytest.mark.skipif(
+    not RUN_REMOTE_E2E,
+    reason="RUN_REMOTE_E2E_TESTS not set to 'true'. These tests require a live backend. "
+           "Set RUN_REMOTE_E2E_TESTS=true to run."
+)
+
+
+def generate_test_jwt_token():
+    """Generate a valid JWT token for testing using the same method as the app"""
+    from app.core.auth import create_access_token
+    # Create a token for a test user (same as in other E2E tests)
+    token = create_access_token(data={"sub": "dor.yashar@gmail.com", "user_id": 10})
+    return token
+
+
+# Generate JWT token for tests
+API_TOKEN = generate_test_jwt_token()
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def validate_api_token():
+    """Validate JWT token works before running tests"""
+    if not RUN_REMOTE_E2E:
+        pytest.skip("RUN_REMOTE_E2E_TESTS not enabled")
+
+    # Quick health check with the JWT token
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/api/v1/logs/stats",
+            headers=headers,
+            timeout=5
+        )
+
+        if response.status_code == 401:
+            pytest.exit(
+                f"\n❌ JWT Token is INVALID for backend: {BACKEND_URL}\n"
+                f"   Response: {response.text}\n"
+                f"   This might indicate:\n"
+                f"   1. Backend is using a different SECRET_KEY for JWT validation\n"
+                f"   2. Backend URL is incorrect: {BACKEND_URL}\n"
+                f"   3. The test user (dor.yashar@gmail.com, ID=10) doesn't exist in the backend database\n"
+                f"\n"
+                f"   💡 For local testing, ensure BACKEND_URL points to your local instance\n"
+                f"   💡 For remote testing, the JWT secret must match between local and remote\n"
+            )
+        elif response.status_code >= 500:
+            pytest.exit(f"\n❌ Backend error ({response.status_code}): {BACKEND_URL}\n")
+    except requests.RequestException as e:
+        pytest.exit(f"\n❌ Cannot connect to backend: {BACKEND_URL}\n   Error: {e}\n")
 
 
 def test_get_recent_logs():

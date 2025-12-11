@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # Google Analytics MCP HTTP Server
+  mcp-ga4:
+    build:
+      context: ./app/mcps/google-analytics-oauth
+      dockerfile: Dockerfile
+    container_name: sato-mcp-ga4
+    ports:
+      - "8001:8001"
+    environment:
+      - MCP_HTTP_HOST=0.0.0.0
+      - MCP_HTTP_PORT=8001
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import httpx; httpx.get(\"http://localhost:8001/health\", timeout=5.0)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - sato-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Google Ads MCP HTTP Server
+  mcp-gads:
+    build:
+      context: ./app/mcps
+      dockerfile: google-ads-oauth/Dockerfile
+    container_name: sato-mcp-gads
+    ports:
+      - "8002:8002"
+    environment:
+      - MCP_HTTP_HOST=0.0.0.0
+      - MCP_HTTP_PORT=8002
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import httpx; httpx.get(\"http://localhost:8002/health\", timeout=5.0)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - sato-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Facebook Ads MCP HTTP Server (placeholder for future implementation)
+  # mcp-fb:
+  #   build:
+  #     context: ./app/mcps/facebook-ads-oauth
+  #     dockerfile: Dockerfile
+  #   container_name: sato-mcp-fb
+  #   ports:
+  #     - "8003:8003"
+  #   environment:
+  #     - MCP_HTTP_HOST=0.0.0.0
+  #     - MCP_HTTP_PORT=8003
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 5s
+  #   restart: unless-stopped
+  #   networks:
+  #     - sato-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '0.5'
+  #         memory: 512M
+  #       reservations:
+  #         cpus: '0.25'
+  #         memory: 256M
+
+networks:
+  sato-network:
+    driver: bridge
+
+# To start all services:
+#   docker-compose up -d
+#
+# To start only specific services:
+#   docker-compose up -d mcp-ga4
+#
+# To view logs:
+#   docker-compose logs -f mcp-ga4
+#
+# To stop services:
+#   docker-compose down
+#
+# To rebuild services:
+#   docker-compose up -d --build

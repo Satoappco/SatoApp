@@ -93,6 +93,11 @@ class Connection(BaseModel, table=True):
     needs_reauth: bool = Field(default=False, description="Set to True when token refresh fails and user needs to re-authenticate")
     last_validated_at: Optional[datetime] = Field(default=None, description="Last time MCP tools were successfully validated")
 
+    # Failure tracking
+    last_failure_at: Optional[datetime] = Field(default=None, description="Last time connection validation or token refresh failed")
+    failure_count: int = Field(default=0, description="Number of consecutive failures")
+    failure_reason: Optional[str] = Field(default=None, max_length=255, description="Reason for last failure (e.g., 'token_refresh_failed', 'mcp_validation_failed', 'invalid_credentials')")
+
 
 class KpiCatalog(BaseModel, table=True):
     """Standardized KPI definitions for different sub-customer types"""

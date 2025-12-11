@@ -7,6 +7,7 @@ import os
 import uuid
 import asyncio
 from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from google_auth_oauthlib.flow import Flow
@@ -154,7 +155,7 @@ async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
                 customer_id = payload.get('customer_id')
                 
                 # Check expiration
-                if datetime.utcnow().timestamp() > payload.get('exp', 0):
+                if datetime.now(timezone.utc).timestamp() > payload.get('exp', 0):
                     raise HTTPException(
                         status_code=400,
                         detail="OAuth state has expired"
@@ -323,7 +324,7 @@ async def handle_oauth_callback(
             
             # Check expiration using JWT exp field
             from datetime import datetime
-            if datetime.utcnow().timestamp() > payload.get('exp', 0):
+            if datetime.now(timezone.utc).timestamp() > payload.get('exp', 0):
                 raise HTTPException(
                     status_code=400,
                     detail="OAuth state has expired"

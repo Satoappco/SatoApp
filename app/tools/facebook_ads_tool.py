@@ -8,7 +8,7 @@ from typing import Type, List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 import json
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 from app.services.facebook_service import FacebookService
@@ -159,7 +159,7 @@ class FacebookAdsTool(BaseTool):
                 "level": level,
                 "date_range": f"{start_date} to {end_date}",
                 "data": formatted_result,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
 
         except Exception as e:

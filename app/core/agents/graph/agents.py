@@ -30,6 +30,22 @@ class AnalyticsCrewPlaceholder:
         self.analytics_crew = AnalyticsCrew()
         self.credential_manager = CustomerCredentialManager()
 
+    def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
+        """Fetch customer's enabled platforms from digital_assets table."""
+        return self.credential_manager.fetch_customer_platforms(customer_id)
+
+    def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Analytics refresh token and property ID."""
+        return self.credential_manager.fetch_google_analytics_credentials(customer_id, campaigner_id)
+
+    def _fetch_google_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Google Ads credentials."""
+        return self.credential_manager.fetch_google_ads_credentials(customer_id, campaigner_id)
+
+    def _fetch_meta_ads_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
+        """Fetch customer's Facebook/Meta Ads access token."""
+        return self.credential_manager.fetch_meta_ads_credentials(customer_id, campaigner_id)
+
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an analytics task using the AnalyticsCrew.
 
@@ -60,6 +76,13 @@ class AnalyticsCrewPlaceholder:
         else:
             logger.warning("⚠️  [AnalyticsCrew] No customer_id provided, using NO platforms")
             platforms = task.get("platforms", [])
+            # Initialize empty credentials when no customer_id
+            credentials = {
+                "platforms": [],
+                "google_analytics": None,
+                "google_ads": None,
+                "meta_ads": None
+            }
 
         # Build task details for AnalyticsCrew
         task_details = {

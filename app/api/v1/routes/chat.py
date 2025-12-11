@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 #     logger.debug(f"🔍 [Debug Request] Data: {data}")
 #     return JSONResponse(data)
 
-def run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
+async def run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
 
     # Send progress event
     if stream_it:
@@ -152,7 +152,7 @@ def run_crew(request, thread_id, current_user, customer_id, trace_service, user_
         yield "data: [DONE]\n\n"
         return
     
-    return ChatResponse(
+    yield ChatResponse(
         message=assistant_message,
         thread_id=thread_id,
         needs_clarification=False,
@@ -161,6 +161,7 @@ def run_crew(request, thread_id, current_user, customer_id, trace_service, user_
         user_message_id=user_message_id,
         assistant_message_id=assistant_message_id
     )
+    return
 
 @router.post("", response_model=ChatResponse)
 async def chat(
@@ -176,22 +177,46 @@ async def chat(
 
     Requires authentication via JWT token.
     """
-    # Initialize ChatTraceService
-    trace_service = ChatTraceService()
 
+    logger.debug(f"💬 [Chat] Received chat request: {request} from user: {current_user.full_name}")
     # Generate thread ID if not provided
-    thread_id = request.thread_id or str(uuid.uuid4())
+    if not request.thread_id:
+        # Parse customer_id if provided
+        customer_id = None
+        if request.customer_id:
+            try:
+                customer_id = int(request.customer_id)
+            except (ValueError, TypeError):
+                logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
+        request.thread_id , workflow = app_state.create_conversation_workflow(current_user, customer_id=customer_id)
+
+        # Most likely never come here because of get_current_user requires msg len >= 1
+        if not request.message.strip():
+            # Return chat intialization response without processing
+            logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
+            return ChatResponse(
+                message="",
+                thread_id=request.thread_id,
+                needs_clarification=False,
+                ready_for_analysis=False,
+                intent=None
+            )
+    else:
+        if not request.message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty for existing threads.")
+                # Get conversation workflow for this thread (with campaigner_id)
+        # workflow = app_state.get_conversation_workflow_or_none(request.thread_id)
+        workflow = app_state.get_conversation_workflow(current_user, request.thread_id, request.customer_id)
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {request.thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}), customer_id: {workflow.customer_id}")
+        customer_id = workflow.customer_id
+        
+    thread_id = request.thread_id
     logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
 
-    # Parse customer_id if provided
-    customer_id = None
-    if request.customer_id:
-        try:
-            customer_id = int(request.customer_id)
-        except (ValueError, TypeError):
-            logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
 
     # Create conversation with ChatTraceService (includes Langfuse trace)
+    # Initialize ChatTraceService
+    trace_service = ChatTraceService()
     conversation, trace = trace_service.create_conversation(
         thread_id=thread_id,
         campaigner_id=current_user.id,
@@ -216,24 +241,10 @@ async def chat(
 
         if use_crew:
             logger.info(f"🤖 [Chat] use_crew flag detected, routing to AnalyticsCrew automatically")
-            return run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id)
+            # run_crew is an async generator, so iterate to get result
+            async for result in run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
+                return result
 
-        # Get conversation workflow for this thread (with campaigner_id)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}) | Customer: {request.customer_id}")
-
-        workflow = app_state.get_conversation_workflow(current_user, thread_id, customer_id)
-
-        # Most likely never come here because of get_current_user requires msg len >= 1
-        if not request.message.strip():
-            # Return chat intialization response without processing
-            logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
-            return ChatResponse(
-                message="",
-                thread_id=thread_id,
-                needs_clarification=False,
-                ready_for_analysis=False,
-                intent=None
-            )
 
         # Process message
         logger.debug(f"🔄 [Chat] Processing message through workflow...")

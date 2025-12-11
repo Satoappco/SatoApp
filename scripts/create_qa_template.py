@@ -84,17 +84,17 @@ def create_template(output_path: str, with_samples: bool = True):
 
         for row, sample in enumerate(samples, 2):
             # Question
-            cell = ws.cell(row, 1)
+            cell = ws.cell(row, 2)
             cell.value = sample["question"]
             cell.alignment = Alignment(wrap_text=True, vertical='top')
 
             # Expected Answer
-            cell = ws.cell(row, 2)
+            cell = ws.cell(row, 3)
             cell.value = sample["expected"]
             cell.alignment = Alignment(wrap_text=True, vertical='top')
 
             # Leave Current Answer, Previous Answer, Rank, and Suggestion empty
-            for col in [3, 4, 5, 6]:
+            for col in [4, 5, 6, 7]:
                 cell = ws.cell(row, col)
                 cell.alignment = Alignment(wrap_text=True, vertical='top')
 

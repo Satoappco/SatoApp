@@ -4,7 +4,7 @@ Handles Google Ads data fetching and analysis
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -497,7 +497,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
                 refresh_token_enc = ga_service._encrypt_token(request.refresh_token)
                 
                 # Calculate expiry time
-                expires_at = datetime.utcnow() + timedelta(seconds=request.expires_in)
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=request.expires_in)
                 
                 # Create connection
                 connection = Connection(
@@ -509,7 +509,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
                     expires_at=expires_at,
                     is_active=True,
                     revoked=False,
-                    last_used_at=datetime.utcnow()
+                    last_used_at=datetime.now(timezone.utc)
                 )
                 session.add(connection)
                 session.commit()
@@ -659,7 +659,7 @@ async def get_available_google_ads_accounts(
             # Check if token needs refresh (with 5-minute buffer)
             from datetime import timedelta
             buffer_time = timedelta(minutes=5)
-            if connection.expires_at and connection.expires_at < datetime.utcnow() + buffer_time:
+            if connection.expires_at and connection.expires_at < datetime.now(timezone.utc) + buffer_time:
                 print(f"🔄 Google Ads token expired or expiring soon, refreshing...")
                 # Refresh the token
                 refresh_result = await google_ads_service.refresh_google_ads_token(connection.id)

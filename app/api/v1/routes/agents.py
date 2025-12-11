@@ -5,7 +5,7 @@ Agent management API routes
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 from sqlmodel import select
 
@@ -50,7 +50,7 @@ def get_all_agents(_: bool = Depends(authenticate_user_or_api_key)):
             master_agent=result["master_agent"],
             specialist_agents=result["specialist_agents"],
             total_agents=result["total_agents"],
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
         
     except Exception as e:
@@ -123,7 +123,7 @@ def get_agent_config(request: GetAgentRequest, _: bool = Depends(authenticate_us
         return AgentConfigResponse(
             status="success",
             agent=agent_config,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
         
     except HTTPException:
@@ -156,7 +156,7 @@ def create_agent_config(
             status="success",
             message=f"Agent '{agent_config.name}' created successfully",
             agent=created_agent,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
         
     except HTTPException:
@@ -213,7 +213,7 @@ def update_agent_config(
             status="success",
             message=f"Agent '{agent_config.name}' updated successfully",
             agent=updated_agent,
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
 
     except HTTPException:
@@ -253,7 +253,7 @@ def delete_agent_config(request: DeleteAgentRequest, _: bool = Depends(authentic
         return {
             "status": "success",
             "message": message,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except HTTPException:

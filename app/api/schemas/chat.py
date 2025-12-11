@@ -15,7 +15,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     """Chat request."""
-    message: str = Field(..., description="User message", min_length=1)
+    message: str = Field(..., description="User message", min_length=0)
     thread_id: Optional[str] = Field(None, description="Conversation thread ID")
     customer_id: Optional[int] = Field(None, description="Customer ID associated with the conversation")
     use_crew: Optional[bool] = Field(False, description="Whether to use the crew for processing")

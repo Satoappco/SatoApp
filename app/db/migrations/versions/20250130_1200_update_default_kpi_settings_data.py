@@ -7,7 +7,7 @@ Create Date: 2025-01-30 12:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # revision identifiers, used by Alembic.
@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.column('updated_at', sa.DateTime)
     )
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Updated seed data matching the image exactly
     seed_data = [

@@ -10,11 +10,10 @@ from app.models.analytics import DigitalAsset, Connection, AssetType
 
 
 class TestOrphanedDigitalAssetCleanup:
-    @patch("app.services.digital_asset_service.Connection")
-    def test_delete_orphaned_digital_asset_no_connections(self, mock_connection_class):
+    def test_delete_orphaned_digital_asset_no_connections(self):
         """Test deletion of digital asset with no connections"""
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_asset = Mock(spec=DigitalAsset)
         mock_asset.id = 1
         mock_asset.name = "Orphaned Asset"
@@ -35,11 +34,10 @@ class TestOrphanedDigitalAssetCleanup:
         mock_session.delete.assert_called_once_with(mock_asset)
         mock_session.commit.assert_called_once()
 
-    @patch("app.services.digital_asset_service.Connection")
-    def test_delete_orphaned_digital_asset_has_connections(self, mock_connection_class):
+    def test_delete_orphaned_digital_asset_has_connections(self):
         """Test that digital asset with connections is NOT deleted"""
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_connection = Mock(spec=Connection)
         mock_connection.id = 1
 
@@ -56,11 +54,10 @@ class TestOrphanedDigitalAssetCleanup:
         mock_session.delete.assert_not_called()
         mock_session.commit.assert_not_called()
 
-    @patch("app.services.digital_asset_service.Connection")
-    def test_delete_orphaned_digital_asset_not_found(self, mock_connection_class):
+    def test_delete_orphaned_digital_asset_not_found(self):
         """Test deletion when digital asset doesn't exist"""
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
 
         # Mock exec to return None (no connections)
         mock_exec_result = Mock()
@@ -81,17 +78,17 @@ class TestOrphanedDigitalAssetCleanup:
 
 class TestConnectionDeletionWithOrphanCleanup:
     @pytest.mark.asyncio
-    @patch("app.api.v1.routes.google_ads.get_session")
-    @patch("app.api.v1.routes.google_ads.delete_orphaned_digital_asset")
+    @patch("app.config.database.get_session")
+    @patch("app.services.digital_asset_service.delete_orphaned_digital_asset")
     async def test_google_ads_connection_deletion_cleans_orphaned_asset(
         self, mock_delete_orphaned, mock_get_session
     ):
         """Test that deleting a Google Ads connection triggers orphan cleanup"""
         from app.api.v1.routes.google_ads import revoke_google_ads_connection
-        from app.models.campaigners import Campaigner
+        from app.models.users import Campaigner
 
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_connection = Mock(spec=Connection)
         mock_connection.id = 1
         mock_connection.digital_asset_id = 10
@@ -114,12 +111,12 @@ class TestConnectionDeletionWithOrphanCleanup:
         mock_user.id = 1
 
         # Patch the decrypt and requests
-        with patch("app.api.v1.routes.google_ads.GoogleAnalyticsService") as mock_service_class:
+        with patch("app.services.google_analytics_service.GoogleAnalyticsService") as mock_service_class:
             mock_service = Mock()
             mock_service._decrypt_token.return_value = "access_token"
             mock_service_class.return_value = mock_service
 
-            with patch("app.api.v1.routes.google_ads.requests.post") as mock_post:
+            with patch("requests.post") as mock_post:
                 mock_post.return_value.status_code = 200
 
                 # Call the function
@@ -131,7 +128,7 @@ class TestConnectionDeletionWithOrphanCleanup:
 
     @pytest.mark.asyncio
     @patch("app.services.google_analytics_service.get_session")
-    @patch("app.services.google_analytics_service.delete_orphaned_digital_asset")
+    @patch("app.services.digital_asset_service.delete_orphaned_digital_asset")
     async def test_google_analytics_connection_deletion_cleans_orphaned_asset(
         self, mock_delete_orphaned, mock_get_session
     ):
@@ -139,7 +136,7 @@ class TestConnectionDeletionWithOrphanCleanup:
         from app.services.google_analytics_service import GoogleAnalyticsService
 
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_connection = Mock(spec=Connection)
         mock_connection.id = 1
         mock_connection.digital_asset_id = 20
@@ -170,16 +167,16 @@ class TestConnectionDeletionWithOrphanCleanup:
 
     @pytest.mark.asyncio
     @patch("app.api.v1.routes.facebook.get_session")
-    @patch("app.api.v1.routes.facebook.delete_orphaned_digital_asset")
+    @patch("app.services.digital_asset_service.delete_orphaned_digital_asset")
     async def test_facebook_connection_deletion_cleans_orphaned_asset(
         self, mock_delete_orphaned, mock_get_session
     ):
         """Test that deleting a Facebook connection triggers orphan cleanup"""
         from app.api.v1.routes.facebook import revoke_facebook_connection
-        from app.models.campaigners import Campaigner
+        from app.models.users import Campaigner
 
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_connection = Mock(spec=Connection)
         mock_connection.id = 1
         mock_connection.digital_asset_id = 30
@@ -197,15 +194,15 @@ class TestConnectionDeletionWithOrphanCleanup:
         mock_user.id = 5
 
         # Patch the decrypt and requests
-        with patch("app.api.v1.routes.facebook.GoogleAnalyticsService") as mock_service_class:
+        with patch("app.services.google_analytics_service.GoogleAnalyticsService") as mock_service_class:
             mock_service = Mock()
             mock_service._decrypt_token.return_value = "access_token"
             mock_service_class.return_value = mock_service
 
-            with patch("app.api.v1.routes.facebook.requests.delete") as mock_delete:
+            with patch("requests.delete") as mock_delete:
                 mock_delete.return_value.status_code = 200
 
-                with patch("app.api.v1.routes.facebook.os.getenv", return_value="test_app_id"):
+                with patch("os.getenv", return_value="test_app_id"):
                     # Call the function
                     result = await revoke_facebook_connection(1, mock_user)
 
@@ -216,13 +213,13 @@ class TestConnectionDeletionWithOrphanCleanup:
 
 class TestBulkConnectionDeletionWithOrphanCleanup:
     @patch("app.api.v1.routes.customers.get_session")
-    @patch("app.api.v1.routes.customers.delete_orphaned_digital_asset")
+    @patch("app.services.digital_asset_service.delete_orphaned_digital_asset")
     def test_customer_deletion_cleans_orphaned_assets(
         self, mock_delete_orphaned, mock_get_session
     ):
         """Test that deleting a customer cleans up orphaned digital assets"""
         # Setup
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
 
         mock_connection1 = Mock(spec=Connection)
         mock_connection1.digital_asset_id = 1

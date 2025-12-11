@@ -3,7 +3,7 @@ Authentication utilities
 Helper functions for authentication routes to reduce duplication and improve maintainability
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from app.core.auth import create_access_token, create_refresh_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.models.users import Campaigner
@@ -29,7 +29,7 @@ def compute_expires_at(expires_in_seconds: Optional[int] = None) -> str:
     """
     if expires_in_seconds is None:
         expires_in_seconds = ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    return (datetime.utcnow() + timedelta(seconds=expires_in_seconds)).isoformat() + 'Z'
+    return (datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)).isoformat() + 'Z'
 
 
 def create_token_pair(user: Campaigner, expires_in_seconds: Optional[int] = None) -> Dict[str, Any]:

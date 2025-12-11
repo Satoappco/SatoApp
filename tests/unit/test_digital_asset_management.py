@@ -19,13 +19,23 @@ class TestDigitalAssetDeletion:
     async def test_delete_digital_asset_success_no_dependencies(self, mock_get_session):
         """Test successful deletion of digital asset with no dependencies"""
         # Mock session and asset
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_asset = Mock(spec=DigitalAsset)
         mock_asset.id = 1
         mock_asset.name = "Test Asset"
 
         mock_session.get.return_value = mock_asset
-        mock_session.exec.return_value = []  # No connections
+
+        # Mock exec() to return an object with .all() method
+        mock_exec_result = MagicMock()
+        mock_exec_result.all.return_value = []  # No connections
+        mock_session.exec.return_value = mock_exec_result
+
+        # Mock execute() to return an object with .fetchall() method
+        mock_execute_result = MagicMock()
+        mock_execute_result.fetchall.return_value = []
+        mock_session.execute.return_value = mock_execute_result
+
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function
@@ -48,7 +58,7 @@ class TestDigitalAssetDeletion:
     async def test_delete_digital_asset_with_connections(self, mock_get_session):
         """Test deletion of digital asset with connections"""
         # Mock session, asset, and connections
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_asset = Mock(spec=DigitalAsset)
         mock_asset.id = 1
         mock_asset.name = "Test Asset"
@@ -58,7 +68,17 @@ class TestDigitalAssetDeletion:
         mock_connections = [mock_connection1, mock_connection2]
 
         mock_session.get.return_value = mock_asset
-        mock_session.exec.return_value = mock_connections
+
+        # Mock exec() to return an object with .all() method
+        mock_exec_result = MagicMock()
+        mock_exec_result.all.return_value = mock_connections
+        mock_session.exec.return_value = mock_exec_result
+
+        # Mock execute() to return an object with .fetchall() method
+        mock_execute_result = MagicMock()
+        mock_execute_result.fetchall.return_value = []
+        mock_session.execute.return_value = mock_execute_result
+
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function
@@ -78,7 +98,7 @@ class TestDigitalAssetDeletion:
     @patch("app.api.v1.routes.database_management.get_session")
     async def test_delete_digital_asset_not_found(self, mock_get_session):
         """Test deletion of non-existent digital asset"""
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_session.get.return_value = None
         mock_get_session.return_value.__enter__.return_value = mock_session
 
@@ -94,7 +114,7 @@ class TestDigitalAssetDeletion:
     async def test_get_digital_asset_dependencies(self, mock_get_session):
         """Test getting dependencies for a digital asset"""
         # Mock session, asset, and dependencies
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_asset = Mock(spec=DigitalAsset)
         mock_asset.id = 1
         mock_asset.name = "Test Asset"
@@ -108,8 +128,19 @@ class TestDigitalAssetDeletion:
         mock_mappings_result = [Mock(), Mock()]  # Two mappings
 
         mock_session.get.return_value = mock_asset
-        mock_session.exec.return_value = mock_connections
-        mock_session.execute.side_effect = [mock_campaigns_result, mock_mappings_result]
+
+        # Mock exec() to return an object with .all() method
+        mock_exec_result = MagicMock()
+        mock_exec_result.all.return_value = mock_connections
+        mock_session.exec.return_value = mock_exec_result
+
+        # Mock execute() to return objects with .fetchall() method
+        mock_execute_campaigns = MagicMock()
+        mock_execute_campaigns.fetchall.return_value = mock_campaigns_result
+        mock_execute_mappings = MagicMock()
+        mock_execute_mappings.fetchall.return_value = mock_mappings_result
+        mock_session.execute.side_effect = [mock_execute_campaigns, mock_execute_mappings]
+
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function
@@ -128,61 +159,13 @@ class TestDigitalAssetDeletion:
     @patch("app.api.v1.routes.database_management.get_session")
     async def test_get_digital_asset_dependencies_not_found(self, mock_get_session):
         """Test getting dependencies for non-existent digital asset"""
-        mock_session = MagicMock(spec=Session)
+        mock_session = MagicMock()
         mock_session.get.return_value = None
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function and expect exception
         with pytest.raises(HTTPException) as exc_info:
             await get_digital_asset_dependencies(999)
-
-        assert exc_info.value.status_code == 404
-        assert "Digital asset not found" in exc_info.value.detail
-
-    @patch("app.api.v1.routes.database_management.get_session")
-    def test_get_digital_asset_dependencies(self, mock_get_session):
-        """Test getting dependencies for a digital asset"""
-        # Mock session, asset, and dependencies
-        mock_session = MagicMock(spec=Session)
-        mock_asset = Mock(spec=DigitalAsset)
-        mock_asset.id = 1
-        mock_asset.name = "Test Asset"
-        mock_asset.asset_type = AssetType.GA4
-
-        mock_connection = Mock(spec=Connection)
-        mock_connections = [mock_connection]
-
-        # Mock SQL results
-        mock_campaigns_result = [Mock()]  # One campaign
-        mock_mappings_result = [Mock(), Mock()]  # Two mappings
-
-        mock_session.get.return_value = mock_asset
-        mock_session.exec.return_value = mock_connections
-        mock_session.execute.side_effect = [mock_campaigns_result, mock_mappings_result]
-        mock_get_session.return_value.__enter__.return_value = mock_session
-
-        # Call the function
-        result = get_digital_asset_dependencies(1)
-
-        # Assertions
-        assert result["asset_id"] == 1
-        assert result["asset_name"] == "Test Asset"
-        assert result["asset_type"] == AssetType.GA4
-        assert result["dependencies"]["connections"] == 1
-        assert result["dependencies"]["campaigns"] == 1
-        assert result["dependencies"]["campaign_mappings"] == 2
-        assert result["can_delete"] is True
-
-    @patch("app.api.v1.routes.database_management.get_session")
-    def test_get_digital_asset_dependencies_not_found(self, mock_get_session):
-        """Test getting dependencies for non-existent digital asset"""
-        mock_session = MagicMock(spec=Session)
-        mock_session.get.return_value = None
-        mock_get_session.return_value.__enter__.return_value = mock_session
-
-        # Call the function and expect exception
-        with pytest.raises(HTTPException) as exc_info:
-            get_digital_asset_dependencies(999)
 
         assert exc_info.value.status_code == 404
         assert "Digital asset not found" in exc_info.value.detail

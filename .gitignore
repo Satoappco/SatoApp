@@ -25,6 +25,7 @@ update-connector-payload.json
 __pycache__/
 *.pyc
 .next/
+logs/
 
 # Setup scripts with sensitive credentials
 setup-*.sh
@@ -34,6 +35,7 @@ setup-*.sh
 
 # Debug routes (development only - DO NOT COMMIT)
 app/api/v1/routes/debug_*.py
+tests/unit/test_debug_*.py
 
 # Database backups
 db_backups/
@@ -41,3 +43,5 @@ db_backups/
 *.dump
 
 docs/*
+.worktrees
+coverage.xml

@@ -8,7 +8,7 @@ import re
 import json
 import logging
 import requests
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import Dict, Any, Optional, List
 from sqlmodel import select, and_, or_, Session
 
@@ -401,7 +401,7 @@ class CampaignSyncService:
             # Note: We skip token refresh here since this is a sync method (not async)
             # Token refresh is handled by the FacebookService when needed
             # If token is expired, the API call will fail and user will need to re-authenticate
-            if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=5):
+            if connection.expires_at and connection.expires_at <= datetime.now(timezone.utc) + timedelta(minutes=5):
                 print(f"⚠️ Token expiring soon for connection {connection.id} - attempting with current token")
             
             # Build URL based on granularity - Facebook uses ad_set (adgroup) and ad levels
@@ -507,8 +507,8 @@ class CampaignSyncService:
                         spent=kpi_goal.spent,
                         target_audience=kpi_goal.target_audience,
                         landing_page=kpi_goal.landing_page,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
                     )
                     session.add(kpi_value)
                     session.flush()
@@ -546,7 +546,7 @@ class CampaignSyncService:
                     kpi_value.ad_score = ad_score
                 
                 # Update timestamp
-                kpi_value.updated_at = datetime.utcnow()
+                kpi_value.updated_at = datetime.now(timezone.utc)
                 
                 session.commit()
                 return True
@@ -560,7 +560,7 @@ class CampaignSyncService:
         Sync all KPI goals (or specific customer's goals)
         Returns summary with counts and errors
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         kpi_goals_processed = 0
         kpi_values_updated = 0
         errors = []
@@ -722,7 +722,7 @@ class CampaignSyncService:
         except Exception as e:
             errors.append(f"Fatal error in sync: {str(e)}")
         
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         return {
             "success": True,
@@ -755,7 +755,7 @@ class CampaignSyncService:
         from app.services.clickup_service import ClickUpService
         from app.config import get_settings
         
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         logger = logging.getLogger(__name__)
         
         stats = {
@@ -772,7 +772,7 @@ class CampaignSyncService:
             with get_session() as session:
                 days_back_to_take = get_settings().metrics_sync_days_back or 365
                 # Step 1: Cleanup old metrics
-                cutoff_date = datetime.utcnow().date() - timedelta(days=days_back_to_take)
+                cutoff_date = datetime.now(timezone.utc).date() - timedelta(days=days_back_to_take)
                 logger.info(f"🗑️  Cleaning up metrics older than {cutoff_date}")
 
                 deleted_count = session.exec(
@@ -910,7 +910,7 @@ class CampaignSyncService:
             stats["success"] = False
             stats["error_details"].append(f"Fatal error: {str(e)}")
         
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         stats["duration_seconds"] = round(duration, 2)
         
         finish_msg = f"""✅ Sync completed in {duration:.2f}s
@@ -952,7 +952,7 @@ class CampaignSyncService:
         logger = logging.getLogger(__name__)
 
         # Calculate date ranges
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         yesterday = today - timedelta(days=1)
         start_date = today - timedelta(days=90)
 
@@ -1014,7 +1014,7 @@ class CampaignSyncService:
         """
         try:
             # Check if token is expired
-            if connection.expires_at and connection.expires_at < datetime.utcnow():
+            if connection.expires_at and connection.expires_at < datetime.now(timezone.utc):
                 # Try to refresh token
                 # TODO: Implement token refresh logic
                 return False
