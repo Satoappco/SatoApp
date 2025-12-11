@@ -210,8 +210,24 @@ class MCPValidator:
         # Single MCP client has list_tools() method
         elif hasattr(client, 'list_tools'):
             tools_response = await client.list_tools()
+
+            # Handle different response formats
             if hasattr(tools_response, 'tools'):
+                # STDIO client format: response object with .tools attribute
                 return [tool.name for tool in tools_response.tools]
+            elif isinstance(tools_response, list):
+                # HTTP client format: list of dicts
+                tool_names = []
+                for tool in tools_response:
+                    if isinstance(tool, dict):
+                        # Dictionary with 'name' key
+                        tool_names.append(tool.get('name', str(tool)))
+                    elif hasattr(tool, 'name'):
+                        # Object with name attribute
+                        tool_names.append(tool.name)
+                    else:
+                        tool_names.append(str(tool))
+                return tool_names
             return []
 
         else:
@@ -369,7 +385,8 @@ class MCPValidator:
     ) -> MCPValidationResult:
         """Validate Google Ads MCP client."""
         try:
-            expected_tools = ['search', 'list_accessible_customers']
+            # Updated to match actual HTTP MCP server tool names
+            expected_tools = ['list_accessible_accounts', 'execute_gaql']
             found_tools = [t for t in expected_tools if t in tools]
 
             if not found_tools:

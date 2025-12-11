@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Dict
 import os
+import uuid
 import logging
 
 from app.core.agents.graph.workflow import ConversationWorkflow
@@ -31,6 +32,34 @@ class ApplicationState:
             cls._instance = super().__new__(cls)
             logger.info("🏗️  [AppState] Created new ApplicationState singleton")
         return cls._instance
+
+    def create_conversation_workflow(self, current_user: Campaigner, thread_id: str = "default", customer_id: int = None) -> ConversationWorkflow:
+        """Create conversation workflow for thread."""
+        logger.info(f"🆕 [AppState] Creating new workflow for thread: {thread_id[:8]}... | Campaigner: {current_user.id} | Customer: {customer_id}")
+        if thread_id and thread_id in self._conversation_workflows:
+            logger.warning(f"⚠️  [AppState] Can't create a new workflow, already exists thread: {thread_id[:8]}...")
+        else:
+            if not thread_id:
+                while thread_id in self._conversation_workflows:
+                    thread_id = str(uuid.uuid4())
+
+            self._conversation_workflows[thread_id] = ConversationWorkflow(
+                campaigner=current_user,
+                thread_id=thread_id,
+                customer_id=customer_id
+            )
+        return thread_id, self._conversation_workflows[thread_id]
+
+    def get_conversation_workflow_or_none(self, thread_id: str = "default") -> ConversationWorkflow:
+        """Get conversation workflow for thread."""
+        logger.debug(f"📋 [Chat] Getting workflow for thread: {thread_id}")
+
+        if thread_id not in self._conversation_workflows:
+            logger.error(f"❌ [AppState] No existing workflow for thread: {thread_id[:8]}...")
+            # raise ValueError(f"No existing workflow for thread: {thread_id}")
+            return None
+        logger.debug(f"♻️  [AppState] Reusing existing workflow for thread: {thread_id[:8]}...")
+        return self._conversation_workflows[thread_id]
 
     def get_conversation_workflow(self, current_user: Campaigner, thread_id: str = "default", customer_id: int = None) -> ConversationWorkflow:
         """Get or create conversation workflow for thread."""

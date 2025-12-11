@@ -88,13 +88,19 @@ def _create_oauth_credentials() -> Credentials:
     Raises:
         ValueError: If required environment variables are missing
     """
-    if not REFRESH_TOKEN:
+    # Read from environment variables at call time (not import time)
+    # This allows the HTTP server to set credentials per session
+    refresh_token = os.getenv("GOOGLE_ANALYTICS_REFRESH_TOKEN")
+    client_id = os.getenv("GOOGLE_ANALYTICS_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_ANALYTICS_CLIENT_SECRET")
+
+    if not refresh_token:
         raise ValueError(
             "GOOGLE_ANALYTICS_REFRESH_TOKEN environment variable not set. "
             "Please provide an OAuth2 refresh token."
         )
 
-    if not CLIENT_ID or not CLIENT_SECRET:
+    if not client_id or not client_secret:
         raise ValueError(
             "GOOGLE_ANALYTICS_CLIENT_ID and GOOGLE_ANALYTICS_CLIENT_SECRET "
             "environment variables must be set."
@@ -103,10 +109,10 @@ def _create_oauth_credentials() -> Credentials:
     # Create credentials from refresh token
     credentials = Credentials(
         token=None,  # Will be fetched using refresh token
-        refresh_token=REFRESH_TOKEN,
+        refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
+        client_id=client_id,
+        client_secret=client_secret,
         scopes=[_READ_ONLY_ANALYTICS_SCOPE]
     )
 
@@ -148,7 +154,9 @@ async def get_property_details(property_id: int | str = None) -> Dict[str, Any]:
     Args:
         property_id: The GA4 property ID. Uses GOOGLE_ANALYTICS_PROPERTY_ID env var if not specified.
     """
-    prop_id = property_id or PROPERTY_ID
+    # Read property_id from environment at call time
+    env_property_id = os.getenv("GOOGLE_ANALYTICS_PROPERTY_ID")
+    prop_id = property_id or env_property_id
     if not prop_id:
         raise ValueError("property_id not specified and GOOGLE_ANALYTICS_PROPERTY_ID not set")
 
@@ -184,7 +192,9 @@ async def run_report(
         DateRange, Dimension, Metric, RunReportRequest
     )
 
-    prop_id = property_id or PROPERTY_ID
+    # Read property_id from environment at call time
+    env_property_id = os.getenv("GOOGLE_ANALYTICS_PROPERTY_ID")
+    prop_id = property_id or env_property_id
     if not prop_id:
         raise ValueError("property_id not specified and GOOGLE_ANALYTICS_PROPERTY_ID not set")
 

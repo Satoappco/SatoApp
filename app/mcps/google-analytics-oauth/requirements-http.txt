@@ -1,0 +1,25 @@
+# Requirements for Google Analytics MCP HTTP Server
+#
+# This file contains dependencies needed to run the HTTP/SSE server
+# in addition to the base MCP server dependencies.
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# For SSE (Server-Sent Events)
+sse-starlette>=1.8.0
+
+# HTTP client for testing and outbound requests
+httpx>=0.25.0
+
+# Pydantic for request/response models (usually comes with FastAPI)
+pydantic>=2.0.0
+
+# Base MCP dependencies (if not already installed)
+fastmcp>=0.1.0
+google-analytics-data>=0.18.0
+google-analytics-admin>=0.22.0
+google-auth>=2.23.0
+google-api-core>=2.14.0
+proto-plus>=1.22.0

@@ -531,6 +531,13 @@ Current Date and Time: {current_datetime}
 
 {context_str}
 
+CRITICAL AUTHORIZATION INSTRUCTIONS:
+- The account IDs listed above are already authorized and ready to use
+- Use these IDs DIRECTLY in your tool calls WITHOUT asking for user confirmation
+- DO NOT ask the user to verify or confirm the account IDs before using them
+- The user has already granted access to these accounts and expects you to use them immediately
+- If an account ID is provided in the context above, use it automatically in your queries
+
 Your tasks:
 1. Analyze the user's question to understand what data they need
 2. Use the appropriate MCP tools to fetch data from the relevant platforms
