@@ -611,6 +611,13 @@ DATE FORMATS - CRITICAL:
 - Example: For last 30 days, if today is 2024-11-19, use dates.date BETWEEN '2024-10-20' AND '2024-11-19'
 - ALWAYS calculate actual YYYY-MM-DD dates before making Google Ads GAQL queries
 
+**Google Ads Ad Types (CRITICAL - use correct enum values):**
+- For SEARCH ads, use: ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' (most common)
+- Other valid ad types: 'EXPANDED_TEXT_AD', 'TEXT_AD', 'IMAGE_AD', 'VIDEO_AD', 'APP_AD', 'SHOPPING_PRODUCT_AD', 'DISPLAY_UPLOAD_AD'
+- NEVER use: 'SEARCH_AD' (this is INVALID and will cause errors)
+- To filter search ads: use ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' OR check if ad_group_ad.ad.responsive_search_ad IS NOT NULL
+- When filtering by ad type in WHERE clause, ALWAYS use the full enum value exactly as shown above
+
 ERROR HANDLING - THIS IS CRITICAL FOR SUCCESS:
 When a tool call fails with an error, you MUST analyze the error and retry with corrected parameters.
 You have up to 15 iterations - use them to debug and fix issues!
@@ -699,6 +706,83 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 ("placeholder", "{agent_scratchpad}"),
             ])
 
+            # Track tool failures for retry logic across all tool calls
+            # Use a dict to track: {error_signature: count}
+            # error_signature is a hash of the error message to identify same errors
+            tool_failure_counts = {}
+            max_retries_per_tool = 3
+
+            def handle_tool_error_with_retry(error: Exception) -> str:
+                """
+                Custom error handler that tracks retry attempts and provides helpful feedback.
+
+                LangChain calls this with just the error. We track retries by error signature.
+                Returns error message to agent as observation (not raising exception).
+                """
+                error_msg = str(error)
+
+                # Try to extract tool name from error message (e.g., "Error calling tool 'execute_gaql'")
+                tool_name = "unknown"
+                import re
+                tool_match = re.search(r"calling tool '([^']+)'", error_msg)
+                if tool_match:
+                    tool_name = tool_match.group(1)
+                elif "execute_gaql" in error_msg.lower():
+                    tool_name = "execute_gaql"
+                elif "run_report" in error_msg.lower():
+                    tool_name = "run_report"
+
+                # Create error signature for tracking (tool_name + first 100 chars of error)
+                error_signature = f"{tool_name}:{error_msg[:100]}"
+
+                # Track failure count for this specific error
+                if error_signature not in tool_failure_counts:
+                    tool_failure_counts[error_signature] = 0
+                tool_failure_counts[error_signature] += 1
+
+                attempt_num = tool_failure_counts[error_signature]
+
+                logger.warning(f"⚠️  [SingleAnalyticsAgent] Tool '{tool_name}' failed (attempt {attempt_num}/{max_retries_per_tool})")
+                logger.warning(f"   Error: {error_msg[:200]}...")
+
+                if attempt_num >= max_retries_per_tool:
+                    # Max retries reached - let the agent know this is final
+                    logger.error(f"❌ [SingleAnalyticsAgent] Tool '{tool_name}' failed after {max_retries_per_tool} attempts")
+                    return f"""ERROR (Final Attempt {attempt_num}/{max_retries_per_tool}): Tool call failed after maximum retries.
+
+Tool: {tool_name}
+Error: {error_msg}
+
+This has failed {max_retries_per_tool} times. Please either:
+1. Try a completely different approach or different tool to answer the question
+2. Inform the user that this specific data cannot be retrieved at this time
+
+Do NOT retry the exact same tool call again."""
+                else:
+                    # Still have retries left - encourage the agent to fix and retry
+                    remaining = max_retries_per_tool - attempt_num
+                    return f"""ERROR (Attempt {attempt_num}/{max_retries_per_tool}): Tool call failed. You have {remaining} retry attempt(s) remaining.
+
+Tool: {tool_name}
+Error: {error_msg}
+
+RETRY INSTRUCTIONS:
+1. READ the error message carefully
+2. IDENTIFY the specific problem:
+   - Invalid enum values? (e.g., 'SEARCH_AD' should be 'RESPONSIVE_SEARCH_AD')
+   - Wrong date format? (Google Ads needs 'YYYY-MM-DD', GA4 needs 'YYYYMMDD' or '7daysAgo')
+   - Missing required parameters? (e.g., dimensions, metrics)
+   - Wrong dimension/metric names? (e.g., 'campaign' should be 'sessionCampaignName')
+3. FIX the specific issue in your parameters
+4. RETRY the tool call with corrected parameters
+
+Common fixes:
+- Google Ads GAQL: Use 'RESPONSIVE_SEARCH_AD' not 'SEARCH_AD', dates as '2024-11-19'
+- Google Analytics: Use 'sessionCampaignName' not 'campaign', 'sessionSource' not 'source'
+- All tools: Ensure all required parameters are provided
+
+Analyze the error above and retry with corrected parameters NOW."""
+
             # Create agent with tools
             agent = create_tool_calling_agent(self.llm, tools, prompt)
             agent_executor = AgentExecutor(
@@ -707,7 +791,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                 verbose=True,
                 max_iterations=15,  # Allow up to 15 tool calls (includes retries)
                 handle_parsing_errors=True,
-                handle_tool_error=True,  # Pass tool errors back to agent as observations for retry
+                handle_tool_error=handle_tool_error_with_retry,  # Custom error handler with retry tracking
                 return_intermediate_steps=True,  # Return steps for debugging
                 max_execution_time=180,  # 3 minute timeout (increased for retries)
                 early_stopping_method="generate"  # Generate final answer
@@ -793,7 +877,7 @@ Remember: Use the tools available to you to fetch real data before providing ins
                                 verbose=True,
                                 max_iterations=15,
                                 handle_parsing_errors=True,
-                                handle_tool_error=True,  # Pass tool errors back to agent as observations for retry
+                                handle_tool_error=handle_tool_error_with_retry,  # Use same custom error handler
                                 return_intermediate_steps=True,
                                 max_execution_time=180,
                                 early_stopping_method="generate"
