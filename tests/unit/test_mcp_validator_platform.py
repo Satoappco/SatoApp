@@ -138,7 +138,8 @@ class TestValidationResultPlatform:
         """Test that Google Ads validation sets platform field."""
         class MockClient:
             async def get_tools(self):
-                return ['search', 'list_accessible_customers']
+                # Updated to use correct HTTP MCP server tool names
+                return ['list_accessible_accounts', 'execute_gaql']
 
             async def call_tool(self, tool_name, params):
                 class MockResult:
