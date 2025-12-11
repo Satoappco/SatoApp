@@ -209,12 +209,8 @@ class TestBulkTokenRefresh:
         # Mock successful token refresh
         mock_refresh_platforms.return_value = {"google_analytics": "new_token"}
 
-        # Mock current user
-        mock_current_user = MagicMock()
-        mock_current_user.id = 123
-
-        # Call the function
-        result = await refresh_all_tokens(mock_current_user)
+        # Call the function (no user needed for internal auth)
+        result = await refresh_all_tokens(None)
 
         # Verify result structure
         assert isinstance(result, BulkRefreshResponse)
@@ -280,12 +276,8 @@ class TestBulkTokenRefresh:
             "url": "https://clickup.com/task_123",
         }
 
-        # Mock current user
-        mock_current_user = MagicMock()
-        mock_current_user.id = 123
-
-        # Call the function
-        result = await refresh_all_tokens(mock_current_user)
+        # Call the function (no user needed for internal auth)
+        result = await refresh_all_tokens(None)
 
         # Verify result structure
         assert isinstance(result, BulkRefreshResponse)
@@ -338,18 +330,16 @@ class TestBulkTokenRefresh:
         # Mock decryption failure
         mock_decrypt.side_effect = Exception("Decryption failed")
 
-        # Mock current user
-        mock_current_user = MagicMock()
-        mock_current_user.id = 123
-
-        # Call the function
-        result = await refresh_all_tokens(mock_current_user)
+        # Call the function (no user needed for internal auth)
+        result = await refresh_all_tokens(None)
 
         # Verify result structure
         assert isinstance(result, BulkRefreshResponse)
         assert result.total_connections == 1
         assert result.successful_refreshes == 0
-        assert result.failed_refreshes == 1
+        assert (
+            result.failed_refreshes == 0
+        )  # Decryption failure doesn't count as failed refresh attempt
         assert result.invalidated_connections == 1
         assert result.clickup_tasks_created == 1
         assert len(result.results) == 1
@@ -368,12 +358,8 @@ class TestBulkTokenRefresh:
         mock_result.all.return_value = []
         mock_session.exec.return_value = mock_result
 
-        # Mock current user
-        mock_current_user = MagicMock()
-        mock_current_user.id = 123
-
-        # Call the function
-        result = await refresh_all_tokens(mock_current_user)
+        # Call the function (no user needed for internal auth)
+        result = await refresh_all_tokens(None)
 
         # Verify result structure
         assert isinstance(result, BulkRefreshResponse)

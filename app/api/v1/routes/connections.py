@@ -15,6 +15,7 @@ from app.config.database import get_session
 from app.models.analytics import Connection, DigitalAsset, AssetType
 from app.api.dependencies import get_current_user
 from app.utils.connection_failure_utils import (
+    record_connection_failure,
     record_connection_success,
     should_retry_connection,
 )
@@ -516,14 +517,14 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
         for connection, asset in results:
             try:
                 # Determine platform and get current tokens
-                platform = _get_platform_name(asset.asset_type)
+                platform = _get_platform_name(asset.asset_type).lower()
                 user_tokens = {}
 
                 # Decrypt tokens for refresh
                 if connection.refresh_token_enc:
                     try:
                         refresh_token = decrypt_token(connection.refresh_token_enc)
-                        if platform in ["google_analytics", "google_ads"]:
+                        if platform in ["google_analytics", "google_ads", "ga4"]:
                             user_tokens["refresh_token"] = refresh_token
                         elif platform == "facebook_ads":
                             user_tokens["access_token"] = (
@@ -531,6 +532,8 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                                 if connection.access_token_enc
                                 else None
                             )
+                        else:
+                            raise ValueError("Unsupported platform for token decryption")
                     except Exception as decrypt_error:
                         # Provide detailed error message for token decryption failures
                         error_type = type(decrypt_error).__name__
@@ -608,17 +611,20 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                                 connection.campaigner_id,
                                 platforms_to_refresh,
                                 refresh_input_tokens,
+                                force_refresh=True,
                             )
 
                             # Check if refresh was successful
                             # If the token key is still in refreshed_tokens, refresh succeeded
-                            token_key = (
-                                "google_analytics"
-                                if platform == "google_analytics"
-                                else "google_ads"
-                                if platform == "google_ads"
-                                else "facebook"
-                            )
+                            if platform in ["google_analytics", "ga4"]:
+                                token_key = "google_analytics"
+                            elif platform in ["google_ads"]:
+                                token_key = "google_ads"
+                            elif platform in ["facebook_ads", "facebook", "meta_ads"]:
+                                token_key = "facebook"
+                            else:
+                                raise ValueError("Unsupported platform for refresh result check")
+
                             if token_key in refreshed_tokens:
                                 successful_refreshes += 1
                                 refresh_results.append(

@@ -229,7 +229,8 @@ def mark_needs_reauth(campaigner_id: int, asset_type: AssetType) -> None:
 def refresh_tokens_for_platforms(
     campaigner_id: int,
     platforms: List[MCPServer],
-    user_tokens: Dict[str, str]
+    user_tokens: Dict[str, str],
+    force_refresh: bool = False
 ) -> Dict[str, str]:
     """
     Refresh OAuth tokens for requested platforms if needed.
@@ -238,6 +239,7 @@ def refresh_tokens_for_platforms(
         campaigner_id: ID of campaigner whose tokens to refresh
         platforms: List of MCP platforms being used
         user_tokens: Current tokens from database
+        force_refresh: If True, refresh tokens regardless of expiry
 
     Returns:
         Updated user_tokens dict with fresh tokens
@@ -265,7 +267,7 @@ def refresh_tokens_for_platforms(
                 )
             ).first()
 
-            if conn and is_token_expired(conn.expires_at):
+            if conn and (is_token_expired(conn.expires_at) or force_refresh):
                 logger.info(f"🔄 Google Analytics token expired, refreshing...")
                 try:
                     # Note: refresh_token should be decrypted in production
@@ -307,7 +309,7 @@ def refresh_tokens_for_platforms(
                 )
             ).first()
 
-            if conn and is_token_expired(conn.expires_at):
+            if conn and (is_token_expired(conn.expires_at) or force_refresh):
                 logger.info(f"🔄 Google Ads token expired, refreshing...")
                 try:
                     refresh_token = user_tokens.get('google_ads')
@@ -347,7 +349,7 @@ def refresh_tokens_for_platforms(
                 )
             ).first()
 
-            if conn and is_token_expired(conn.expires_at):
+            if conn and (is_token_expired(conn.expires_at) or force_refresh):
                 logger.info(f"🔄 Facebook token expired, refreshing...")
                 try:
                     access_token = user_tokens.get('facebook')
