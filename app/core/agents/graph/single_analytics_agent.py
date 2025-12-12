@@ -627,6 +627,14 @@ DATE FORMATS - CRITICAL:
 - But in FROM clause or joins, use resource name without .id: FROM ad_group_ad, FROM campaign
 - Example CORRECT query: SELECT ad_group_ad.ad_group, ad_group_ad.campaign, metrics.ctr FROM ad_group_ad
 
+**Google Ads Audience/User List Fields (CRITICAL - correct field paths):**
+- CORRECT: ad_group_criterion.user_list (returns the resource name)
+- WRONG: ad_group_criterion.user_list.name (this field does NOT exist and will cause errors)
+- To get audience names, query FROM user_list directly: SELECT user_list.name, user_list.id FROM user_list
+- For ad_group_criterion queries about audiences, use: ad_group_criterion.user_list (resource reference only)
+- Example CORRECT query: SELECT ad_group_criterion.user_list, metrics.impressions FROM ad_group_criterion WHERE ad_group_criterion.type = 'USER_LIST'
+- If you need audience names with performance data, JOIN or use separate queries
+
 ERROR HANDLING - THIS IS CRITICAL FOR SUCCESS:
 When a tool call fails with an error, you MUST analyze the error and retry with corrected parameters.
 You have up to 15 iterations - use them to debug and fix issues!

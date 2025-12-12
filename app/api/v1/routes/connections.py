@@ -521,53 +521,51 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                 user_tokens = {}
 
                 # Decrypt tokens for refresh
-                if connection.refresh_token_enc:
-                    try:
-                        refresh_token = decrypt_token(connection.refresh_token_enc)
-                        if platform in ["google_analytics", "google_ads", "ga4"]:
+                try:
+                    if platform in ["google_analytics", "google_ads", "ga4"]:
+                        if connection.refresh_token_enc:
+                            refresh_token = decrypt_token(connection.refresh_token_enc)
                             user_tokens["refresh_token"] = refresh_token
-                        elif platform == "facebook_ads":
-                            user_tokens["access_token"] = (
-                                decrypt_token(connection.access_token_enc)
-                                if connection.access_token_enc
-                                else None
-                            )
-                        else:
-                            raise ValueError("Unsupported platform for token decryption")
-                    except Exception as decrypt_error:
-                        # Provide detailed error message for token decryption failures
-                        error_type = type(decrypt_error).__name__
-                        error_msg = str(decrypt_error) if str(decrypt_error) else error_type
+                    elif platform == "facebook_ads":
+                        if connection.access_token_enc:
+                            user_tokens["access_token"] = decrypt_token(connection.access_token_enc)
 
-                        # cryptography.fernet.InvalidToken has empty message, provide context
-                        if error_type == "InvalidToken":
-                            error_msg = "Invalid or corrupted token (possibly encrypted with different key)"
-                        elif not error_msg:
-                            error_msg = f"{error_type} exception occurred"
+                    else:
+                        raise ValueError("Unsupported platform for token decryption")
+                except Exception as decrypt_error:
+                    # Provide detailed error message for token decryption failures
+                    error_type = type(decrypt_error).__name__
+                    error_msg = str(decrypt_error) if str(decrypt_error) else error_type
 
-                        detailed_error = f"Token decryption failed for connection {connection.id}: {error_msg}"
-                        logger.error(f"❌ {detailed_error}")
+                    # cryptography.fernet.InvalidToken has empty message, provide context
+                    if error_type == "InvalidToken":
+                        error_msg = "Invalid or corrupted token (possibly encrypted with different key)"
+                    elif not error_msg:
+                        error_msg = f"{error_type} exception occurred"
 
-                        _invalidate_connection_and_create_clickup_task(
-                            session,
-                            connection,
-                            asset,
-                            detailed_error,
+                    detailed_error = f"Token decryption failed for connection {connection.id}: {error_msg}"
+                    logger.error(f"❌ {detailed_error}")
+
+                    _invalidate_connection_and_create_clickup_task(
+                        session,
+                        connection,
+                        asset,
+                        detailed_error,
+                    )
+                    invalidated_connections += 1
+                    clickup_tasks_created += 1
+                    refresh_results.append(
+                        RefreshResult(
+                            connection_id=connection.id,
+                            platform=platform,
+                            asset_name=asset.name,
+                            success=False,
+                            message=detailed_error,
+                            invalidated=True,
+                            clickup_task_created=True,
                         )
-                        invalidated_connections += 1
-                        clickup_tasks_created += 1
-                        refresh_results.append(
-                            RefreshResult(
-                                connection_id=connection.id,
-                                platform=platform,
-                                asset_name=asset.name,
-                                success=False,
-                                message=detailed_error,
-                                invalidated=True,
-                                clickup_task_created=True,
-                            )
-                        )
-                        continue
+                    )
+                    continue
 
                 # Attempt token refresh
                 try:
@@ -576,11 +574,7 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                         "google_analytics": [MCPServer.GOOGLE_ANALYTICS_OFFICIAL],
                         "google_ads": [MCPServer.GOOGLE_ADS_OFFICIAL],
                         "facebook_ads": [MCPServer.META_ADS],
-                        "FACEBOOK_ADS": [
-                            MCPServer.META_ADS
-                        ],  # Handle enum string representation
-                        "GA4": [MCPServer.GOOGLE_ANALYTICS_OFFICIAL],
-                        "GOOGLE_ADS": [MCPServer.GOOGLE_ADS_OFFICIAL],
+                        "ga4": [MCPServer.GOOGLE_ANALYTICS_OFFICIAL],
                     }
 
                     platforms_to_refresh = platform_mapping.get(platform, [])
@@ -605,6 +599,8 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                             refresh_input_tokens["facebook"] = user_tokens[
                                 "access_token"
                             ]
+                        else:
+                            logger.error(f"❌ No valid tokens found for {platform}. user_tokens: {user_tokens}")
 
                         if refresh_input_tokens:
                             refreshed_tokens = refresh_tokens_for_platforms(
@@ -659,6 +655,9 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                                 )
                         else:
                             # No tokens available for refresh
+                            logger.debug(
+                                f"⚠️ No tokens available for refresh on connection {connection.id}"
+                            )
                             successful_refreshes += 1
                             refresh_results.append(
                                 RefreshResult(
@@ -673,6 +672,7 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                             )
                     else:
                         # Unsupported platform
+                        logger.error(f"❌ Unsupported platform {platform} for token refresh on connection {connection.id}")
                         successful_refreshes += 1
                         refresh_results.append(
                             RefreshResult(
