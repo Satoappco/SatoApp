@@ -35,19 +35,21 @@ class ApplicationState:
 
     def create_conversation_workflow(self, current_user: Campaigner, thread_id: str = "default", customer_id: int = None) -> ConversationWorkflow:
         """Create conversation workflow for thread."""
-        logger.info(f"🆕 [AppState] Creating new workflow for thread: {thread_id[:8]}... | Campaigner: {current_user.id} | Customer: {customer_id}")
+        logger.info(f"🆕 [AppState] Creating new workflow (requested thread_id: {thread_id}) | Campaigner: {current_user.id} | Customer: {customer_id}")
         if thread_id and thread_id in self._conversation_workflows:
             logger.warning(f"⚠️  [AppState] Can't create a new workflow, already exists thread: {thread_id[:8]}...")
-        else:
-            if not thread_id:
-                while thread_id in self._conversation_workflows:
-                    thread_id = str(uuid.uuid4())
-
-            self._conversation_workflows[thread_id] = ConversationWorkflow(
-                campaigner=current_user,
-                thread_id=thread_id,
-                customer_id=customer_id
-            )
+            return thread_id, self._conversation_workflows[thread_id]
+        
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
+            while thread_id in self._conversation_workflows:
+                thread_id = str(uuid.uuid4())
+        logger.debug(f"🆕 [AppState] Assigned new thread_id: {thread_id}")
+        self._conversation_workflows[thread_id] = ConversationWorkflow(
+            campaigner=current_user,
+            thread_id=thread_id,
+            customer_id=customer_id
+        )
         return thread_id, self._conversation_workflows[thread_id]
 
     def get_conversation_workflow_or_none(self, thread_id: str = "default") -> ConversationWorkflow:

@@ -188,7 +188,7 @@ async def chat(
                 customer_id = int(request.customer_id)
             except (ValueError, TypeError):
                 logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
-        request.thread_id , workflow = app_state.create_conversation_workflow(current_user, customer_id=customer_id)
+        request.thread_id , workflow = app_state.create_conversation_workflow(current_user, thread_id=None, customer_id=customer_id)
 
         # Most likely never come here because of get_current_user requires msg len >= 1
         if not request.message.strip():
