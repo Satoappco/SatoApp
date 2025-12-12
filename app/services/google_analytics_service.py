@@ -200,6 +200,12 @@ class GoogleAnalyticsService:
                 connection.scopes = self.GA4_SCOPES
                 connection.rotated_at = now
                 connection.last_used_at = now
+                # Reset connection status - fresh tokens mean connection is healthy
+                connection.revoked = False
+                connection.needs_reauth = False
+                connection.failure_count = 0
+                connection.failure_reason = None
+                connection.last_failure_at = None
             else:
                 print(f"DEBUG: Creating new connection for user {campaigner_id} and asset {digital_asset.id}")
                 # Create new connection
@@ -215,6 +221,10 @@ class GoogleAnalyticsService:
                     token_hash=token_hash,
                     expires_at=expires_at,
                     revoked=False,
+                    needs_reauth=False,
+                    failure_count=0,
+                    failure_reason=None,
+                    last_failure_at=None,
                     last_used_at=now
                 )
             
@@ -384,8 +394,13 @@ class GoogleAnalyticsService:
             connection.expires_at = expires_at
             connection.rotated_at = now
             connection.last_used_at = now
-            connection.revoked = False  # Ensure it's not marked as revoked
-            
+            # Reset connection status - fresh tokens mean connection is healthy
+            connection.revoked = False
+            connection.needs_reauth = False
+            connection.failure_count = 0
+            connection.failure_reason = None
+            connection.last_failure_at = None
+
             session.add(connection)
             session.commit()
             
@@ -443,8 +458,13 @@ class GoogleAnalyticsService:
                 connection.expires_at = expires_at
                 connection.rotated_at = now
                 connection.last_used_at = now
+                # Reset connection status - fresh tokens mean connection is healthy
                 connection.revoked = False
-                
+                connection.needs_reauth = False
+                connection.failure_count = 0
+                connection.failure_reason = None
+                connection.last_failure_at = None
+
                 session.add(connection)
                 session.commit()
                 

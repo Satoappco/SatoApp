@@ -170,7 +170,12 @@ class GoogleAdsService:
                 connection.scopes = self.GOOGLE_ADS_SCOPES
                 connection.rotated_at = now
                 connection.last_used_at = now
+                # Reset connection status - fresh tokens mean connection is healthy
                 connection.revoked = False
+                connection.needs_reauth = False
+                connection.failure_count = 0
+                connection.failure_reason = None
+                connection.last_failure_at = None
             else:
                 # Create new connection
                 connection = Connection(
@@ -186,6 +191,10 @@ class GoogleAdsService:
                     expires_at=expires_at,
                     is_active=True,
                     revoked=False,
+                    needs_reauth=False,
+                    failure_count=0,
+                    failure_reason=None,
+                    last_failure_at=None,
                     last_used_at=now,
                 )
                 session.add(connection)

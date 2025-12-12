@@ -279,7 +279,12 @@ async def create_facebook_connection(
                     connection.scopes = facebook_service.FACEBOOK_SCOPES
                     connection.rotated_at = datetime.now(timezone.utc)
                     connection.last_used_at = datetime.now(timezone.utc)
-                    connection.revoked = False  # Reactivate if it was revoked
+                    # Reset connection status - fresh tokens mean connection is healthy
+                    connection.revoked = False
+                    connection.needs_reauth = False
+                    connection.failure_count = 0
+                    connection.failure_reason = None
+                    connection.last_failure_at = None
                 else:
                     # Create new connection
                     print(f"DEBUG: Creating new connection for asset {digital_asset.id}")
@@ -293,6 +298,10 @@ async def create_facebook_connection(
                         scopes=facebook_service.FACEBOOK_SCOPES,
                         expires_at=expires_at,
                         revoked=False,
+                        needs_reauth=False,
+                        failure_count=0,
+                        failure_reason=None,
+                        last_failure_at=None,
                         last_used_at=datetime.now(timezone.utc)
                     )
 
@@ -415,7 +424,12 @@ async def create_facebook_ads_connection(
                 connection.scopes = facebook_service.FACEBOOK_SCOPES
                 connection.rotated_at = datetime.now(timezone.utc)
                 connection.last_used_at = datetime.now(timezone.utc)
-                connection.revoked = False  # Reactivate if it was revoked
+                # Reset connection status - fresh tokens mean connection is healthy
+                connection.revoked = False
+                connection.needs_reauth = False
+                connection.failure_count = 0
+                connection.failure_reason = None
+                connection.last_failure_at = None
             else:
                 # Create new connection
                 print(f"DEBUG: Creating new connection for asset {digital_asset.id}")
@@ -430,6 +444,10 @@ async def create_facebook_ads_connection(
                     scopes=facebook_service.FACEBOOK_SCOPES,
                     expires_at=expires_at,
                     revoked=False,
+                    needs_reauth=False,
+                    failure_count=0,
+                    failure_reason=None,
+                    last_failure_at=None,
                     last_used_at=datetime.now(timezone.utc)
                 )
 
