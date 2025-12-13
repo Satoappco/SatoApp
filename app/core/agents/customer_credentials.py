@@ -79,12 +79,17 @@ class CustomerCredentialManager:
         try:
             with get_session() as session:
                 # Get Google Analytics digital asset for this customer
+                # Join with connections to only get assets that have active connections
                 ga_asset = session.exec(
-                    select(DigitalAsset).where(
+                    select(DigitalAsset)
+                    .join(Connection, DigitalAsset.id == Connection.digital_asset_id)
+                    .where(
                         DigitalAsset.customer_id == customer_id,
                         DigitalAsset.asset_type == AssetType.GA4,
-                        DigitalAsset.is_active == True
+                        DigitalAsset.is_active == True,
+                        Connection.revoked != True
                     )
+                    .order_by(DigitalAsset.created_at.desc())
                 ).first()
 
                 if not ga_asset:
@@ -162,12 +167,17 @@ class CustomerCredentialManager:
         try:
             with get_session() as session:
                 # Get Google Ads digital asset for this customer
+                # Join with connections to only get assets that have active connections
                 gads_asset = session.exec(
-                    select(DigitalAsset).where(
+                    select(DigitalAsset)
+                    .join(Connection, DigitalAsset.id == Connection.digital_asset_id)
+                    .where(
                         DigitalAsset.customer_id == customer_id,
                         DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                        DigitalAsset.is_active == True
+                        DigitalAsset.is_active == True,
+                        Connection.revoked != True
                     )
+                    .order_by(DigitalAsset.created_at.desc())
                 ).first()
 
                 if not gads_asset:
@@ -238,12 +248,17 @@ class CustomerCredentialManager:
         try:
             with get_session() as session:
                 # Get Facebook Ads digital asset for this customer
+                # Join with connections to only get assets that have active connections
                 fb_asset = session.exec(
-                    select(DigitalAsset).where(
+                    select(DigitalAsset)
+                    .join(Connection, DigitalAsset.id == Connection.digital_asset_id)
+                    .where(
                         DigitalAsset.customer_id == customer_id,
                         DigitalAsset.asset_type == AssetType.FACEBOOK_ADS,
-                        DigitalAsset.is_active == True
+                        DigitalAsset.is_active == True,
+                        Connection.revoked != True
                     )
+                    .order_by(DigitalAsset.created_at.desc())
                 ).first()
 
                 if not fb_asset:

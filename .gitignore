@@ -10,6 +10,7 @@ connection-payload.json
 update-connector-payload.json
 
 # Environment files
+env*
 .env*
 !.env.example
 
