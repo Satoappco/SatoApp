@@ -228,15 +228,23 @@ async def create_facebook_connection(
         # If page_id is provided, create connection for specific page
         if request.page_id:
             with get_session() as session:
-                # Create digital asset for the specific page
-                digital_asset = DigitalAsset(
-                    customer_id=request.customer_id,
-                    asset_type=AssetType.SOCIAL_MEDIA,
-                    provider="Facebook",
-                    name=request.page_name or f"Facebook Page {request.page_id}",
-                    handle=request.page_username,
-                    external_id=request.page_id,
-                    meta={
+                # Check for existing digital asset for this page
+                from sqlmodel import and_
+                existing_asset_statement = select(DigitalAsset).where(
+                    and_(
+                        DigitalAsset.customer_id == request.customer_id,
+                        DigitalAsset.external_id == request.page_id,
+                        DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA
+                    )
+                )
+                digital_asset = session.exec(existing_asset_statement).first()
+
+                if digital_asset:
+                    # Update existing asset metadata
+                    print(f"DEBUG: Found existing digital asset {digital_asset.id} for page {request.page_id}")
+                    digital_asset.name = request.page_name or f"Facebook Page {request.page_id}"
+                    digital_asset.handle = request.page_username
+                    digital_asset.meta = {
                         "page_id": request.page_id,
                         "page_name": request.page_name,
                         "page_username": request.page_username,
@@ -245,12 +253,36 @@ async def create_facebook_connection(
                         "user_email": request.user_email,
                         "access_token": request.access_token,
                         "created_via": "page_selection"
-                    },
-                    is_active=True
-                )
-                session.add(digital_asset)
-                session.commit()
-                session.refresh(digital_asset)
+                    }
+                    digital_asset.is_active = True
+                    session.add(digital_asset)
+                    session.commit()
+                    session.refresh(digital_asset)
+                else:
+                    # Create new digital asset for the specific page
+                    print(f"DEBUG: Creating new digital asset for page {request.page_id}")
+                    digital_asset = DigitalAsset(
+                        customer_id=request.customer_id,
+                        asset_type=AssetType.SOCIAL_MEDIA,
+                        provider="Facebook",
+                        name=request.page_name or f"Facebook Page {request.page_id}",
+                        handle=request.page_username,
+                        external_id=request.page_id,
+                        meta={
+                            "page_id": request.page_id,
+                            "page_name": request.page_name,
+                            "page_username": request.page_username,
+                            "page_category": request.page_category,
+                            "user_name": request.user_name,
+                            "user_email": request.user_email,
+                            "access_token": request.access_token,
+                            "created_via": "page_selection"
+                        },
+                        is_active=True
+                    )
+                    session.add(digital_asset)
+                    session.commit()
+                    session.refresh(digital_asset)
                 
                 # Encrypt access token
                 access_token_enc = facebook_service._encrypt_token(request.access_token)
@@ -374,14 +406,22 @@ async def create_facebook_ads_connection(
         facebook_service = FacebookService()
         
         with get_session() as session:
-            # Create digital asset for the ad account
-            digital_asset = DigitalAsset(
-                customer_id=request.customer_id,
-                asset_type=AssetType.FACEBOOK_ADS,  # Use new FACEBOOK_ADS type
-                provider="Facebook",
-                name=request.ad_account_name,
-                external_id=request.ad_account_id,
-                meta={
+            # Check for existing digital asset for this ad account
+            from sqlmodel import and_
+            existing_asset_statement = select(DigitalAsset).where(
+                and_(
+                    DigitalAsset.customer_id == request.customer_id,
+                    DigitalAsset.external_id == request.ad_account_id,
+                    DigitalAsset.asset_type == AssetType.FACEBOOK_ADS
+                )
+            )
+            digital_asset = session.exec(existing_asset_statement).first()
+
+            if digital_asset:
+                # Update existing asset metadata
+                print(f"DEBUG: Found existing digital asset {digital_asset.id} for ad account {request.ad_account_id}")
+                digital_asset.name = request.ad_account_name
+                digital_asset.meta = {
                     "ad_account_id": request.ad_account_id,
                     "ad_account_name": request.ad_account_name,
                     "currency": request.currency,
@@ -389,12 +429,34 @@ async def create_facebook_ads_connection(
                     "user_name": request.user_name,
                     "user_email": request.user_email,
                     "created_via": "ads_account_selection"
-                },
-                is_active=True
-            )
-            session.add(digital_asset)
-            session.commit()
-            session.refresh(digital_asset)
+                }
+                digital_asset.is_active = True
+                session.add(digital_asset)
+                session.commit()
+                session.refresh(digital_asset)
+            else:
+                # Create new digital asset for the ad account
+                print(f"DEBUG: Creating new digital asset for ad account {request.ad_account_id}")
+                digital_asset = DigitalAsset(
+                    customer_id=request.customer_id,
+                    asset_type=AssetType.FACEBOOK_ADS,  # Use new FACEBOOK_ADS type
+                    provider="Facebook",
+                    name=request.ad_account_name,
+                    external_id=request.ad_account_id,
+                    meta={
+                        "ad_account_id": request.ad_account_id,
+                        "ad_account_name": request.ad_account_name,
+                        "currency": request.currency,
+                        "timezone": request.timezone,
+                        "user_name": request.user_name,
+                        "user_email": request.user_email,
+                        "created_via": "ads_account_selection"
+                    },
+                    is_active=True
+                )
+                session.add(digital_asset)
+                session.commit()
+                session.refresh(digital_asset)
             
             # Encrypt access token
             access_token_enc = facebook_service._encrypt_token(request.access_token)
