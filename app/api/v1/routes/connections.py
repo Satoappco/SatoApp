@@ -13,7 +13,8 @@ import os
 
 from app.config.database import get_session
 from app.models.analytics import Connection, DigitalAsset, AssetType
-from app.api.dependencies import get_current_user
+from app.core.auth import get_current_user
+from app.core.rbac import require_customer_access, user_can_access_customer
 from app.utils.connection_failure_utils import (
     record_connection_failure,
     record_connection_success,
@@ -146,7 +147,7 @@ def _get_platform_name(asset_type: AssetType) -> str:
 # Endpoints
 @router.get("/health", response_model=ConnectionHealthSummary)
 async def get_connections_health(
-    customer_id: Optional[int] = None, current_user=Depends(get_current_user)
+    customer_id: int, current_user=Depends(require_customer_access())
 ):
     """
     Get health status for all connections.
@@ -159,21 +160,12 @@ async def get_connections_health(
     - Whether retry is recommended
 
     Args:
-        customer_id: Optional customer ID to filter by (defaults to user's primary customer)
+        customer_id: Customer ID to filter by (user must have access to this customer)
 
     Returns:
         Summary of connection health with details for each connection
     """
     campaigner_id = current_user.id
-
-    # Use customer_id from query or user's primary customer
-    if customer_id is None:
-        customer_id = getattr(current_user, "primary_customer_id", None)
-        if customer_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No customer_id provided and user has no primary customer",
-            )
 
     with get_session() as session:
         # Get all connections for this campaigner and customer
@@ -275,6 +267,13 @@ async def get_connection_health(
             )
 
         connection, asset = result
+
+        # Validate customer access
+        if not user_can_access_customer(current_user, connection.customer_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this customer",
+            )
 
         return ConnectionHealthResponse(
             id=connection.id,
@@ -528,7 +527,9 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                             user_tokens["refresh_token"] = refresh_token
                     elif platform == "facebook_ads":
                         if connection.access_token_enc:
-                            user_tokens["access_token"] = decrypt_token(connection.access_token_enc)
+                            user_tokens["access_token"] = decrypt_token(
+                                connection.access_token_enc
+                            )
 
                     else:
                         raise ValueError("Unsupported platform for token decryption")
@@ -600,7 +601,9 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                                 "access_token"
                             ]
                         else:
-                            logger.error(f"❌ No valid tokens found for {platform}. user_tokens: {user_tokens}")
+                            logger.error(
+                                f"❌ No valid tokens found for {platform}. user_tokens: {user_tokens}"
+                            )
 
                         if refresh_input_tokens:
                             refreshed_tokens = refresh_tokens_for_platforms(
@@ -619,7 +622,9 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                             elif platform in ["facebook_ads", "facebook", "meta_ads"]:
                                 token_key = "facebook"
                             else:
-                                raise ValueError("Unsupported platform for refresh result check")
+                                raise ValueError(
+                                    "Unsupported platform for refresh result check"
+                                )
 
                             if token_key in refreshed_tokens:
                                 successful_refreshes += 1
@@ -672,7 +677,9 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
                             )
                     else:
                         # Unsupported platform
-                        logger.error(f"❌ Unsupported platform {platform} for token refresh on connection {connection.id}")
+                        logger.error(
+                            f"❌ Unsupported platform {platform} for token refresh on connection {connection.id}"
+                        )
                         successful_refreshes += 1
                         refresh_results.append(
                             RefreshResult(

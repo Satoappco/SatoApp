@@ -15,10 +15,12 @@ from app.api.schemas.chat import (
     ChatRequest,
     ChatResponse,
     ConversationThread,
-    ThreadListResponse
+    ThreadListResponse,
 )
 from app.api.dependencies import get_app_state, ApplicationState
 from app.core.auth import get_current_user
+from app.core.rbac import user_can_access_customer
+from app.models.users import Campaigner
 from app.services.chat_trace_service import ChatTraceService
 
 try:
@@ -51,8 +53,16 @@ logger = logging.getLogger(__name__)
 #     logger.debug(f"🔍 [Debug Request] Data: {data}")
 #     return JSONResponse(data)
 
-async def run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
 
+async def run_crew(
+    request,
+    thread_id,
+    current_user,
+    customer_id,
+    trace_service,
+    user_message_id,
+    stream_it=False,
+):
     # Send progress event
     if stream_it:
         yield f"data: {json.dumps({'type': 'progress', 'message': 'Routing to Analytics Crew...', 'timestamp': time.time()})}\n\n"
@@ -74,9 +84,9 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
             "campaigner": {
                 "id": current_user.id,
                 "name": current_user.full_name,
-                "email": current_user.email
+                "email": current_user.email,
             }
-        }
+        },
     }
 
     # Send progress event
@@ -90,7 +100,9 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
 
     # Extract result message
     if crew_result.get("status") == "completed":
-        assistant_message = crew_result.get("result", "Analysis completed successfully.")
+        assistant_message = crew_result.get(
+            "result", "Analysis completed successfully."
+        )
         logger.info(f"✅ [Stream] Crew execution completed successfully")
     else:
         assistant_message = f"Error executing analytics crew: {crew_result.get('message', 'Unknown error')}"
@@ -104,18 +116,18 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
 
     # Add assistant message to trace
     assistant_message_record = trace_service.add_message(
-        thread_id=thread_id,
-        role="assistant",
-        content=assistant_message
+        thread_id=thread_id, role="assistant", content=assistant_message
     )
-    assistant_message_id = assistant_message_record.id if assistant_message_record else None
+    assistant_message_id = (
+        assistant_message_record.id if assistant_message_record else None
+    )
 
     # Build intent from crew result
     intent = {
         "platforms": crew_result.get("platforms", []),
         "metrics": crew_result.get("task_details", {}).get("metrics", []),
     }
-    
+
     # Send metadata
     if stream_it:
         final_metadata = {
@@ -125,7 +137,7 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
             "assistant_message_id": assistant_message_id,
             "needs_clarification": False,
             "ready_for_analysis": True,
-            "intent": intent
+            "intent": intent,
         }
         yield f"data: {json.dumps(final_metadata)}\n\n"
         last_event_time = time.time()
@@ -135,14 +147,12 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
         thread_id=thread_id,
         intent=intent,
         needs_clarification=False,
-        ready_for_analysis=True
+        ready_for_analysis=True,
     )
 
     # Complete conversation
     trace_service.complete_conversation(
-        thread_id=thread_id,
-        status="completed",
-        final_intent=intent
+        thread_id=thread_id, status="completed", final_intent=intent
     )
 
     # Flush Langfuse traces
@@ -151,7 +161,7 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
     if stream_it:
         yield "data: [DONE]\n\n"
         return
-    
+
     yield ChatResponse(
         message=assistant_message,
         thread_id=thread_id,
@@ -159,15 +169,16 @@ async def run_crew(request, thread_id, current_user, customer_id, trace_service,
         ready_for_analysis=True,
         intent=intent if any(intent.values()) else None,
         user_message_id=user_message_id,
-        assistant_message_id=assistant_message_id
+        assistant_message_id=assistant_message_id,
     )
     return
+
 
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     app_state: ApplicationState = Depends(get_app_state),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
     """
     Send a message to the conversation agent.
@@ -178,7 +189,9 @@ async def chat(
     Requires authentication via JWT token.
     """
 
-    logger.debug(f"💬 [Chat] Received chat request: {request} from user: {current_user.full_name}")
+    logger.debug(
+        f"💬 [Chat] Received chat request: {request} from user: {current_user.full_name}"
+    )
     # Generate thread ID if not provided
     if not request.thread_id:
         # Parse customer_id if provided
@@ -188,31 +201,49 @@ async def chat(
                 customer_id = int(request.customer_id)
             except (ValueError, TypeError):
                 logger.warning(f"⚠️  Invalid customer_id format: {request.customer_id}")
-        request.thread_id , workflow = app_state.create_conversation_workflow(current_user, thread_id=None, customer_id=customer_id)
+        request.thread_id, workflow = app_state.create_conversation_workflow(
+            current_user, thread_id=None, customer_id=customer_id
+        )
 
         # Most likely never come here because of get_current_user requires msg len >= 1
         if not request.message.strip():
             # Return chat intialization response without processing
-            logger.info(f"ℹ️  [Chat] Empty message received, returning initialization response.")
+            logger.info(
+                f"ℹ️  [Chat] Empty message received, returning initialization response."
+            )
             return ChatResponse(
                 message="",
                 thread_id=request.thread_id,
                 needs_clarification=False,
                 ready_for_analysis=False,
-                intent=None
+                intent=None,
             )
     else:
         if not request.message.strip():
-            raise HTTPException(status_code=400, detail="Message cannot be empty for existing threads.")
-                # Get conversation workflow for this thread (with campaigner_id)
+            raise HTTPException(
+                status_code=400, detail="Message cannot be empty for existing threads."
+            )
+            # Get conversation workflow for this thread (with campaigner_id)
         # workflow = app_state.get_conversation_workflow_or_none(request.thread_id)
-        workflow = app_state.get_conversation_workflow(current_user, request.thread_id, request.customer_id)
-        logger.debug(f"📋 [Chat] Getting workflow for thread: {request.thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}), customer_id: {workflow.customer_id}")
+        workflow = app_state.get_conversation_workflow(
+            current_user, request.thread_id, request.customer_id
+        )
+        logger.debug(
+            f"📋 [Chat] Getting workflow for thread: {request.thread_id} | Campaigner: {current_user.full_name} (ID: {current_user.id}), customer_id: {workflow.customer_id}"
+        )
         customer_id = workflow.customer_id
-        
-    thread_id = request.thread_id
-    logger.info(f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
 
+    # Validate customer access if customer_id is associated with this conversation
+    if customer_id is not None:
+        if not user_can_access_customer(current_user, customer_id):
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this customer"
+            )
+
+    thread_id = request.thread_id
+    logger.info(
+        f"💬 [Chat] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'"
+    )
 
     # Create conversation with ChatTraceService (includes Langfuse trace)
     # Initialize ChatTraceService
@@ -223,16 +254,14 @@ async def chat(
         customer_id=customer_id,
         metadata={
             "campaigner_name": current_user.full_name,
-            "timestamp": datetime.now().isoformat()
-        }
+            "timestamp": datetime.now().isoformat(),
+        },
     )
 
     try:
         # Add user message to trace
         user_message_record = trace_service.add_message(
-            thread_id=thread_id,
-            role="user",
-            content=request.message
+            thread_id=thread_id, role="user", content=request.message
         )
         user_message_id = user_message_record.id if user_message_record else None
 
@@ -240,16 +269,27 @@ async def chat(
         use_crew = request.use_crew
 
         if use_crew:
-            logger.info(f"🤖 [Chat] use_crew flag detected, routing to AnalyticsCrew automatically")
+            logger.info(
+                f"🤖 [Chat] use_crew flag detected, routing to AnalyticsCrew automatically"
+            )
             # run_crew is an async generator, so iterate to get result
-            async for result in run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=False):
+            async for result in run_crew(
+                request,
+                thread_id,
+                current_user,
+                customer_id,
+                trace_service,
+                user_message_id,
+                stream_it=False,
+            ):
                 return result
-
 
         # Process message
         logger.debug(f"🔄 [Chat] Processing message through workflow...")
         result = workflow.process_message(request.message)
-        logger.debug(f"✅ [Chat] Workflow processed. Result keys: {list(result.keys())}")
+        logger.debug(
+            f"✅ [Chat] Workflow processed. Result keys: {list(result.keys())}"
+        )
 
         # Extract response message
         messages = result.get("messages", [])
@@ -258,20 +298,26 @@ async def chat(
             last_message = messages[-1]
             if hasattr(last_message, "content"):
                 assistant_message = last_message.content
-                logger.debug(f"💭 [Chat] Assistant message: '{assistant_message[:100]}...'")
+                logger.debug(
+                    f"💭 [Chat] Assistant message: '{assistant_message[:100]}...'"
+                )
 
         # If clarification question exists, use that
         if result.get("clarification_question"):
             assistant_message = result["clarification_question"]
-            logger.info(f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'")
+            logger.info(
+                f"❓ [Chat] Clarification needed: '{assistant_message[:100]}...'"
+            )
 
         # Add assistant message to trace
         assistant_message_record = trace_service.add_message(
             thread_id=thread_id,
             role="assistant",
-            content=assistant_message or "I'm processing your request..."
+            content=assistant_message or "I'm processing your request...",
         )
-        assistant_message_id = assistant_message_record.id if assistant_message_record else None
+        assistant_message_id = (
+            assistant_message_record.id if assistant_message_record else None
+        )
 
         # Build intent dict
         intent = {
@@ -297,15 +343,13 @@ async def chat(
             thread_id=thread_id,
             intent=intent,
             needs_clarification=needs_clarification,
-            ready_for_analysis=ready_for_analysis
+            ready_for_analysis=ready_for_analysis,
         )
 
         # Complete conversation if ready for analysis
         if ready_for_analysis:
             trace_service.complete_conversation(
-                thread_id=thread_id,
-                status="completed",
-                final_intent=intent
+                thread_id=thread_id, status="completed", final_intent=intent
             )
 
         # Flush Langfuse traces
@@ -318,7 +362,7 @@ async def chat(
             ready_for_analysis=ready_for_analysis,
             intent=intent if any(intent.values()) else None,
             user_message_id=user_message_id,
-            assistant_message_id=assistant_message_id
+            assistant_message_id=assistant_message_id,
         )
 
         return response
@@ -328,13 +372,12 @@ async def chat(
 
         # Complete conversation with error status
         try:
-            trace_service.complete_conversation(
-                thread_id=thread_id,
-                status="error"
-            )
+            trace_service.complete_conversation(thread_id=thread_id, status="error")
             trace_service.flush_langfuse()
         except Exception as trace_error:
-            logger.warning(f"⚠️  [Chat] Failed to update trace with error: {trace_error}")
+            logger.warning(
+                f"⚠️  [Chat] Failed to update trace with error: {trace_error}"
+            )
 
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
@@ -343,7 +386,7 @@ async def chat(
 async def stream_chat(
     request: ChatRequest,
     app_state: ApplicationState = Depends(get_app_state),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
     """
     Stream chat response in real-time (SSE format) with heartbeat keep-alive.
@@ -353,6 +396,7 @@ async def stream_chat(
 
     Requires authentication via JWT token.
     """
+
     async def generate():
         trace_service = None
         thread_id = None
@@ -365,7 +409,9 @@ async def stream_chat(
 
             # Generate thread ID if not provided
             thread_id = request.thread_id or str(uuid.uuid4())
-            logger.info(f"📡 [Stream] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'")
+            logger.info(
+                f"📡 [Stream] Thread: {thread_id[:8]}... | Message: '{request.message[:50]}...'"
+            )
 
             # Send initial progress event
             yield f"data: {json.dumps({'type': 'progress', 'message': 'Initializing...', 'timestamp': time.time()})}\n\n"
@@ -383,15 +429,13 @@ async def stream_chat(
                 metadata={
                     "campaigner_name": current_user.full_name,
                     "timestamp": datetime.now().isoformat(),
-                    "streaming": True
-                }
+                    "streaming": True,
+                },
             )
 
             # Add user message to trace
             user_message_record = trace_service.add_message(
-                thread_id=thread_id,
-                role="user",
-                content=request.message
+                thread_id=thread_id, role="user", content=request.message
             )
             user_message_id = user_message_record.id if user_message_record else None
 
@@ -400,8 +444,18 @@ async def stream_chat(
             stream_it = True
 
             if use_crew:
-                logger.info(f"🤖 [Stream] use_crew flag detected, routing to AnalyticsCrew automatically")
-                async for chunk in run_crew(request, thread_id, current_user, customer_id, trace_service, user_message_id, stream_it=True):
+                logger.info(
+                    f"🤖 [Stream] use_crew flag detected, routing to AnalyticsCrew automatically"
+                )
+                async for chunk in run_crew(
+                    request,
+                    thread_id,
+                    current_user,
+                    customer_id,
+                    trace_service,
+                    user_message_id,
+                    stream_it=True,
+                ):
                     yield chunk
                 return
 
@@ -451,9 +505,11 @@ async def stream_chat(
                             "metrics": chunk.get("metrics", []),
                             "date_range_start": chunk.get("date_range_start"),
                             "date_range_end": chunk.get("date_range_end"),
-                        }
+                        },
                     }
-                    logger.info(f"✅ [Stream] Completed. Ready: {final_metadata['ready_for_analysis']}")
+                    logger.info(
+                        f"✅ [Stream] Completed. Ready: {final_metadata['ready_for_analysis']}"
+                    )
                     yield f"data: {json.dumps(final_metadata)}\n\n"
                     last_event_time = current_time
 
@@ -461,9 +517,11 @@ async def stream_chat(
             assistant_message_record = trace_service.add_message(
                 thread_id=thread_id,
                 role="assistant",
-                content=full_response or "I'm processing your request..."
+                content=full_response or "I'm processing your request...",
             )
-            assistant_message_id = assistant_message_record.id if assistant_message_record else None
+            assistant_message_id = (
+                assistant_message_record.id if assistant_message_record else None
+            )
 
             # Update conversation intent if we have final metadata
             if final_metadata:
@@ -474,7 +532,7 @@ async def stream_chat(
                     thread_id=thread_id,
                     intent=final_metadata["intent"],
                     needs_clarification=final_metadata["needs_clarification"],
-                    ready_for_analysis=final_metadata["ready_for_analysis"]
+                    ready_for_analysis=final_metadata["ready_for_analysis"],
                 )
 
                 # Complete conversation if ready for analysis
@@ -482,7 +540,7 @@ async def stream_chat(
                     trace_service.complete_conversation(
                         thread_id=thread_id,
                         status="completed",
-                        final_intent=final_metadata["intent"]
+                        final_intent=final_metadata["intent"],
                     )
 
                 # Send final metadata with message IDs
@@ -500,12 +558,13 @@ async def stream_chat(
             if trace_service and thread_id:
                 try:
                     trace_service.complete_conversation(
-                        thread_id=thread_id,
-                        status="error"
+                        thread_id=thread_id, status="error"
                     )
                     trace_service.flush_langfuse()
                 except Exception as trace_error:
-                    logger.warning(f"⚠️  [Stream] Failed to update trace with error: {trace_error}")
+                    logger.warning(
+                        f"⚠️  [Stream] Failed to update trace with error: {trace_error}"
+                    )
 
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
@@ -515,13 +574,14 @@ async def stream_chat(
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-        }
+        },
     )
 
 
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_threads(
-    app_state: ApplicationState = Depends(get_app_state)
+    app_state: ApplicationState = Depends(get_app_state),
+    current_user: Campaigner = Depends(get_current_user),
 ):
     """List all conversation threads."""
     threads = []
@@ -529,7 +589,11 @@ async def list_threads(
 
     for thread_id, workflow in all_workflows.items():
         # Get state from workflow if available
-        state = workflow.conversation_state if hasattr(workflow, 'conversation_state') else {}
+        state = (
+            workflow.conversation_state
+            if hasattr(workflow, "conversation_state")
+            else {}
+        )
         messages = state.get("messages", [])
 
         thread = ConversationThread(
@@ -538,19 +602,18 @@ async def list_threads(
             last_message_at=datetime.now(),
             message_count=len(messages),
             intent_complete=state.get("is_complete", False),
-            platforms=state.get("platforms", [])
+            platforms=state.get("platforms", []),
         )
         threads.append(thread)
 
-    return ThreadListResponse(
-        threads=threads,
-        total=len(threads)
-    )
+    return ThreadListResponse(threads=threads, total=len(threads))
+
 
 @router.delete("/threads/{thread_id}")
 async def delete_thread(
     thread_id: str,
-    app_state: ApplicationState = Depends(get_app_state)
+    app_state: ApplicationState = Depends(get_app_state),
+    current_user: Campaigner = Depends(get_current_user),
 ):
     """Delete/reset a conversation thread."""
     logger.info(f"🗑️  [Threads] Deleting thread: {thread_id[:8]}...")
@@ -561,7 +624,8 @@ async def delete_thread(
 @router.get("/threads/{thread_id}")
 async def get_thread(
     thread_id: str,
-    app_state: ApplicationState = Depends(get_app_state)
+    app_state: ApplicationState = Depends(get_app_state),
+    current_user: Campaigner = Depends(get_current_user),
 ):
     """Get conversation thread details."""
     workflows = app_state.get_all_threads()
@@ -570,7 +634,9 @@ async def get_thread(
         raise HTTPException(status_code=404, detail="Thread not found")
 
     workflow = workflows[thread_id]
-    state = workflow.conversation_state if hasattr(workflow, 'conversation_state') else {}
+    state = (
+        workflow.conversation_state if hasattr(workflow, "conversation_state") else {}
+    )
 
     return {
         "thread_id": thread_id,
@@ -581,13 +647,13 @@ async def get_thread(
             "date_range_end": state.get("date_range_end"),
             "is_complete": state.get("is_complete", False),
             "ready_for_crew": state.get("ready_for_crew", False),
-            "crew_task": state.get("crew_task")
+            "crew_task": state.get("crew_task"),
         },
         "messages": [
             {
                 "role": msg.type if hasattr(msg, "type") else "unknown",
-                "content": msg.content if hasattr(msg, "content") else str(msg)
+                "content": msg.content if hasattr(msg, "content") else str(msg),
             }
             for msg in state.get("messages", [])
-        ]
+        ],
     }

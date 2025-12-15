@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     api_token: Optional[str] = None  # Primary API token
     secret_key: str = "your-secret-key-here"
 
+    # RBAC Configuration
+    # RBAC is always enabled for security
+
     # JWT Token Configuration
     jwt_access_token_expire_minutes: int = 480  # 8 hours (same as development)
     jwt_refresh_token_expire_days: int = 30  # 30 days

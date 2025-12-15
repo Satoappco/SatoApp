@@ -17,6 +17,12 @@ from sqlalchemy import text as sa_text
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.auth import get_current_user
+from app.core.rbac import (
+    require_owner,
+    require_admin,
+    user_can_access_customer,
+    get_accessible_customers,
+)
 from app.core.api_auth import verify_admin_token
 from app.utils.composite_id import compose_id
 from app.models.users import Campaigner, Agency, Customer, UserRole
@@ -723,8 +729,16 @@ async def get_kpi_goal(
 @router.post("/kpi-goals")
 async def create_kpi_goal(
     campaign_data: KpiGoalCreate,
+    current_user: Campaigner = Depends(get_current_user),
 ):
     """Create a new campaign KPI entry"""
+    # Validate customer access
+    if not user_can_access_customer(current_user, campaign_data.customer_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer",
+        )
+
     try:
         with get_session() as session:
             new_campaign = KpiGoal(
@@ -1675,7 +1689,7 @@ async def get_users(
 async def get_customers(
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
-    current_user: Campaigner = Depends(get_current_user),
+    current_user: Campaigner = Depends(require_admin),
 ):
     """Get all customers (admin view - shows all data)"""
     try:

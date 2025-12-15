@@ -12,6 +12,11 @@ from sqlalchemy import desc
 from app.models.chat_traces import ChatTrace, RecordType
 from app.config.database import get_session
 from app.core.auth import get_current_user
+from app.core.rbac import (
+    require_admin,
+    user_can_access_customer,
+    get_accessible_customers,
+)
 from app.models.users import Campaigner, Customer
 
 router = APIRouter(prefix="/traces", tags=["traces"])
@@ -20,6 +25,7 @@ router = APIRouter(prefix="/traces", tags=["traces"])
 # Response Schemas
 class TraceListItem(BaseModel):
     """Summary of a trace/conversation for list view."""
+
     thread_id: str
     campaigner_id: int
     campaigner_name: Optional[str]
@@ -40,6 +46,7 @@ class TraceListItem(BaseModel):
 
 class TraceListResponse(BaseModel):
     """Response for trace list endpoint."""
+
     traces: List[TraceListItem]
     total: int
     page: int
@@ -48,6 +55,7 @@ class TraceListResponse(BaseModel):
 
 class TraceDetailResponse(BaseModel):
     """Full trace details including all events."""
+
     conversation: dict
     messages: List[dict]
     agent_steps: List[dict]
@@ -59,12 +67,14 @@ class TraceDetailResponse(BaseModel):
 async def list_traces(
     campaigner_id: Optional[int] = Query(None, description="Filter by campaigner ID"),
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
-    status: Optional[str] = Query(None, description="Filter by status (active, completed, error)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (active, completed, error)"
+    ),
     days: int = Query(7, description="Number of days to look back", ge=1, le=90),
     page: int = Query(1, description="Page number", ge=1),
     page_size: int = Query(20, description="Items per page", ge=1, le=100),
-    current_user: Campaigner = Depends(get_current_user),
-    session: Session = Depends(get_session)
+    current_user: Campaigner = Depends(require_admin),
+    session: Session = Depends(get_session),
 ):
     """
     List all conversation traces with filtering and pagination.
@@ -75,13 +85,21 @@ async def list_traces(
     query = select(ChatTrace).where(
         and_(
             ChatTrace.record_type == RecordType.CONVERSATION,
-            ChatTrace.created_at >= datetime.now(timezone.utc) - timedelta(days=days)
+            ChatTrace.created_at >= datetime.now(timezone.utc) - timedelta(days=days),
         )
     )
 
     # Apply filters
     if campaigner_id:
         query = query.where(ChatTrace.campaigner_id == campaigner_id)
+
+    # Validate customer access if customer_id is provided
+    if customer_id:
+        if not user_can_access_customer(current_user, customer_id):
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this customer"
+            )
+        query = query.where(ChatTrace.customer_id == customer_id)
 
     if customer_id:
         query = query.where(ChatTrace.customer_id == customer_id)
@@ -116,38 +134,35 @@ async def list_traces(
             customer = session.get(Customer, conv.customer_id)
             customer_name = customer.full_name if customer else None
 
-        traces.append(TraceListItem(
-            thread_id=conv.thread_id,
-            campaigner_id=conv.campaigner_id,
-            campaigner_name=campaigner_name,
-            customer_id=conv.customer_id,
-            customer_name=customer_name,
-            status=data.get("status", "unknown"),
-            started_at=data.get("started_at"),
-            completed_at=data.get("completed_at"),
-            message_count=data.get("message_count", 0),
-            agent_step_count=data.get("agent_step_count", 0),
-            tool_usage_count=data.get("tool_usage_count", 0),
-            total_tokens=data.get("total_tokens", 0),
-            duration_seconds=data.get("duration_seconds"),
-            langfuse_trace_url=conv.langfuse_trace_url,
-            created_at=conv.created_at.isoformat() if conv.created_at else None,
-            updated_at=conv.updated_at.isoformat() if conv.updated_at else None
-        ))
+        traces.append(
+            TraceListItem(
+                thread_id=conv.thread_id,
+                campaigner_id=conv.campaigner_id,
+                campaigner_name=campaigner_name,
+                customer_id=conv.customer_id,
+                customer_name=customer_name,
+                status=data.get("status", "unknown"),
+                started_at=data.get("started_at"),
+                completed_at=data.get("completed_at"),
+                message_count=data.get("message_count", 0),
+                agent_step_count=data.get("agent_step_count", 0),
+                tool_usage_count=data.get("tool_usage_count", 0),
+                total_tokens=data.get("total_tokens", 0),
+                duration_seconds=data.get("duration_seconds"),
+                langfuse_trace_url=conv.langfuse_trace_url,
+                created_at=conv.created_at.isoformat() if conv.created_at else None,
+                updated_at=conv.updated_at.isoformat() if conv.updated_at else None,
+            )
+        )
 
-    return TraceListResponse(
-        traces=traces,
-        total=total,
-        page=page,
-        page_size=page_size
-    )
+    return TraceListResponse(traces=traces, total=total, page=page, page_size=page_size)
 
 
 @router.get("/{thread_id}", response_model=TraceDetailResponse)
 async def get_trace_detail(
     thread_id: str,
-    current_user: Campaigner = Depends(get_current_user),
-    session: Session = Depends(get_session)
+    current_user: Campaigner = Depends(require_admin),
+    session: Session = Depends(get_session),
 ):
     """
     Get full trace details for a specific thread_id.
@@ -159,7 +174,7 @@ async def get_trace_detail(
         select(ChatTrace).where(
             and_(
                 ChatTrace.thread_id == thread_id,
-                ChatTrace.record_type == RecordType.CONVERSATION
+                ChatTrace.record_type == RecordType.CONVERSATION,
             )
         )
     ).first()
@@ -167,44 +182,60 @@ async def get_trace_detail(
     if not conversation:
         raise HTTPException(status_code=404, detail=f"Trace not found: {thread_id}")
 
+    # Validate customer access if conversation has a customer_id
+    if conversation.customer_id and not user_can_access_customer(
+        current_user, conversation.customer_id
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this customer's traces"
+        )
+
     # Get messages
     messages = session.exec(
-        select(ChatTrace).where(
+        select(ChatTrace)
+        .where(
             and_(
                 ChatTrace.thread_id == thread_id,
-                ChatTrace.record_type == RecordType.MESSAGE
+                ChatTrace.record_type == RecordType.MESSAGE,
             )
-        ).order_by(ChatTrace.sequence_number)
+        )
+        .order_by(ChatTrace.sequence_number)
     ).all()
 
     # Get agent steps
     agent_steps = session.exec(
-        select(ChatTrace).where(
+        select(ChatTrace)
+        .where(
             and_(
                 ChatTrace.thread_id == thread_id,
-                ChatTrace.record_type == RecordType.AGENT_STEP
+                ChatTrace.record_type == RecordType.AGENT_STEP,
             )
-        ).order_by(ChatTrace.sequence_number)
+        )
+        .order_by(ChatTrace.sequence_number)
     ).all()
 
     # Get tool usages
     tool_usages = session.exec(
-        select(ChatTrace).where(
+        select(ChatTrace)
+        .where(
             and_(
                 ChatTrace.thread_id == thread_id,
-                ChatTrace.record_type == RecordType.TOOL_USAGE
+                ChatTrace.record_type == RecordType.TOOL_USAGE,
             )
-        ).order_by(ChatTrace.sequence_number)
+        )
+        .order_by(ChatTrace.sequence_number)
     ).all()
 
     # Get CrewAI executions
     crewai_executions = session.exec(
-        select(ChatTrace).where(
+        select(ChatTrace)
+        .where(
             and_(
                 ChatTrace.thread_id == thread_id,
-                ChatTrace.record_type == RecordType.CREWAI_EXECUTION
+                ChatTrace.record_type == RecordType.CREWAI_EXECUTION,
             )
-        ).order_by(ChatTrace.created_at)
+        )
+        .order_by(ChatTrace.created_at)
     ).all()
 
     # Get campaigner and customer info
@@ -226,16 +257,20 @@ async def get_trace_detail(
             "customer_id": conversation.customer_id,
             "customer_name": customer_name,
             "langfuse_trace_url": conversation.langfuse_trace_url,
-            "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
-            "updated_at": conversation.updated_at.isoformat() if conversation.updated_at else None,
-            **conversation.data
+            "created_at": conversation.created_at.isoformat()
+            if conversation.created_at
+            else None,
+            "updated_at": conversation.updated_at.isoformat()
+            if conversation.updated_at
+            else None,
+            **conversation.data,
         },
         messages=[
             {
                 "id": msg.id,
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
                 "sequence_number": msg.sequence_number,
-                **msg.data
+                **msg.data,
             }
             for msg in messages
         ],
@@ -245,7 +280,7 @@ async def get_trace_detail(
                 "created_at": step.created_at.isoformat() if step.created_at else None,
                 "sequence_number": step.sequence_number,
                 "langfuse_span_id": step.langfuse_span_id,
-                **step.data
+                **step.data,
             }
             for step in agent_steps
         ],
@@ -255,7 +290,7 @@ async def get_trace_detail(
                 "created_at": tool.created_at.isoformat() if tool.created_at else None,
                 "sequence_number": tool.sequence_number,
                 "langfuse_span_id": tool.langfuse_span_id,
-                **tool.data
+                **tool.data,
             }
             for tool in tool_usages
         ],
@@ -264,18 +299,18 @@ async def get_trace_detail(
                 "id": exec.id,
                 "session_id": exec.session_id,
                 "created_at": exec.created_at.isoformat() if exec.created_at else None,
-                **exec.data
+                **exec.data,
             }
             for exec in crewai_executions
-        ]
+        ],
     )
 
 
 @router.get("/stats/summary")
 async def get_trace_stats(
     days: int = Query(7, description="Number of days to analyze", ge=1, le=90),
-    current_user: Campaigner = Depends(get_current_user),
-    session: Session = Depends(get_session)
+    current_user: Campaigner = Depends(require_admin),
+    session: Session = Depends(get_session),
 ):
     """
     Get summary statistics for traces.
@@ -287,7 +322,7 @@ async def get_trace_stats(
         select(func.count(ChatTrace.id)).where(
             and_(
                 ChatTrace.record_type == RecordType.CONVERSATION,
-                ChatTrace.created_at >= since
+                ChatTrace.created_at >= since,
             )
         )
     ).one()
@@ -297,7 +332,7 @@ async def get_trace_stats(
         select(ChatTrace).where(
             and_(
                 ChatTrace.record_type == RecordType.CONVERSATION,
-                ChatTrace.created_at >= since
+                ChatTrace.created_at >= since,
             )
         )
     ).all()
@@ -317,5 +352,5 @@ async def get_trace_stats(
         "status_breakdown": status_counts,
         "total_messages": total_messages,
         "total_tokens": total_tokens,
-        "period_days": days
+        "period_days": days,
     }
