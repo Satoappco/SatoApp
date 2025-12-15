@@ -22,6 +22,7 @@ from app.core.rbac import (
     require_admin,
     user_can_access_customer,
     get_accessible_customers,
+    user_is_at_least,
 )
 from app.core.api_auth import verify_admin_token
 from app.utils.composite_id import compose_id
@@ -2718,8 +2719,8 @@ async def get_default_kpi_settings(
 ):
     """Get all default KPI settings (admin-only)"""
     try:
-        # Check if user is admin
-        if current_user.role != UserRole.ADMIN:
+        # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+        if not user_is_at_least(current_user, UserRole.ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
             )
@@ -2771,8 +2772,8 @@ async def get_default_kpi_setting(
 ):
     """Get a specific default KPI setting (admin-only)"""
     try:
-        # Check if user is admin
-        if current_user.role != UserRole.ADMIN:
+        # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+        if not user_is_at_least(current_user, UserRole.ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
             )
@@ -2818,8 +2819,8 @@ async def create_default_kpi_setting(
 ):
     """Create a new default KPI setting (admin-only)"""
     try:
-        # Check if user is admin
-        if current_user.role != UserRole.ADMIN:
+        # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+        if not user_is_at_least(current_user, UserRole.ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
             )
@@ -2865,8 +2866,8 @@ async def update_default_kpi_setting(
 ):
     """Update a default KPI setting (admin-only)"""
     try:
-        # Check if user is admin
-        if current_user.role != UserRole.ADMIN:
+        # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+        if not user_is_at_least(current_user, UserRole.ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
             )
@@ -2909,8 +2910,8 @@ async def delete_default_kpi_setting(
 ):
     """Delete a default KPI setting (admin-only)"""
     try:
-        # Check if user is admin
-        if current_user.role != UserRole.ADMIN:
+        # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+        if not user_is_at_least(current_user, UserRole.ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
             )
@@ -3063,8 +3064,8 @@ async def create_audience(
     audience_data: AudienceCreate, current_user: Campaigner = Depends(get_current_user)
 ):
     """Create a new audience (admin only)"""
-    # Check if user is admin - only ADMIN can create audiences
-    if current_user.role != UserRole.ADMIN:
+    # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+    if not user_is_at_least(current_user, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create audiences",
@@ -3121,8 +3122,8 @@ async def update_audience(
     current_user: Campaigner = Depends(get_current_user),
 ):
     """Update an audience (admin only)"""
-    # Check if user is admin - only ADMIN can update audiences
-    if current_user.role != UserRole.ADMIN:
+    # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+    if not user_is_at_least(current_user, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can update audiences",
@@ -3188,8 +3189,8 @@ async def delete_audience(
     audience_id: int, current_user: Campaigner = Depends(get_current_user)
 ):
     """Delete an audience (admin only)"""
-    # Check if user is admin - only ADMIN can delete audiences
-    if current_user.role != UserRole.ADMIN:
+    # Check if user has at least ADMIN role (allows ADMIN and OWNER)
+    if not user_is_at_least(current_user, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can delete audiences",

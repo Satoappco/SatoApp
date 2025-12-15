@@ -33,14 +33,38 @@ from . import logs
 from . import customer_assignments
 from . import metrics
 from . import tasks
+from . import qa
 
 __all__ = [
-    "agents", "health", "webhooks", "websocket", "auth", "google_analytics",
-    "google_analytics_oauth", "google_ads", "google_ads_oauth",
-    "facebook", "facebook_oauth",
-    "facebook_page_oauth", "facebook_marketing_oauth", "admin",
-    "agencies", "property_selections", "digital_platforms", "campaigners",
-    "customers", "connections", "crewai", "database_management", "customer_data",
-    "countries_currencies", "oauth_state", "campaign_sync", "logs",
-    "customer_assignments", "metrics", "tasks"
+    "agents",
+    "health",
+    "webhooks",
+    "websocket",
+    "auth",
+    "google_analytics",
+    "google_analytics_oauth",
+    "google_ads",
+    "google_ads_oauth",
+    "facebook",
+    "facebook_oauth",
+    "facebook_page_oauth",
+    "facebook_marketing_oauth",
+    "admin",
+    "agencies",
+    "property_selections",
+    "digital_platforms",
+    "campaigners",
+    "customers",
+    "connections",
+    "crewai",
+    "database_management",
+    "customer_data",
+    "countries_currencies",
+    "oauth_state",
+    "campaign_sync",
+    "logs",
+    "customer_assignments",
+    "metrics",
+    "tasks",
+    "qa",
 ]

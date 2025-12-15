@@ -189,16 +189,6 @@ async def create_worker(
                     detail="Campaigner with this email already exists",
                 )
 
-            # OWNER can only create workers in their own agency, ADMIN can create in any agency
-            if (
-                current_user.role != UserRole.ADMIN
-                and request.agency_id != current_user.agency_id
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You can only create workers in your own agency",
-                )
-
             # Create new worker
             new_worker = Campaigner(
                 email=request.email,
