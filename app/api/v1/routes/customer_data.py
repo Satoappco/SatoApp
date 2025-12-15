@@ -10,6 +10,8 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user
+from app.core.rbac import user_can_access_customer
+from app.core.audit_log import log_authorization_check
 from app.models.users import Campaigner, Customer
 from app.models.customer_data import RTMTable, QuestionsTable, RTMTableResponse, QuestionsTableResponse, RTMTableUpdate, QuestionsTableUpdate
 from app.models.analytics import KpiSettings
@@ -188,6 +190,21 @@ async def get_rtm_table(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Get RTM table for a specific customer"""
+    # Validate customer access
+    if not user_can_access_customer(current_user, customer_id):
+        log_authorization_check(
+            user=current_user,
+            action="read",
+            resource_type="rtm_table",
+            resource_id=customer_id,
+            allowed=False,
+            reason="Customer not assigned to user"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer's RTM data"
+        )
+
     try:
         with get_session() as session:
             composite_id = create_composite_id(current_user.agency_id, current_user.id, customer_id)
@@ -224,6 +241,21 @@ async def update_rtm_table(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Update RTM table for a specific customer"""
+    # Validate customer access
+    if not user_can_access_customer(current_user, customer_id):
+        log_authorization_check(
+            user=current_user,
+            action="update",
+            resource_type="rtm_table",
+            resource_id=customer_id,
+            allowed=False,
+            reason="Customer not assigned to user"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer's RTM data"
+        )
+
     try:
         with get_session() as session:
             composite_id = create_composite_id(current_user.agency_id, current_user.id, customer_id)
@@ -438,6 +470,21 @@ async def get_questions_table(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Get Questions table for a specific customer"""
+    # Validate customer access
+    if not user_can_access_customer(current_user, customer_id):
+        log_authorization_check(
+            user=current_user,
+            action="read",
+            resource_type="questions_table",
+            resource_id=customer_id,
+            allowed=False,
+            reason="Customer not assigned to user"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer's questions data"
+        )
+
     try:
         with get_session() as session:
             composite_id = create_composite_id(current_user.agency_id, current_user.id, customer_id)
@@ -474,6 +521,21 @@ async def update_questions_table(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Update Questions table for a specific customer"""
+    # Validate customer access
+    if not user_can_access_customer(current_user, customer_id):
+        log_authorization_check(
+            user=current_user,
+            action="update",
+            resource_type="questions_table",
+            resource_id=customer_id,
+            allowed=False,
+            reason="Customer not assigned to user"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer's questions data"
+        )
+
     try:
         with get_session() as session:
             composite_id = create_composite_id(current_user.agency_id, current_user.id, customer_id)
@@ -521,24 +583,32 @@ async def get_customer_info(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Get comprehensive customer information including RTM and Questions data"""
+    # Validate customer access (checks agency + assignment for CAMPAIGNER role)
+    if not user_can_access_customer(current_user, customer_id):
+        log_authorization_check(
+            user=current_user,
+            action="read",
+            resource_type="customer_info",
+            resource_id=customer_id,
+            allowed=False,
+            reason="Customer not assigned to user"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer's information"
+        )
+
     try:
         with get_session() as session:
             # Get customer
             customer = session.exec(
                 select(Customer).where(Customer.id == customer_id)
             ).first()
-            
+
             if not customer:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Customer not found"
-                )
-            
-            # Verify customer is in the same agency
-            if customer.agency_id != current_user.agency_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this customer"
                 )
             
             # Get RTM data - use pattern matching to find ANY record for this customer in this agency
@@ -662,24 +732,32 @@ async def update_customer_info(
     current_user: Campaigner = Depends(get_current_user)
 ):
     """Update customer information"""
+    # Validate customer access (checks agency + assignment for CAMPAIGNER role)
+    if not user_can_access_customer(current_user, customer_id):
+        log_authorization_check(
+            user=current_user,
+            action="update",
+            resource_type="customer_info",
+            resource_id=customer_id,
+            allowed=False,
+            reason="Customer not assigned to user"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer's information"
+        )
+
     try:
         with get_session() as session:
             # Get customer
             customer = session.exec(
                 select(Customer).where(Customer.id == customer_id)
             ).first()
-            
+
             if not customer:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Customer not found"
-                )
-            
-            # Verify customer is in the same agency
-            if customer.agency_id != current_user.agency_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this customer"
                 )
 
             # Store old currency before update to detect changes

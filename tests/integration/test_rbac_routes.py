@@ -1,8 +1,15 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 from app.main import app
-from app.models.users import Campaigner, UserRole
-from app.core.rbac import user_is_at_least
+from app.models.users import Campaigner, UserRole, Agency, Customer
+from app.core.rbac import (
+    user_is_at_least,
+    user_can_access_agency,
+    user_can_access_customer,
+    get_accessible_customers,
+)
+from app.config.database import get_session
 
 
 class TestRBACRoutes:
@@ -57,6 +64,54 @@ class TestRBACRoutes:
         assert user_is_at_least(viewer, UserRole.ADMIN) is False
         assert user_is_at_least(viewer, UserRole.CAMPAIGNER) is False
         assert user_is_at_least(viewer, UserRole.VIEWER) is True
+
+    def test_owner_can_access_all_agencies(self):
+        """OWNER users can access all agencies"""
+        owner = Campaigner(
+            email="owner@test.com",
+            full_name="Test Owner",
+            agency_id=1,
+            role=UserRole.OWNER,
+        )
+
+        # OWNER can access their own agency
+        assert user_can_access_agency(owner, 1) is True
+
+        # OWNER can access other agencies
+        assert user_can_access_agency(owner, 2) is True
+        assert user_can_access_agency(owner, 999) is True
+
+    def test_admin_can_only_access_own_agency(self):
+        """ADMIN users can only access their own agency"""
+        admin = Campaigner(
+            email="admin@test.com",
+            full_name="Test Admin",
+            agency_id=1,
+            role=UserRole.ADMIN,
+        )
+
+        # ADMIN can access their own agency
+        assert user_can_access_agency(admin, 1) is True
+
+        # ADMIN cannot access other agencies
+        assert user_can_access_agency(admin, 2) is False
+        assert user_can_access_agency(admin, 999) is False
+
+    def test_campaigner_can_only_access_own_agency(self):
+        """CAMPAIGNER users can only access their own agency"""
+        campaigner = Campaigner(
+            email="campaigner@test.com",
+            full_name="Test Campaigner",
+            agency_id=1,
+            role=UserRole.CAMPAIGNER,
+        )
+
+        # CAMPAIGNER can access their own agency
+        assert user_can_access_agency(campaigner, 1) is True
+
+        # CAMPAIGNER cannot access other agencies
+        assert user_can_access_agency(campaigner, 2) is False
+        assert user_can_access_agency(campaigner, 999) is False
 
     def test_customer_creation_requires_admin(self, client: TestClient):
         """POST /customers should require ADMIN role"""

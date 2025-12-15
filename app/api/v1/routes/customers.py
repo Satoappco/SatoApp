@@ -614,11 +614,16 @@ async def delete_customer(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
                 )
 
-            # OWNER can only delete customers in their own agency, ADMIN can delete from any agency
-            if (
-                current_user.role != UserRole.ADMIN
-                and customer.agency_id != current_user.agency_id
-            ):
+            # Verify agency access: OWNER can access all agencies, ADMIN only their own
+            if not user_can_access_agency(current_user, customer.agency_id):
+                log_authorization_check(
+                    user=current_user,
+                    action="delete",
+                    resource_type="customer",
+                    resource_id=customer_id,
+                    allowed=False,
+                    reason=f"User agency {current_user.agency_id} != customer agency {customer.agency_id}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this customer",
