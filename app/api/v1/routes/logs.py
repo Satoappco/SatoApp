@@ -36,7 +36,7 @@ async def get_recent_logs(
     lines: int = Query(
         default=100, ge=1, le=10000, description="Number of recent lines to retrieve"
     ),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin()),
 ):
     """
     Get the most recent log entries.
@@ -72,7 +72,7 @@ async def search_logs(
         default=100, ge=1, le=10000, description="Maximum number of results"
     ),
     case_sensitive: bool = Query(default=False, description="Case-sensitive search"),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin()),
 ):
     """
     Search for a term in log files.
@@ -109,7 +109,7 @@ async def get_logs_by_level(
     max_results: int = Query(
         default=100, ge=1, le=10000, description="Maximum number of results"
     ),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin()),
 ):
     """
     Get log entries of a specific level.
@@ -151,7 +151,7 @@ async def get_logs_by_timerange(
     max_results: int = Query(
         default=1000, ge=1, le=10000, description="Maximum number of results"
     ),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin()),
 ):
     """
     Get log entries within a time range.
@@ -222,7 +222,7 @@ async def clear_old_logs(
     days: int = Query(
         default=7, ge=1, le=365, description="Delete logs older than N days"
     ),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin()),
 ):
     """
     Clear log files older than specified days.
@@ -257,7 +257,7 @@ async def tail_logs(
     follow: bool = Query(
         default=False, description="Keep connection open for live updates"
     ),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin()),
 ):
     """
     Tail the log file (like 'tail -f').

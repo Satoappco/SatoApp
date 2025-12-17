@@ -163,7 +163,7 @@ async def get_worker(
 
 @router.post("/workers")
 async def create_worker(
-    request: CreateWorkerRequest, current_user: Campaigner = Depends(require_admin)
+    request: CreateWorkerRequest, current_user: Campaigner = Depends(require_admin())
 ):
     """
     Create a new worker in the current user's agency/customer.
@@ -241,7 +241,7 @@ async def create_worker(
 async def update_worker(
     worker_id: int,
     request: UpdateWorkerRequest,
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
 ):
     """
     Update a worker's information.
@@ -317,7 +317,7 @@ async def update_worker(
 
 @router.delete("/workers/{worker_id}")
 async def delete_worker(
-    worker_id: int, current_user: Campaigner = Depends(require_admin)
+    worker_id: int, current_user: Campaigner = Depends(require_admin())
 ):
     """
     Delete a worker.
@@ -483,7 +483,7 @@ class AcceptInviteRequest(BaseModel):
 
 @router.post("/invite/generate")
 async def generate_invite_link(
-    request: GenerateInviteRequest, current_user: Campaigner = Depends(require_admin)
+    request: GenerateInviteRequest, current_user: Campaigner = Depends(require_admin())
 ):
     """Generate secure invite link for team member"""
     print(
@@ -760,7 +760,7 @@ async def get_invite_info(token: str):
 
 
 @router.get("/invite/list")
-async def list_invites(current_user: Campaigner = Depends(require_admin)):
+async def list_invites(current_user: Campaigner = Depends(require_admin())):
     """List active invites for current agency"""
 
     try:

@@ -73,7 +73,7 @@ async def list_traces(
     days: int = Query(7, description="Number of days to look back", ge=1, le=90),
     page: int = Query(1, description="Page number", ge=1),
     page_size: int = Query(20, description="Items per page", ge=1, le=100),
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
     session: Session = Depends(get_session),
 ):
     """
@@ -161,7 +161,7 @@ async def list_traces(
 @router.get("/{thread_id}", response_model=TraceDetailResponse)
 async def get_trace_detail(
     thread_id: str,
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
     session: Session = Depends(get_session),
 ):
     """
@@ -309,7 +309,7 @@ async def get_trace_detail(
 @router.get("/stats/summary")
 async def get_trace_stats(
     days: int = Query(7, description="Number of days to analyze", ge=1, le=90),
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
     session: Session = Depends(get_session),
 ):
     """

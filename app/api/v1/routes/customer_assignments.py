@@ -109,7 +109,7 @@ async def get_customer_campaigners(
 async def assign_campaigner_to_customer(
     assignment: CampaignerAssignmentCreate,
     customer_id: int = Path(..., description="Customer ID"),
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
     session: Session = Depends(get_session),
 ):
     """Assign a campaigner to a customer"""
@@ -156,7 +156,7 @@ async def assign_campaigner_to_customer(
 async def unassign_campaigner_from_customer(
     customer_id: int = Path(..., description="Customer ID"),
     campaigner_id: int = Path(..., description="Campaigner ID"),
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
     session: Session = Depends(get_session),
 ):
     """Remove a campaigner assignment from a customer"""
@@ -187,7 +187,7 @@ async def unassign_campaigner_from_customer(
 async def set_primary_campaigner(
     customer_id: int = Path(..., description="Customer ID"),
     campaigner_id: int = Path(..., description="Campaigner ID"),
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
     session: Session = Depends(get_session),
 ):
     """Set a campaigner as the primary campaigner for a customer"""
