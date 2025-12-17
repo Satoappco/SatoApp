@@ -10,14 +10,15 @@ from sqlmodel import select, and_, or_, func
 from sqlalchemy import JSON
 
 from app.core.auth import get_current_user
-from app.models.users import Campaigner, Customer
+from app.core.rbac import user_can_access_customer, get_accessible_customers
+from app.models.users import Campaigner, Customer, UserRole
 from app.models.tasks import Task, TaskPriority, TaskStatus
 from app.api.schemas.tasks import (
     TaskCreate,
     TaskUpdate,
     TaskResponse,
     TaskListResponse,
-    TaskFilters
+    TaskFilters,
 )
 from app.config.database import get_session
 from app.config.logging import get_logger
@@ -70,8 +71,7 @@ def enrich_task_response(task: Task, session) -> TaskResponse:
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
-    task_data: TaskCreate,
-    current_user: Campaigner = Depends(get_current_user)
+    task_data: TaskCreate, current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Create a new task.
@@ -80,18 +80,19 @@ async def create_task(
     """
     try:
         with get_session() as session:
-            # Verify customer exists and belongs to user's agency
+            # Verify user can access the customer
+            if not user_can_access_customer(current_user, task_data.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+            # Verify customer exists
             customer = session.get(Customer, task_data.customer_id)
             if not customer:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Customer {task_data.customer_id} not found"
-                )
-
-            if customer.agency_id != current_user.agency_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Customer belongs to a different agency"
+                    detail=f"Customer {task_data.customer_id} not found",
                 )
 
             # Verify assigned campaigners exist and belong to same agency
@@ -101,12 +102,12 @@ async def create_task(
                     if not campaigner:
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Campaigner {campaigner_id} not found"
+                            detail=f"Campaigner {campaigner_id} not found",
                         )
                     if campaigner.agency_id != current_user.agency_id:
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
-                            detail=f"Campaigner {campaigner_id} belongs to a different agency"
+                            detail=f"Campaigner {campaigner_id} belongs to a different agency",
                         )
 
             # Create task
@@ -119,14 +120,16 @@ async def create_task(
                 due_date=task_data.due_date,
                 priority=task_data.priority,
                 status=task_data.status,
-                tags=task_data.tags
+                tags=task_data.tags,
             )
 
             session.add(task)
             session.commit()
             session.refresh(task)
 
-            logger.info(f"✅ Task {task.id} created by campaigner {current_user.id} for customer {task_data.customer_id}")
+            logger.info(
+                f"✅ Task {task.id} created by campaigner {current_user.id} for customer {task_data.customer_id}"
+            )
 
             return enrich_task_response(task, session)
 
@@ -136,7 +139,7 @@ async def create_task(
         logger.error(f"❌ Error creating task: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create task: {str(e)}"
+            detail=f"Failed to create task: {str(e)}",
         )
 
 
@@ -144,16 +147,22 @@ async def create_task(
 async def list_tasks(
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
     created_by: Optional[int] = Query(None, description="Filter by creator"),
-    assigned_to: Optional[int] = Query(None, description="Filter by assigned campaigner"),
-    status_filter: Optional[TaskStatus] = Query(None, alias="status", description="Filter by status"),
-    priority_filter: Optional[TaskPriority] = Query(None, alias="priority", description="Filter by priority"),
+    assigned_to: Optional[int] = Query(
+        None, description="Filter by assigned campaigner"
+    ),
+    status_filter: Optional[TaskStatus] = Query(
+        None, alias="status", description="Filter by status"
+    ),
+    priority_filter: Optional[TaskPriority] = Query(
+        None, alias="priority", description="Filter by priority"
+    ),
     is_overdue: Optional[bool] = Query(None, description="Filter overdue tasks"),
     search: Optional[str] = Query(None, description="Search in title and description"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
-    current_user: Campaigner = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Get tasks with filtering, pagination, and sorting.
@@ -162,11 +171,23 @@ async def list_tasks(
     """
     try:
         with get_session() as session:
-            # Base query: only tasks for customers in user's agency
-            statement = select(Task).join(Customer).where(
+            # Get accessible customer IDs based on user role
+            accessible_customer_ids = get_accessible_customers(current_user)
+
+            if not accessible_customer_ids:
+                return TaskListResponse(
+                    tasks=[],
+                    total=0,
+                    page=page,
+                    page_size=page_size,
+                    total_pages=0,
+                )
+
+            # Base query: only tasks for accessible customers
+            statement = select(Task).where(
                 and_(
-                    Customer.agency_id == current_user.agency_id,
-                    Task.is_active == True
+                    Task.customer_id.in_(accessible_customer_ids),
+                    Task.is_active == True,
                 )
             )
 
@@ -197,7 +218,7 @@ async def list_tasks(
                         and_(
                             Task.due_date < now,
                             Task.status != TaskStatus.COMPLETED,
-                            Task.status != TaskStatus.CANCELLED
+                            Task.status != TaskStatus.CANCELLED,
                         )
                     )
                 else:
@@ -207,7 +228,7 @@ async def list_tasks(
                             Task.due_date >= now,
                             Task.due_date.is_(None),
                             Task.status == TaskStatus.COMPLETED,
-                            Task.status == TaskStatus.CANCELLED
+                            Task.status == TaskStatus.CANCELLED,
                         )
                     )
 
@@ -216,7 +237,7 @@ async def list_tasks(
                 statement = statement.where(
                     or_(
                         Task.title.ilike(search_pattern),
-                        Task.description.ilike(search_pattern)
+                        Task.description.ilike(search_pattern),
                     )
                 )
 
@@ -249,22 +270,19 @@ async def list_tasks(
                 total=total,
                 page=page,
                 page_size=page_size,
-                total_pages=total_pages
+                total_pages=total_pages,
             )
 
     except Exception as e:
         logger.error(f"❌ Error listing tasks: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list tasks: {str(e)}"
+            detail=f"Failed to list tasks: {str(e)}",
         )
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-async def get_task(
-    task_id: int,
-    current_user: Campaigner = Depends(get_current_user)
-):
+async def get_task(task_id: int, current_user: Campaigner = Depends(get_current_user)):
     """
     Get a single task by ID.
 
@@ -277,15 +295,13 @@ async def get_task(
             if not task or not task.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Task {task_id} not found"
+                    detail=f"Task {task_id} not found",
                 )
 
-            # Verify task belongs to customer in user's agency
-            customer = session.get(Customer, task.customer_id)
-            if not customer or customer.agency_id != current_user.agency_id:
+            # Verify user can access the customer this task belongs to
+            if not user_can_access_customer(current_user, task.customer_id):
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied"
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
                 )
 
             return enrich_task_response(task, session)
@@ -296,7 +312,7 @@ async def get_task(
         logger.error(f"❌ Error getting task {task_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get task: {str(e)}"
+            detail=f"Failed to get task: {str(e)}",
         )
 
 
@@ -304,7 +320,7 @@ async def get_task(
 async def update_task(
     task_id: int,
     task_data: TaskUpdate,
-    current_user: Campaigner = Depends(get_current_user)
+    current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Update a task.
@@ -318,43 +334,50 @@ async def update_task(
             if not task or not task.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Task {task_id} not found"
+                    detail=f"Task {task_id} not found",
                 )
 
-            # Verify task belongs to customer in user's agency
-            customer = session.get(Customer, task.customer_id)
-            if not customer or customer.agency_id != current_user.agency_id:
+            # Verify user can access the customer this task belongs to
+            if not user_can_access_customer(current_user, task.customer_id):
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied"
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
                 )
 
             # Update fields
             update_data = task_data.dict(exclude_unset=True)
 
             # Verify assigned campaigners if being updated
-            if "assigned_campaigners" in update_data and update_data["assigned_campaigners"]:
+            if (
+                "assigned_campaigners" in update_data
+                and update_data["assigned_campaigners"]
+            ):
                 for campaigner_id in update_data["assigned_campaigners"]:
                     campaigner = session.get(Campaigner, campaigner_id)
                     if not campaigner:
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Campaigner {campaigner_id} not found"
+                            detail=f"Campaigner {campaigner_id} not found",
                         )
                     if campaigner.agency_id != current_user.agency_id:
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
-                            detail=f"Campaigner {campaigner_id} belongs to a different agency"
+                            detail=f"Campaigner {campaigner_id} belongs to a different agency",
                         )
 
             # If status is being set to completed, record completion
-            if "status" in update_data and update_data["status"] == TaskStatus.COMPLETED:
+            if (
+                "status" in update_data
+                and update_data["status"] == TaskStatus.COMPLETED
+            ):
                 if task.status != TaskStatus.COMPLETED:
                     task.completed_at = datetime.now(timezone.utc)
                     task.completed_by = current_user.id
 
             # If status is being changed from completed to something else, clear completion
-            if "status" in update_data and update_data["status"] != TaskStatus.COMPLETED:
+            if (
+                "status" in update_data
+                and update_data["status"] != TaskStatus.COMPLETED
+            ):
                 if task.status == TaskStatus.COMPLETED:
                     task.completed_at = None
                     task.completed_by = None
@@ -377,14 +400,13 @@ async def update_task(
         logger.error(f"❌ Error updating task {task_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update task: {str(e)}"
+            detail=f"Failed to update task: {str(e)}",
         )
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
-    task_id: int,
-    current_user: Campaigner = Depends(get_current_user)
+    task_id: int, current_user: Campaigner = Depends(get_current_user)
 ):
     """
     Delete a task (soft delete).
@@ -398,15 +420,13 @@ async def delete_task(
             if not task or not task.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Task {task_id} not found"
+                    detail=f"Task {task_id} not found",
                 )
 
-            # Verify task belongs to customer in user's agency
-            customer = session.get(Customer, task.customer_id)
-            if not customer or customer.agency_id != current_user.agency_id:
+            # Verify user can access the customer this task belongs to
+            if not user_can_access_customer(current_user, task.customer_id):
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied"
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
                 )
 
             # Soft delete
@@ -424,5 +444,5 @@ async def delete_task(
         logger.error(f"❌ Error deleting task {task_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete task: {str(e)}"
+            detail=f"Failed to delete task: {str(e)}",
         )

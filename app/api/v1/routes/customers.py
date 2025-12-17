@@ -10,7 +10,23 @@ from sqlmodel import select, and_
 from pydantic import BaseModel, Field, EmailStr
 
 from app.core.auth import get_current_user
-from app.models.users import Agency, Campaigner, Customer, CustomerStatus, UserRole, CustomerCampaignerAssignment
+from app.core.rbac import (
+    require_admin,
+    require_role,
+    require_customer_access,
+    user_can_access_customer,
+    user_can_access_agency,
+    get_accessible_customers,
+)
+from app.core.audit_log import log_authorization_check
+from app.models.users import (
+    Agency,
+    Campaigner,
+    Customer,
+    CustomerStatus,
+    UserRole,
+    CustomerCampaignerAssignment,
+)
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.models.analytics import KpiGoal, DigitalPlatform, Connection, UserPropertySelection, KpiValue
 from app.config.database import get_session
@@ -25,27 +41,46 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 
 # ===== Pydantic Schemas =====
 
+
 class CustomerCreate(BaseModel):
     """Schema for creating a new customer"""
+
     full_name: str = Field(max_length=255, description="Full name or business name")
-    contact_email: Optional[EmailStr] = Field(None, description="Primary business contact email address")
+    contact_email: Optional[EmailStr] = Field(
+        None, description="Primary business contact email address"
+    )
     phone: Optional[str] = Field(None, max_length=50, description="Phone number")
     address: Optional[str] = Field(None, max_length=500, description="Physical address")
     opening_hours: Optional[str] = Field(None, description="Business opening hours")
     narrative_report: Optional[str] = Field(None, description="Narrative report text")
     website_url: Optional[str] = Field(None, max_length=500, description="Website URL")
-    facebook_page_url: Optional[str] = Field(None, max_length=500, description="Facebook page URL")
-    instagram_page_url: Optional[str] = Field(None, max_length=500, description="Instagram page URL")
-    llm_engine_preference: Optional[str] = Field(None, max_length=50, description="Preferred LLM engine")
-    enable_meta: Optional[bool] = Field(None, description="Enable Meta/Facebook marketing features")
-    enable_google: Optional[bool] = Field(None, description="Enable Google marketing features")
-    importance: Optional[int] = Field(3, ge=1, le=5, description="Client importance level (1-5)")
+    facebook_page_url: Optional[str] = Field(
+        None, max_length=500, description="Facebook page URL"
+    )
+    instagram_page_url: Optional[str] = Field(
+        None, max_length=500, description="Instagram page URL"
+    )
+    llm_engine_preference: Optional[str] = Field(
+        None, max_length=50, description="Preferred LLM engine"
+    )
+    enable_meta: Optional[bool] = Field(
+        None, description="Enable Meta/Facebook marketing features"
+    )
+    enable_google: Optional[bool] = Field(
+        None, description="Enable Google marketing features"
+    )
+    importance: Optional[int] = Field(
+        3, ge=1, le=5, description="Client importance level (1-5)"
+    )
     budget: Optional[float] = Field(0.0, ge=0, description="Monthly budget")
-    campaign_health: Optional[int] = Field(3, ge=1, le=5, description="Campaign health score (1=bad, 5=excellent)")
+    campaign_health: Optional[int] = Field(
+        3, ge=1, le=5, description="Campaign health score (1=bad, 5=excellent)"
+    )
 
 
 class CustomerUpdate(BaseModel):
     """Schema for updating a customer"""
+
     full_name: Optional[str] = Field(None, max_length=255)
     contact_email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=50)
@@ -56,85 +91,98 @@ class CustomerUpdate(BaseModel):
     facebook_page_url: Optional[str] = Field(None, max_length=500)
     instagram_page_url: Optional[str] = Field(None, max_length=500)
     llm_engine_preference: Optional[str] = Field(None, max_length=50)
-    enable_meta: Optional[bool] = Field(None, description="Enable Meta/Facebook marketing features")
-    enable_google: Optional[bool] = Field(None, description="Enable Google marketing features")
+    enable_meta: Optional[bool] = Field(
+        None, description="Enable Meta/Facebook marketing features"
+    )
+    enable_google: Optional[bool] = Field(
+        None, description="Enable Google marketing features"
+    )
     status: Optional[CustomerStatus] = None
     is_active: Optional[bool] = None
-    importance: Optional[int] = Field(None, ge=1, le=5, description="Client importance level (1-5)")
+    importance: Optional[int] = Field(
+        None, ge=1, le=5, description="Client importance level (1-5)"
+    )
     budget: Optional[float] = Field(None, ge=0, description="Monthly budget")
-    campaign_health: Optional[int] = Field(None, ge=1, le=5, description="Campaign health score (1=bad, 5=excellent)")
-    last_work_date: Optional[datetime] = Field(None, description="Date of last work on this customer")
+    campaign_health: Optional[int] = Field(
+        None, ge=1, le=5, description="Campaign health score (1=bad, 5=excellent)"
+    )
+    last_work_date: Optional[datetime] = Field(
+        None, description="Date of last work on this customer"
+    )
 
 
 # ===== API Endpoints =====
 
+
 @router.get("")
-async def get_customers(
-    current_user: Campaigner = Depends(get_current_user)
-):
+async def get_customers(current_user: Campaigner = Depends(get_current_user)):
     """
-    Get all customers assigned to the current campaigner.
-    Campaigners can only see customers they have created/are assigned to.
+    Get all customers for current user based on their role and assignments.
+    - OWNER: Can see all customers across all agencies
+    - ADMIN: Can see all customers in their agency
+    - CAMPAIGNER/VIEWER: Can only see assigned customers
     """
     try:
         with get_session() as session:
-            # Get only customers assigned to the current campaigner via junction table
-            customer_ids = session.exec(
-                select(CustomerCampaignerAssignment.customer_id).where(
-                    and_(
-                        CustomerCampaignerAssignment.campaigner_id == current_user.id,
-                        CustomerCampaignerAssignment.is_active == True
+            # Get accessible customer IDs based on user role
+            accessible_customer_ids = get_accessible_customers(current_user)
+
+            if not accessible_customer_ids:
+                return {"success": True, "customers": [], "total": 0}
+
+            # Get customers
+            customers = []
+            if accessible_customer_ids:
+                if hasattr(Customer.created_at, "desc"):
+                    statement = (
+                        select(Customer)
+                        .where(Customer.id.in_(accessible_customer_ids))
+                        .order_by(Customer.created_at.desc())
                     )
-                )
-            ).all()
-
-            if not customer_ids:
-                return {
-                    "success": True,
-                    "customers": [],
-                    "total": 0
-                }
-
-            # Get customers in current user's agency with the assigned IDs
-            statement = select(Customer).where(
-                and_(
-                    Customer.agency_id == current_user.agency_id,
-                    Customer.id.in_(customer_ids)
-                )
-            ).order_by(Customer.created_at.desc())
-
-            customers = session.exec(statement).all()
+                else:
+                    statement = (
+                        select(Customer)
+                        .where(Customer.id.in_(accessible_customer_ids))
+                        .order_by(Customer.id.desc())
+                    )
+                customers = session.exec(statement).all()
 
             # Get all campaigner assignments for each customer
             customer_campaigners = {}
             for customer in customers:
                 assignments = CustomerAssignmentService.get_customer_assignments(
-                    session, customer.id, active_only=True
+                    session,
+                    customer.id if customer.id is not None else 0,
+                    active_only=True,
                 )
                 campaigners = []
                 for assignment in assignments:
                     campaigner = session.get(Campaigner, assignment.campaigner_id)
                     if campaigner:
-                        campaigners.append({
-                            "id": campaigner.id,
-                            "full_name": campaigner.full_name,
-                            "email": campaigner.email,
-                            "avatar_url": campaigner.avatar_url,
-                            "is_primary": assignment.is_primary
-                        })
+                        campaigners.append(
+                            {
+                                "id": campaigner.id,
+                                "full_name": campaigner.full_name,
+                                "email": campaigner.email,
+                                "avatar_url": campaigner.avatar_url,
+                                "is_primary": assignment.is_primary,
+                            }
+                        )
                 customer_campaigners[customer.id] = campaigners
 
             # Compute priority scores for all customers
             priority_data = []
             for customer in customers:
-                priority_data.append(CustomerPriorityData(
-                    customer_id=customer.id,
-                    name=customer.full_name,
-                    importance=customer.importance,
-                    budget=customer.budget,
-                    campaign_health=customer.campaign_health,
-                    last_work_date=customer.last_work_date
-                ))
+                priority_data.append(
+                    CustomerPriorityData(
+                        customer_id=customer.id if customer.id is not None else 0,
+                        name=customer.full_name,
+                        importance=customer.importance,
+                        budget=customer.budget,
+                        campaign_health=customer.campaign_health,
+                        last_work_date=customer.last_work_date,
+                    )
+                )
 
             # Calculate priority scores
             priority_scores = {}
@@ -168,76 +216,63 @@ async def get_customers(
                         "is_active": customer.is_active,
                         "agency_id": customer.agency_id,
                         "agency_name": customer.agency_name,
-                        "assigned_campaigners": customer_campaigners.get(customer.id, []),
+                        "assigned_campaigners": customer_campaigners.get(
+                            customer.id, []
+                        ),
                         "primary_campaigner_id": customer.primary_campaigner_id,
                         "importance": customer.importance,
                         "budget": customer.budget,
                         "campaign_health": customer.campaign_health,
-                        "last_work_date": customer.last_work_date.isoformat() if customer.last_work_date else None,
-                        "priority": priority_scores.get(customer.id, {}).get("score", 0),
+                        "last_work_date": customer.last_work_date.isoformat()
+                        if customer.last_work_date
+                        else None,
+                        "priority": priority_scores.get(customer.id, {}).get(
+                            "score", 0
+                        ),
                         "priority_details": priority_scores.get(customer.id, {}),
-                        "created_at": customer.created_at.isoformat() if customer.created_at else None,
-                        "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
+                        "created_at": customer.created_at.isoformat()
+                        if customer.created_at
+                        else None,
+                        "updated_at": customer.updated_at.isoformat()
+                        if customer.updated_at
+                        else None,
                     }
                     for customer in customers
                 ],
-                "total": len(customers)
+                "total": len(customers),
             }
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get customers: {str(e)}"
+            detail=f"Failed to get customers: {str(e)}",
         )
 
 
 @router.get("/{customer_id}")
 async def get_customer(
-    customer_id: int,
-    current_user: Campaigner = Depends(get_current_user)
+    customer_id: int, current_user: Campaigner = Depends(require_customer_access())
 ):
     """
     Get a specific customer by ID.
+    User must have access to the customer based on their role.
     """
     try:
         with get_session() as session:
             customer = session.get(Customer, customer_id)
-            
+
             if not customer:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Customer not found"
-                )
-            
-            # OWNER can only access customers in their own agency, ADMIN can access any
-            if current_user.role != UserRole.ADMIN and customer.agency_id != current_user.agency_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this customer"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
                 )
 
-            # Verify customer is assigned to current campaigner via junction table
-            is_assigned = session.exec(
-                select(CustomerCampaignerAssignment).where(
-                    and_(
-                        CustomerCampaignerAssignment.customer_id == customer_id,
-                        CustomerCampaignerAssignment.campaigner_id == current_user.id,
-                        CustomerCampaignerAssignment.is_active == True
-                    )
-                )
-            ).first()
-
-            if not is_assigned:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied - customer not assigned to you"
-                )
+            # Access validation is already handled by require_customer_access() dependency
 
             # Get related RTM and Questions data
             rtm_entry = session.exec(
                 select(RTMTable).where(RTMTable.customer_id == customer_id)
             ).first()
-            
+
             questions_entry = session.exec(
                 select(QuestionsTable).where(QuestionsTable.customer_id == customer_id)
             ).first()
@@ -250,13 +285,15 @@ async def get_customer(
             for assignment in assignments:
                 campaigner = session.get(Campaigner, assignment.campaigner_id)
                 if campaigner:
-                    assigned_campaigners.append({
-                        "id": campaigner.id,
-                        "full_name": campaigner.full_name,
-                        "email": campaigner.email,
-                        "avatar_url": campaigner.avatar_url,
-                        "is_primary": assignment.is_primary
-                    })
+                    assigned_campaigners.append(
+                        {
+                            "id": campaigner.id,
+                            "full_name": campaigner.full_name,
+                            "email": campaigner.email,
+                            "avatar_url": campaigner.avatar_url,
+                            "is_primary": assignment.is_primary,
+                        }
+                    )
 
             return {
                 "success": True,
@@ -284,24 +321,27 @@ async def get_customer(
                     "primary_campaigner_id": customer.primary_campaigner_id,
                     "has_rtm_data": rtm_entry is not None,
                     "has_questions_data": questions_entry is not None,
-                    "created_at": customer.created_at.isoformat() if customer.created_at else None,
-                    "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
-                }
+                    "created_at": customer.created_at.isoformat()
+                    if customer.created_at
+                    else None,
+                    "updated_at": customer.updated_at.isoformat()
+                    if customer.updated_at
+                    else None,
+                },
             }
-    
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get customer: {str(e)}"
+            detail=f"Failed to get customer: {str(e)}",
         )
 
 
 @router.post("")
 async def create_customer(
-    request: CustomerCreate,
-    current_user: Campaigner = Depends(get_current_user)
+    request: CustomerCreate, current_user: Campaigner = Depends(require_admin)
 ):
     """
     Create a new customer with initialization of related tables.
@@ -333,7 +373,9 @@ async def create_customer(
                 is_active=True,
                 importance=request.importance if request.importance is not None else 3,
                 budget=request.budget if request.budget is not None else 0.0,
-                campaign_health=request.campaign_health if request.campaign_health is not None else 3
+                campaign_health=request.campaign_health
+                if request.campaign_health is not None
+                else 3,
             )
 
             session.add(new_customer)
@@ -342,37 +384,43 @@ async def create_customer(
 
             # Create primary campaigner assignment via junction table
             from app.models.users import AssignmentRole
+
             CustomerAssignmentService.assign_campaigner(
                 session=session,
                 customer_id=new_customer.id,
                 campaigner_id=current_user.id,
                 is_primary=True,
                 role=AssignmentRole.PRIMARY,
-                assigned_by_id=current_user.id
+                assigned_by_id=current_user.id,
             )
-            
+
             # Initialize RTM Table entry with composite_id
-            composite_id = f"{current_user.agency_id}_{current_user.id}_{new_customer.id}"
+            composite_id = (
+                f"{current_user.agency_id}_{current_user.id}_{new_customer.id}"
+            )
             rtm_entry = RTMTable(composite_id=composite_id)
             session.add(rtm_entry)
-            
+
             # Initialize Questions Table entry with composite_id
             questions_entry = QuestionsTable(composite_id=composite_id)
             session.add(questions_entry)
-            
+
             session.commit()
-            
+
             # Create default data for the new customer
             try:
                 from app.services.default_data_service import default_data_service
+
                 default_data_service.create_default_data_for_customer(
-                    new_customer.id,
-                    current_user.agency_id,
-                    current_user.id
+                    new_customer.id, current_user.agency_id, current_user.id
                 )
-                logger.info(f"✅ Created default data for new customer {new_customer.id}")
+                logger.info(
+                    f"✅ Created default data for new customer {new_customer.id}"
+                )
             except Exception as e:
-                logger.warning(f"⚠️ Failed to create default data for customer {new_customer.id}: {str(e)}")
+                logger.warning(
+                    f"⚠️ Failed to create default data for customer {new_customer.id}: {str(e)}"
+                )
                 # Don't fail customer creation if default data fails
 
             # Get assigned campaigners for response
@@ -383,13 +431,24 @@ async def create_customer(
             for assignment in assignments:
                 campaigner = session.get(Campaigner, assignment.campaigner_id)
                 if campaigner:
-                    assigned_campaigners.append({
-                        "id": campaigner.id,
-                        "full_name": campaigner.full_name,
-                        "email": campaigner.email,
-                        "avatar_url": campaigner.avatar_url,
-                        "is_primary": assignment.is_primary
-                    })
+                    assigned_campaigners.append(
+                        {
+                            "id": campaigner.id,
+                            "full_name": campaigner.full_name,
+                            "email": campaigner.email,
+                            "avatar_url": campaigner.avatar_url,
+                            "is_primary": assignment.is_primary,
+                        }
+                    )
+
+            # Audit log successful customer creation
+            log_authorization_check(
+                user=current_user,
+                action="create",
+                resource_type="customer",
+                resource_id=new_customer.id,
+                allowed=True,
+            )
 
             return {
                 "success": True,
@@ -403,16 +462,18 @@ async def create_customer(
                     "primary_campaigner_id": new_customer.primary_campaigner_id,
                     "status": new_customer.status,
                     "is_active": new_customer.is_active,
-                    "created_at": new_customer.created_at.isoformat() if new_customer.created_at else None
-                }
+                    "created_at": new_customer.created_at.isoformat()
+                    if new_customer.created_at
+                    else None,
+                },
             }
-    
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create customer: {str(e)}"
+            detail=f"Failed to create customer: {str(e)}",
         )
 
 
@@ -420,7 +481,7 @@ async def create_customer(
 async def update_customer(
     customer_id: int,
     request: CustomerUpdate,
-    current_user: Campaigner = Depends(get_current_user)
+    current_user: Campaigner = Depends(require_role(UserRole.CAMPAIGNER)),
 ):
     """
     Update a customer's information.
@@ -429,18 +490,17 @@ async def update_customer(
     try:
         with get_session() as session:
             customer = session.get(Customer, customer_id)
-            
+
             if not customer:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Customer not found"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
                 )
-            
-            # OWNER can only update customers in their own agency, ADMIN can update from any agency
-            if current_user.role != UserRole.ADMIN and customer.agency_id != current_user.agency_id:
+
+            # Check agency access: OWNER can access all agencies, ADMIN/others only their own
+            if not user_can_access_agency(current_user, customer.agency_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this customer"
+                    detail="Access denied to this customer",
                 )
 
             # Verify customer is assigned to current campaigner via junction table
@@ -449,7 +509,7 @@ async def update_customer(
                     and_(
                         CustomerCampaignerAssignment.customer_id == customer_id,
                         CustomerCampaignerAssignment.campaigner_id == current_user.id,
-                        CustomerCampaignerAssignment.is_active == True
+                        CustomerCampaignerAssignment.is_active == True,
                     )
                 )
             ).first()
@@ -457,7 +517,7 @@ async def update_customer(
             if not is_assigned:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied - customer not assigned to you"
+                    detail="Access denied - customer not assigned to you",
                 )
 
             # Update fields
@@ -468,7 +528,7 @@ async def update_customer(
             # Refresh denormalized agency name
             agency = session.get(Agency, customer.agency_id)
             customer.agency_name = agency.name if agency else None
-            
+
             session.add(customer)
             session.commit()
             session.refresh(customer)
@@ -481,13 +541,15 @@ async def update_customer(
             for assignment in assignments:
                 campaigner = session.get(Campaigner, assignment.campaigner_id)
                 if campaigner:
-                    assigned_campaigners.append({
-                        "id": campaigner.id,
-                        "full_name": campaigner.full_name,
-                        "email": campaigner.email,
-                        "avatar_url": campaigner.avatar_url,
-                        "is_primary": assignment.is_primary
-                    })
+                    assigned_campaigners.append(
+                        {
+                            "id": campaigner.id,
+                            "full_name": campaigner.full_name,
+                            "email": campaigner.email,
+                            "avatar_url": campaigner.avatar_url,
+                            "is_primary": assignment.is_primary,
+                        }
+                    )
 
             return {
                 "success": True,
@@ -512,55 +574,50 @@ async def update_customer(
                     "agency_name": customer.agency_name,
                     "assigned_campaigners": assigned_campaigners,
                     "primary_campaigner_id": customer.primary_campaigner_id,
-                    "updated_at": customer.updated_at.isoformat() if customer.updated_at else None
-                }
+                    "updated_at": customer.updated_at.isoformat()
+                    if customer.updated_at
+                    else None,
+                },
             }
-    
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update customer: {str(e)}"
+            detail=f"Failed to update customer: {str(e)}",
         )
 
 
 @router.delete("/{customer_id}")
 async def delete_customer(
-    customer_id: int,
-    current_user: Campaigner = Depends(get_current_user)
+    customer_id: int, current_user: Campaigner = Depends(require_admin)
 ):
     """
     Delete a customer.
     Cascades to related tables (RTM, Questions, KPI Goals, etc.).
     Only OWNER and ADMIN can delete customers.
     """
-    from app.models.users import UserRole
-    
-    # Check permissions
-    if current_user.role not in [UserRole.OWNER, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only owners and admins can delete customers"
-        )
-    
+
     try:
         with get_session() as session:
             customer = session.get(Customer, customer_id)
-            
+
             if not customer:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                detail="Customer not found"
-            )
-            
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found"
+                )
+
             # OWNER can only delete customers in their own agency, ADMIN can delete from any agency
-            if current_user.role != UserRole.ADMIN and customer.agency_id != current_user.agency_id:
+            if (
+                current_user.role != UserRole.ADMIN
+                and customer.agency_id != current_user.agency_id
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this customer"
+                    detail="Access denied to this customer",
                 )
-            
+
             # Delete related entries (cascade should handle this, but being explicit)
             # Connections (must be deleted first as they reference digital_platforms)
             connections = session.exec(
@@ -584,56 +641,69 @@ async def delete_customer(
             ).all()
             for asset in digital_platforms:
                 session.delete(asset)
-            
+
             # User Property Selections
             user_property_selections = session.exec(
-                select(UserPropertySelection).where(UserPropertySelection.customer_id == customer_id)
+                select(UserPropertySelection).where(
+                    UserPropertySelection.customer_id == customer_id
+                )
             ).all()
             for selection in user_property_selections:
                 session.delete(selection)
-            
+
             # KPI Values (actual measured values)
             kpi_values = session.exec(
                 select(KpiValue).where(KpiValue.customer_id == customer_id)
             ).all()
             for value in kpi_values:
                 session.delete(value)
-            
+
             # KPI Goals (target values)
             kpi_goals = session.exec(
                 select(KpiGoal).where(KpiGoal.customer_id == customer_id)
             ).all()
             for goal in kpi_goals:
                 session.delete(goal)
-            
+
             # RTM Table (uses composite_id format: agency_id_campaigner_id_customer_id)
             rtm_entries = session.exec(
-                select(RTMTable).where(RTMTable.composite_id.like(f"{customer.agency_id}_%_{customer_id}"))
+                select(RTMTable).where(
+                    RTMTable.composite_id.like(f"{customer.agency_id}_%_{customer_id}")
+                )
             ).all()
             for entry in rtm_entries:
                 session.delete(entry)
-            
+
             # Questions Table (uses composite_id format: agency_id_campaigner_id_customer_id)
             questions_entries = session.exec(
-                select(QuestionsTable).where(QuestionsTable.composite_id.like(f"{customer.agency_id}_%_{customer_id}"))
+                select(QuestionsTable).where(
+                    QuestionsTable.composite_id.like(
+                        f"{customer.agency_id}_%_{customer_id}"
+                    )
+                )
             ).all()
             for entry in questions_entries:
                 session.delete(entry)
-            
+
             # Delete customer
             session.delete(customer)
             session.commit()
-            
-            return {
-                "success": True,
-                "message": "Customer deleted successfully"
-            }
-    
+
+            # Audit log successful customer deletion
+            log_authorization_check(
+                user=current_user,
+                action="delete",
+                resource_type="customer",
+                resource_id=customer_id,
+                allowed=True,
+            )
+
+            return {"success": True, "message": "Customer deleted successfully"}
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete customer: {str(e)}"
+            detail=f"Failed to delete customer: {str(e)}",
         )
-

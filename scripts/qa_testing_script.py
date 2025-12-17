@@ -5,9 +5,9 @@ This script processes a Google Sheets or Excel table with predefined questions a
 Columns: type, question, expected_answer, current_answer, previous_answer, rank, suggestion, chat_trace_link, log_link
 
 Process:
-1. Move current_answer to previous_answer
+1. Move current_answer to previous_answer (unless --fill-blanks is used)
 2. Call chat route for each question using JWT authentication (without reusing thread_id)
-3. Save response in current_answer
+3. Save response in current_answer (or only fill blanks if --fill-blanks is used)
 4. Capture thread_id and generate chat trace and log links
 5. Use LLM to rank: "both good", "previous better", "current better", "both bad"
 6. Generate suggestions for improvement
@@ -375,11 +375,20 @@ class QATestingScript:
 
         self.logger.info(f"Saved results to Google Sheets: {self.sheet_url}")
 
-    def move_current_to_previous(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Move current_answer to previous_answer for all rows."""
-        df["Previous Answer"] = df["Current Answer"]
-        df["Current Answer"] = ""
-        self.logger.info("Moved current answers to previous")
+    def move_current_to_previous(
+        self, df: pd.DataFrame, fill_blanks: bool = False
+    ) -> pd.DataFrame:
+        """Move current_answer to previous_answer for all rows or only fill blanks."""
+        if not fill_blanks:
+            # Move all current answers to previous (original behavior)
+            df["Previous Answer"] = df["Current Answer"]
+            df["Current Answer"] = ""
+            self.logger.info("Moved all current answers to previous")
+        else:
+            # When fill_blanks=True, don't move anything - preserve existing answers
+            self.logger.info(
+                "Fill-blanks mode: preserving existing answers, will only fill blank current answers"
+            )
         return df
 
     async def fetch_customers(self) -> Dict[str, str]:
@@ -647,6 +656,7 @@ Respond in JSON format:
         start_row: int = 0,
         end_row: Optional[int] = None,
         customer_id: Optional[str] = None,
+        fill_blanks: bool = False,
     ) -> pd.DataFrame:
         """
         Process test cases from the DataFrame.
@@ -656,21 +666,44 @@ Respond in JSON format:
             start_row: Starting row index (0-based)
             end_row: Ending row index (exclusive), None for all rows
             customer_id: Optional customer ID to use for all requests
+            fill_blanks: If True, only process rows where Current Answer is blank
 
         Returns:
             Updated DataFrame
         """
         end_row = end_row or len(df)
-        total_rows = end_row - start_row
+
+        # Filter rows based on fill_blanks mode
+        if fill_blanks:
+            # Only process rows where Current Answer is blank
+            mask = (
+                (df.index >= start_row)
+                & (df.index < end_row)
+                & (df["Current Answer"].isna() | (df["Current Answer"] == ""))
+            )
+            rows_to_process = df[mask].index.tolist()
+            self.logger.info(
+                f"Fill-blanks mode: processing {len(rows_to_process)} rows with blank current answers"
+            )
+        else:
+            rows_to_process = list(range(start_row, end_row))
+
+        total_rows = len(rows_to_process)
+
+        if total_rows == 0:
+            self.logger.info("No rows to process")
+            return df
 
         self.logger.info(
-            f"Processing {total_rows} test cases (rows {start_row} to {end_row - 1})..."
+            f"Processing {total_rows} test cases (rows {rows_to_process[0]} to {rows_to_process[-1]})..."
         )
 
         # Group by Type if fail_fast is enabled
         if self.fail_fast and "Group" in df.columns:
             # Process by groups sequentially (fail_fast within group)
-            grouped = df.iloc[start_row:end_row].groupby("Group", sort=False)
+            # Filter groups to only include rows that need processing
+            filtered_df = df.loc[rows_to_process]
+            grouped = filtered_df.groupby("Group", sort=False)
             for group_name, group_df in grouped:
                 self.logger.info(f"Processing group: {group_name}")
                 group_failed = False
@@ -712,7 +745,7 @@ Respond in JSON format:
 
             tasks = [
                 self.process_single_test_case(df, idx, customer_id)
-                for idx in range(start_row, end_row)
+                for idx in rows_to_process
             ]
 
             # Execute all tasks in parallel with concurrency control
@@ -736,6 +769,7 @@ Respond in JSON format:
         start_row: int = 0,
         end_row: Optional[int] = None,
         customer_name: Optional[str] = None,
+        fill_blanks: bool = False,
     ):
         """
         Run the complete QA testing workflow.
@@ -744,6 +778,7 @@ Respond in JSON format:
             start_row: Starting row index (0-based)
             end_row: Ending row index (exclusive), None for all rows
             customer_name: Optional customer name to convert to ID
+            fill_blanks: If True, only fill rows where Current Answer is blank
         """
         self.logger.info("=" * 80)
         self.logger.info("QA Testing Script for Chat API")
@@ -770,13 +805,16 @@ Respond in JSON format:
         df = self.load_data()
         self.logger.info(f"Loaded {len(df)} test cases")
 
-        # Move current to previous
-        self.logger.info(f"Moving current answers to previous...")
-        df = self.move_current_to_previous(df)
+        # Move current to previous (or fill blanks)
+        if not fill_blanks:
+            self.logger.info(f"Moving current answers to previous...")
+        df = self.move_current_to_previous(df, fill_blanks=fill_blanks)
         self.save_data(df)
 
         # Process test cases
-        df = await self.process_test_cases(df, start_row, end_row, customer_id)
+        df = await self.process_test_cases(
+            df, start_row, end_row, customer_id, fill_blanks
+        )
 
         # Final save
         self.save_data(df)
@@ -869,6 +907,11 @@ async def main():
         help="Maximum number of concurrent API calls (default: 5)",
     )
     parser.add_argument(
+        "--fill-blanks",
+        action="store_true",
+        help="Only fill answers where current_answer is blank (preserves existing current answers)",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -930,6 +973,7 @@ async def main():
             start_row=args.start_row,
             end_row=args.end_row,
             customer_name=args.customer_name,
+            fill_blanks=args.fill_blanks,
         )
 
 

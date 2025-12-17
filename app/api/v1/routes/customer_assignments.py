@@ -10,10 +10,12 @@ from app.models.users import (
     Customer,
     Campaigner,
     CustomerCampaignerAssignment,
-    AssignmentRole
+    AssignmentRole,
+    UserRole,
 )
 from app.services.customer_assignment_service import CustomerAssignmentService
-from app.core.api_auth import verify_api_token
+from app.core.auth import get_current_user
+from app.core.rbac import require_admin, user_can_access_agency
 
 router = APIRouter()
 
@@ -21,6 +23,7 @@ router = APIRouter()
 # Request/Response Models
 class CampaignerAssignmentCreate(BaseModel):
     """Request model for creating a campaigner assignment"""
+
     campaigner_id: int
     is_primary: bool = False
     role: AssignmentRole = AssignmentRole.ASSIGNED
@@ -28,6 +31,7 @@ class CampaignerAssignmentCreate(BaseModel):
 
 class CampaignerAssignmentResponse(BaseModel):
     """Response model for campaigner assignment"""
+
     id: int
     customer_id: int
     campaigner_id: int
@@ -42,6 +46,7 @@ class CampaignerAssignmentResponse(BaseModel):
 
 class CampaignerWithAssignment(BaseModel):
     """Response model for campaigner with assignment details"""
+
     id: int
     email: str
     full_name: str
@@ -57,14 +62,22 @@ class CampaignerWithAssignment(BaseModel):
 async def get_customer_campaigners(
     customer_id: int = Path(..., description="Customer ID"),
     active_only: bool = Query(True, description="Only return active assignments"),
+    current_user: Campaigner = Depends(get_current_user),
     session: Session = Depends(get_session),
-    _: dict = Depends(verify_api_token)
 ):
     """Get all campaigners assigned to a customer"""
     # Verify customer exists
     customer = session.get(Customer, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Verify user can access this customer
+    from app.core.rbac import user_can_access_customer
+
+    if not user_can_access_customer(
+        current_user, customer_id, require_assignment=False
+    ):
+        raise HTTPException(status_code=403, detail="Access denied to this customer")
 
     # Get assignments
     assignments = CustomerAssignmentService.get_customer_assignments(
@@ -75,27 +88,29 @@ async def get_customer_campaigners(
     result = []
     for assignment in assignments:
         campaigner = session.get(Campaigner, assignment.campaigner_id)
-        if campaigner:
-            result.append(CampaignerWithAssignment(
-                id=campaigner.id,
-                email=campaigner.email,
-                full_name=campaigner.full_name,
-                avatar_url=campaigner.avatar_url,
-                assignment_id=assignment.id,
-                role=assignment.role,
-                is_primary=assignment.is_primary,
-                assigned_at=assignment.assigned_at.isoformat()
-            ))
+        if campaigner and campaigner.id is not None and assignment.id is not None:
+            result.append(
+                CampaignerWithAssignment(
+                    id=campaigner.id,
+                    email=campaigner.email,
+                    full_name=campaigner.full_name,
+                    avatar_url=campaigner.avatar_url,
+                    assignment_id=assignment.id,
+                    role=assignment.role,
+                    is_primary=assignment.is_primary,
+                    assigned_at=assignment.assigned_at.isoformat(),
+                )
+            )
 
     return result
 
 
 @router.post("/{customer_id}/campaigners", response_model=CampaignerAssignmentResponse)
 async def assign_campaigner_to_customer(
+    assignment: CampaignerAssignmentCreate,
     customer_id: int = Path(..., description="Customer ID"),
-    assignment: CampaignerAssignmentCreate = ...,
+    current_user: Campaigner = Depends(require_admin),
     session: Session = Depends(get_session),
-    token_info: dict = Depends(verify_api_token)
 ):
     """Assign a campaigner to a customer"""
     # Verify customer exists
@@ -108,6 +123,10 @@ async def assign_campaigner_to_customer(
     if not campaigner:
         raise HTTPException(status_code=404, detail="Campaigner not found")
 
+    # Verify customer is in user's agency
+    if not user_can_access_agency(current_user, customer.agency_id):
+        raise HTTPException(status_code=403, detail="Access denied to this customer")
+
     # Create assignment
     try:
         new_assignment = CustomerAssignmentService.assign_campaigner(
@@ -116,11 +135,12 @@ async def assign_campaigner_to_customer(
             campaigner_id=assignment.campaigner_id,
             is_primary=assignment.is_primary,
             role=assignment.role,
-            assigned_by_id=None  # TODO: Get from token_info when auth is implemented
+            assigned_by_id=current_user.id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    assert new_assignment.id is not None
     return CampaignerAssignmentResponse(
         id=new_assignment.id,
         customer_id=new_assignment.customer_id,
@@ -128,7 +148,7 @@ async def assign_campaigner_to_customer(
         role=new_assignment.role,
         is_primary=new_assignment.is_primary,
         is_active=new_assignment.is_active,
-        assigned_at=new_assignment.assigned_at.isoformat()
+        assigned_at=new_assignment.assigned_at.isoformat(),
     )
 
 
@@ -136,8 +156,8 @@ async def assign_campaigner_to_customer(
 async def unassign_campaigner_from_customer(
     customer_id: int = Path(..., description="Customer ID"),
     campaigner_id: int = Path(..., description="Campaigner ID"),
+    current_user: Campaigner = Depends(require_admin),
     session: Session = Depends(get_session),
-    token_info: dict = Depends(verify_api_token)
 ):
     """Remove a campaigner assignment from a customer"""
     # Verify customer exists
@@ -145,12 +165,16 @@ async def unassign_campaigner_from_customer(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    # Verify customer is in user's agency
+    if not user_can_access_agency(current_user, customer.agency_id):
+        raise HTTPException(status_code=403, detail="Access denied to this customer")
+
     # Unassign
     success = CustomerAssignmentService.unassign_campaigner(
         session=session,
         customer_id=customer_id,
         campaigner_id=campaigner_id,
-        unassigned_by_id=None  # TODO: Get from token_info when auth is implemented
+        unassigned_by_id=current_user.id,
     )
 
     if not success:
@@ -163,8 +187,8 @@ async def unassign_campaigner_from_customer(
 async def set_primary_campaigner(
     customer_id: int = Path(..., description="Customer ID"),
     campaigner_id: int = Path(..., description="Campaigner ID"),
+    current_user: Campaigner = Depends(require_admin),
     session: Session = Depends(get_session),
-    _: dict = Depends(verify_api_token)
 ):
     """Set a campaigner as the primary campaigner for a customer"""
     # Verify customer exists
@@ -172,16 +196,19 @@ async def set_primary_campaigner(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    # Verify customer is in user's agency
+    if not user_can_access_agency(current_user, customer.agency_id):
+        raise HTTPException(status_code=403, detail="Access denied to this customer")
+
     # Set as primary
     try:
         assignment = CustomerAssignmentService.set_primary_campaigner(
-            session=session,
-            customer_id=customer_id,
-            campaigner_id=campaigner_id
+            session=session, customer_id=customer_id, campaigner_id=campaigner_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    assert assignment.id is not None
     return CampaignerAssignmentResponse(
         id=assignment.id,
         customer_id=assignment.customer_id,
@@ -189,7 +216,7 @@ async def set_primary_campaigner(
         role=assignment.role,
         is_primary=assignment.is_primary,
         is_active=assignment.is_active,
-        assigned_at=assignment.assigned_at.isoformat()
+        assigned_at=assignment.assigned_at.isoformat(),
     )
 
 
@@ -197,14 +224,18 @@ async def set_primary_campaigner(
 async def get_campaigner_customers(
     campaigner_id: int = Path(..., description="Campaigner ID"),
     active_only: bool = Query(True, description="Only return active assignments"),
+    current_user: Campaigner = Depends(get_current_user),
     session: Session = Depends(get_session),
-    _: dict = Depends(verify_api_token)
 ):
     """Get all customers assigned to a campaigner"""
     # Verify campaigner exists
     campaigner = session.get(Campaigner, campaigner_id)
     if not campaigner:
         raise HTTPException(status_code=404, detail="Campaigner not found")
+
+    # Verify user can access this campaigner (same agency)
+    if not user_can_access_agency(current_user, campaigner.agency_id):
+        raise HTTPException(status_code=403, detail="Access denied to this campaigner")
 
     # Get customers
     customers = CustomerAssignmentService.get_campaigner_customers(
@@ -217,7 +248,7 @@ async def get_campaigner_customers(
             "full_name": customer.full_name,
             "status": customer.status,
             "agency_id": customer.agency_id,
-            "is_active": customer.is_active
+            "is_active": customer.is_active,
         }
         for customer in customers
     ]

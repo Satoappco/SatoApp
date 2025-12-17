@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, and_
 
 from app.core.auth import get_current_user
+from app.core.rbac import user_can_access_customer
 from app.models.users import Campaigner
 from app.models.analytics import DigitalPlatform, Connection, AssetType
 from app.config.database import get_session
@@ -26,6 +27,14 @@ async def get_customer_digital_platforms(
 
     This is used to send initial data_sources array to DialogCX.
     """
+
+    # Validate customer access
+    if not user_can_access_customer(current_campaigner, customer_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this customer",
+        )
+
     try:
         with get_session() as session:
             # Build query conditions
@@ -58,7 +67,7 @@ async def get_customer_digital_platforms(
                 "success": True,
                 "customer_id": customer_id,
                 "data_sources": data_sources,  # Simple array of strings: ["ga4", "google_ads"]
-                "total": len(data_sources)
+                "total": len(data_sources),
             }
 
     except Exception as e:
@@ -74,7 +83,7 @@ def _map_asset_type_to_source(asset_type: AssetType) -> str:
     Returns the string value from DataSource enum that matches the asset type
     """
     from app.core.constants import DataSource
-    
+
     mapping = {
         AssetType.GA4: DataSource.GA4,  # "GA4"
         AssetType.GOOGLE_ADS: DataSource.GOOGLE_ADS,  # "google_ads"
@@ -116,7 +125,7 @@ async def get_customer_platforms_summary(
                         "count": 0,
                         "active": 0,
                         "inactive": 0,
-                        "providers": set()
+                        "providers": set(),
                     }
 
                 summary[asset_type]["count"] += 1

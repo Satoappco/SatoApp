@@ -22,14 +22,16 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # JWT Configuration
 ALGORITHM = "HS256"
 
+
 # Get token expiration from settings, with development overrides
 def get_token_expiration():
     settings = get_settings()
     # Use consistent expiration times for both development and production
     return {
         "access_token_minutes": settings.jwt_access_token_expire_minutes,  # 8 hours
-        "refresh_token_days": settings.jwt_refresh_token_expire_days       # 30 days
+        "refresh_token_days": settings.jwt_refresh_token_expire_days,  # 30 days
     }
+
 
 TOKEN_CONFIG = get_token_expiration()
 ACCESS_TOKEN_EXPIRE_MINUTES = TOKEN_CONFIG["access_token_minutes"]
@@ -38,6 +40,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = TOKEN_CONFIG["refresh_token_days"]
 
 class AuthenticationError(HTTPException):
     """Custom authentication error"""
+
     def __init__(self, detail: str = "Authentication failed"):
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -46,21 +49,27 @@ class AuthenticationError(HTTPException):
         )
 
 
-def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+) -> str:
     """Create JWT access token"""
     to_encode = data.copy()
-    
+
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+        )
 
     to_encode.update({"exp": int(expire.timestamp()), "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
-    
+
     # Log token creation for debugging
-    print(f"DEBUG: Created JWT token expiring at {expire.isoformat()} (in {ACCESS_TOKEN_EXPIRE_MINUTES} minutes)")
-    
+    print(
+        f"DEBUG: Created JWT token expiring at {expire.isoformat()} (in {ACCESS_TOKEN_EXPIRE_MINUTES} minutes)"
+    )
+
     return encoded_jwt
 
 
@@ -77,12 +86,14 @@ def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
     """Verify and decode JWT token"""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
-        
+
         # Check token type
         if payload.get("type") != token_type:
-            print(f"DEBUG: Token type mismatch - expected {token_type}, got {payload.get('type')}")
+            print(
+                f"DEBUG: Token type mismatch - expected {token_type}, got {payload.get('type')}"
+            )
             raise AuthenticationError("Invalid token type")
-        
+
         # Check expiration
         exp = payload.get("exp")
         if exp is None:
@@ -93,12 +104,14 @@ def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
         now = datetime.now(timezone.utc)
 
         if exp_time < now:
-            print(f"DEBUG: Token expired at {exp_time.isoformat()}, current time {now.isoformat()}")
+            print(
+                f"DEBUG: Token expired at {exp_time.isoformat()}, current time {now.isoformat()}"
+            )
             raise AuthenticationError("Token has expired")
-        
+
         print(f"DEBUG: Token valid until {exp_time.isoformat()}")
         return payload
-    
+
     except JWTError as e:
         print(f"DEBUG: JWT decode error: {e}")
         raise AuthenticationError("Invalid token")
@@ -109,22 +122,22 @@ def verify_google_token(token: str) -> Dict[str, Any]:
     try:
         # Verify the token with Google
         idinfo = id_token.verify_oauth2_token(
-            token, 
-            requests.Request(), 
-            settings.google_client_id
+            token, requests.Request(), settings.google_client_id
         )
-        
+
         # Check issuer
-        if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+        if idinfo["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
             raise AuthenticationError("Invalid token issuer")
-        
+
         return idinfo
-    
+
     except ValueError:
         raise AuthenticationError("Invalid Google token")
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Campaigner:
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> Campaigner:
     """Get current authenticated user from JWT token"""
 
     try:
@@ -135,7 +148,9 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         # Support both old and new token formats
         # Old format: {"user_id": 123, "sub": "email@example.com"}
         # New format: {"campaigner_id": 123, "sub": "email@example.com"}
-        campaigner_id = payload.get("campaigner_id") or payload.get("user_id") or payload.get("sub")
+        campaigner_id = (
+            payload.get("campaigner_id") or payload.get("user_id") or payload.get("sub")
+        )
 
         print(f"DEBUG: Token payload: {list(payload.keys())}")
         print(f"DEBUG: Extracted campaigner_id: {campaigner_id}")
@@ -150,6 +165,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             print(f"DEBUG: Token contains email, looking up by email: {campaigner_id}")
             with get_session() as session:
                 from sqlmodel import select
+
                 user = session.exec(
                     select(Campaigner).where(Campaigner.email == campaigner_id)
                 ).first()
@@ -168,11 +184,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         print(f"DEBUG: Campaigner found: {user.id}, status: {user.status}")
 
         if user.status != "active":
-            print(f"DEBUG: Campaigner {campaigner_id} status is not active: {user.status}")
+            print(
+                f"DEBUG: Campaigner {campaigner_id} status is not active: {user.status}"
+            )
             raise AuthenticationError("Campaigner account is not active")
 
         return user
-    
+
     except JWTError as e:
         print(f"DEBUG: JWT error: {str(e)}")
         raise AuthenticationError("Invalid token")
@@ -181,38 +199,40 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise AuthenticationError(f"Authentication error: {str(e)}")
 
 
-def get_current_active_user(current_user: Campaigner = Depends(get_current_user)) -> Campaigner:
+def get_current_active_user(
+    current_user: Campaigner = Depends(get_current_user),
+) -> Campaigner:
     """Get current active user (additional check)"""
     if current_user.status != "active":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
         )
     return current_user
 
 
 def create_user_session(
-    user: Campaigner, 
-    access_token: str, 
+    user: Campaigner,
+    access_token: str,
     refresh_token: str,
     ip_address: Optional[str] = None,
-    user_agent: Optional[str] = None
+    user_agent: Optional[str] = None,
 ) -> CampaignerSession:
     """Create a new user session"""
-    
+
     import secrets
-    
+
     session = CampaignerSession(
-        campaigner_id=user.id,
+        campaigner_id=user.id if user.id is not None else 0,
         session_token=secrets.token_urlsafe(32),
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         ip_address=ip_address,
         user_agent=user_agent,
-        is_active=True
+        is_active=True,
     )
-    
+
     return session
 
 
@@ -237,34 +257,30 @@ def revoke_user_session(session_token: str) -> bool:
 
 def refresh_access_token(refresh_token: str) -> Dict[str, str]:
     """Refresh access token using refresh token"""
-    
+
     # Verify refresh token
     payload = verify_token(refresh_token, "refresh")
     campaigner_id = payload.get("campaigner_id")
-    
+
     if campaigner_id is None:
         raise AuthenticationError("Invalid refresh token")
-    
+
     # Get user from database
     with get_session() as session:
         user = session.get(Campaigner, campaigner_id)
         if user is None or user.status != "active":
             raise AuthenticationError("Campaigner not found or inactive")
-        
+
         # Create new access token
         access_token_data = {
             "campaigner_id": user.id,
             "email": user.email,
             "role": user.role,
-            "primary_customer_id": user.primary_customer_id
         }
-        
+
         new_access_token = create_access_token(access_token_data)
-        
-        return {
-            "access_token": new_access_token,
-            "token_type": "bearer"
-        }
+
+        return {"access_token": new_access_token, "token_type": "bearer"}
 
 
 def hash_password(password: str) -> str:
@@ -275,3 +291,28 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against hash"""
     return pwd_context.verify(plain_password, hashed_password)
+
+
+# RBAC Convenience Dependencies
+# These provide easy-to-use dependencies for common role requirements
+
+
+def require_owner():
+    """Dependency that requires OWNER role"""
+    from app.core.rbac import require_role, UserRole
+
+    return require_role(UserRole.OWNER)
+
+
+def require_admin():
+    """Dependency that requires at least ADMIN role"""
+    from app.core.rbac import require_role, UserRole
+
+    return require_role(UserRole.ADMIN)
+
+
+def require_campaigner():
+    """Dependency that requires at least CAMPAIGNER role"""
+    from app.core.rbac import require_role, UserRole
+
+    return require_role(UserRole.CAMPAIGNER)

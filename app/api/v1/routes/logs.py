@@ -8,16 +8,15 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.core.file_logger import file_logger
-# TODO: i think api_auth is not needed. 
-# from app.core.api_auth import verify_admin_token
-# TODO: Create verify_at_least(role : admin/owner/campaigner - default)
 from app.core.auth import get_current_user
+from app.core.rbac import require_admin
 
 router = APIRouter()
 
 
 class LogResponse(BaseModel):
     """Response model for log data."""
+
     success: bool
     logs: str
     lines_returned: int
@@ -26,6 +25,7 @@ class LogResponse(BaseModel):
 
 class LogStatsResponse(BaseModel):
     """Response model for log statistics."""
+
     success: bool
     stats: dict
     message: Optional[str] = None
@@ -33,8 +33,10 @@ class LogStatsResponse(BaseModel):
 
 @router.get("/recent", response_model=LogResponse)
 async def get_recent_logs(
-    lines: int = Query(default=100, ge=1, le=10000, description="Number of recent lines to retrieve"),
-    admin_verified: bool = Depends(get_current_user) #get_current_user)
+    lines: int = Query(
+        default=100, ge=1, le=10000, description="Number of recent lines to retrieve"
+    ),
+    current_user=Depends(require_admin),
 ):
     """
     Get the most recent log entries.
@@ -49,24 +51,28 @@ async def get_recent_logs(
     """
     try:
         logs = file_logger.get_recent_logs(lines=lines)
-        lines_returned = len(logs.split('\n'))
+        lines_returned = len(logs.split("\n"))
 
         return LogResponse(
             success=True,
             logs=logs,
             lines_returned=lines_returned,
-            message=f"Retrieved {lines_returned} recent log lines"
+            message=f"Retrieved {lines_returned} recent log lines",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve logs: {str(e)}"
+        )
 
 
 @router.get("/search", response_model=LogResponse)
 async def search_logs(
     query: str = Query(..., min_length=1, description="Search term"),
-    max_results: int = Query(default=100, ge=1, le=10000, description="Maximum number of results"),
+    max_results: int = Query(
+        default=100, ge=1, le=10000, description="Maximum number of results"
+    ),
     case_sensitive: bool = Query(default=False, description="Case-sensitive search"),
-    admin_verified: bool = Depends(get_current_user)
+    current_user=Depends(require_admin),
 ):
     """
     Search for a term in log files.
@@ -83,17 +89,15 @@ async def search_logs(
     """
     try:
         logs = file_logger.search_logs(
-            search_term=query,
-            max_results=max_results,
-            case_sensitive=case_sensitive
+            search_term=query, max_results=max_results, case_sensitive=case_sensitive
         )
-        lines_returned = len(logs.split('\n')) if logs else 0
+        lines_returned = len(logs.split("\n")) if logs else 0
 
         return LogResponse(
             success=True,
             logs=logs,
             lines_returned=lines_returned,
-            message=f"Found {lines_returned} matching log lines for '{query}'"
+            message=f"Found {lines_returned} matching log lines for '{query}'",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to search logs: {str(e)}")
@@ -102,8 +106,10 @@ async def search_logs(
 @router.get("/level/{level}", response_model=LogResponse)
 async def get_logs_by_level(
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-    max_results: int = Query(default=100, ge=1, le=10000, description="Maximum number of results"),
-    admin_verified: bool = Depends(get_current_user)
+    max_results: int = Query(
+        default=100, ge=1, le=10000, description="Maximum number of results"
+    ),
+    current_user=Depends(require_admin),
 ):
     """
     Get log entries of a specific level.
@@ -121,25 +127,31 @@ async def get_logs_by_level(
     """
     try:
         logs = file_logger.get_logs_by_level(level=level, max_results=max_results)
-        lines_returned = len(logs.split('\n')) if logs else 0
+        lines_returned = len(logs.split("\n")) if logs else 0
 
         return LogResponse(
             success=True,
             logs=logs,
             lines_returned=lines_returned,
-            message=f"Retrieved {lines_returned} {level} log lines"
+            message=f"Retrieved {lines_returned} {level} log lines",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve logs: {str(e)}"
+        )
 
 
 @router.get("/timerange", response_model=LogResponse)
 async def get_logs_by_timerange(
     start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
     end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
-    hours_ago: Optional[int] = Query(None, ge=1, le=168, description="Hours ago from now (alternative to start_time)"),
-    max_results: int = Query(default=1000, ge=1, le=10000, description="Maximum number of results"),
-    admin_verified: bool = Depends(get_current_user)
+    hours_ago: Optional[int] = Query(
+        None, ge=1, le=168, description="Hours ago from now (alternative to start_time)"
+    ),
+    max_results: int = Query(
+        default=1000, ge=1, le=10000, description="Maximum number of results"
+    ),
+    current_user=Depends(require_admin),
 ):
     """
     Get log entries within a time range.
@@ -162,27 +174,25 @@ async def get_logs_by_timerange(
             end_time = datetime.now()
 
         logs = file_logger.get_logs_by_timerange(
-            start_time=start_time,
-            end_time=end_time,
-            max_results=max_results
+            start_time=start_time, end_time=end_time, max_results=max_results
         )
-        lines_returned = len(logs.split('\n')) if logs else 0
+        lines_returned = len(logs.split("\n")) if logs else 0
 
         time_range = f"{start_time or 'start'} to {end_time or 'now'}"
         return LogResponse(
             success=True,
             logs=logs,
             lines_returned=lines_returned,
-            message=f"Retrieved {lines_returned} log lines from {time_range}"
+            message=f"Retrieved {lines_returned} log lines from {time_range}",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve logs: {str(e)}"
+        )
 
 
 @router.get("/stats", response_model=LogStatsResponse)
-async def get_log_stats(
-    admin_verified: bool = Depends(get_current_user)
-):
+async def get_log_stats(admin_verified: bool = Depends(get_current_user)):
     """
     Get statistics about log files.
 
@@ -199,16 +209,20 @@ async def get_log_stats(
         return LogStatsResponse(
             success=True,
             stats=stats,
-            message=f"Retrieved stats for {stats['total_files']} log file(s)"
+            message=f"Retrieved stats for {stats['total_files']} log file(s)",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve log stats: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve log stats: {str(e)}"
+        )
 
 
 @router.delete("/old")
 async def clear_old_logs(
-    days: int = Query(default=7, ge=1, le=365, description="Delete logs older than N days"),
-    admin_verified: bool = Depends(get_current_user)
+    days: int = Query(
+        default=7, ge=1, le=365, description="Delete logs older than N days"
+    ),
+    current_user=Depends(require_admin),
 ):
     """
     Clear log files older than specified days.
@@ -227,17 +241,23 @@ async def clear_old_logs(
         return {
             "success": True,
             "deleted_count": deleted_count,
-            "message": f"Deleted {deleted_count} log file(s) older than {days} days"
+            "message": f"Deleted {deleted_count} log file(s) older than {days} days",
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to clear old logs: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to clear old logs: {str(e)}"
+        )
 
 
 @router.get("/tail")
 async def tail_logs(
-    lines: int = Query(default=50, ge=1, le=1000, description="Number of lines to tail"),
-    follow: bool = Query(default=False, description="Keep connection open for live updates"),
-    admin_verified: bool = Depends(get_current_user)
+    lines: int = Query(
+        default=50, ge=1, le=1000, description="Number of lines to tail"
+    ),
+    follow: bool = Query(
+        default=False, description="Keep connection open for live updates"
+    ),
+    current_user=Depends(require_admin),
 ):
     """
     Tail the log file (like 'tail -f').
@@ -255,14 +275,15 @@ async def tail_logs(
     """
     try:
         logs = file_logger.get_recent_logs(lines=lines)
-        lines_returned = len(logs.split('\n'))
+        lines_returned = len(logs.split("\n"))
 
         return {
             "success": True,
             "logs": logs,
             "lines_returned": lines_returned,
             "follow_mode": follow,
-            "message": f"Tailed {lines_returned} log lines" + (" (follow mode not yet implemented)" if follow else "")
+            "message": f"Tailed {lines_returned} log lines"
+            + (" (follow mode not yet implemented)" if follow else ""),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to tail logs: {str(e)}")
