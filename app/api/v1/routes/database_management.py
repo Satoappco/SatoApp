@@ -1690,7 +1690,7 @@ async def get_users(
 async def get_customers(
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
 ):
     """Get all customers (admin view - shows all data)"""
     try:

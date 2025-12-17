@@ -347,7 +347,7 @@ async def get_customer(
 
 @router.post("")
 async def create_customer(
-    request: CustomerCreate, current_user: Campaigner = Depends(require_admin)
+    request: CustomerCreate, current_user: Campaigner = Depends(require_admin())
 ):
     """
     Create a new customer with initialization of related tables.
@@ -597,7 +597,7 @@ async def update_customer(
 
 @router.delete("/{customer_id}")
 async def delete_customer(
-    customer_id: int, current_user: Campaigner = Depends(require_admin)
+    customer_id: int, current_user: Campaigner = Depends(require_admin())
 ):
     """
     Delete a customer.

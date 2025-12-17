@@ -117,7 +117,7 @@ async def get_setting_categories(current_user: Campaigner = Depends(get_current_
 
 @router.get("")
 async def get_all_settings(
-    category: Optional[str] = None, current_user: Campaigner = Depends(require_admin)
+    category: Optional[str] = None, current_user: Campaigner = Depends(require_admin())
 ):
     """
     Get all settings, optionally filtered by category.
@@ -230,7 +230,7 @@ async def get_setting(
 async def update_setting(
     setting_id: int,
     request: UpdateSettingRequest,
-    current_user: Campaigner = Depends(require_admin),
+    current_user: Campaigner = Depends(require_admin()),
 ):
     """
     Update a setting value.
@@ -299,7 +299,7 @@ async def update_setting(
 
 @router.post("")
 async def create_setting(
-    request: CreateSettingRequest, current_user: Campaigner = Depends(require_owner)
+    request: CreateSettingRequest, current_user: Campaigner = Depends(require_owner())
 ):
     """
     Create a new setting.
@@ -363,7 +363,7 @@ async def create_setting(
 
 @router.delete("/{setting_id}")
 async def delete_setting(
-    setting_id: int, current_user: Campaigner = Depends(require_owner)
+    setting_id: int, current_user: Campaigner = Depends(require_owner())
 ):
     """
     Delete a setting.
