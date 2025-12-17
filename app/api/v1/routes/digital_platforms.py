@@ -1,5 +1,5 @@
 """
-Digital Assets API routes for fetching customer's connected services
+Digital Platforms API routes for fetching customer's connected services
 """
 
 from typing import List, Dict, Any
@@ -8,63 +8,63 @@ from sqlmodel import select, and_
 
 from app.core.auth import get_current_user
 from app.models.users import Campaigner
-from app.models.analytics import DigitalAsset, Connection, AssetType
+from app.models.analytics import DigitalPlatform, Connection, AssetType
 from app.config.database import get_session
 
-router = APIRouter(prefix="/digital-assets", tags=["digital-assets"])
+router = APIRouter(prefix="/digital-platforms", tags=["digital-platforms"])
 
 
 @router.get("/customer/{customer_id}")
-async def get_customer_digital_assets(
+async def get_customer_digital_platforms(
     customer_id: int,
     current_campaigner: Campaigner = Depends(get_current_user),
-    active_only: bool = Query(True, description="Return only active assets")
+    active_only: bool = Query(True, description="Return only active platforms")
 ):
     """
-    Get all digital assets (data sources) for a specific customer.
+    Get all digital platforms (data sources) for a specific customer.
     Returns array of data source strings like ["ga4", "google_ads", "facebook"]
-    
+
     This is used to send initial data_sources array to DialogCX.
     """
     try:
         with get_session() as session:
             # Build query conditions
             conditions = [
-                DigitalAsset.customer_id == customer_id,
+                DigitalPlatform.customer_id == customer_id,
             ]
-            
+
             if active_only:
-                conditions.append(DigitalAsset.is_active == True)
-            
-            # Query digital assets
-            statement = select(DigitalAsset).where(and_(*conditions))
-            
+                conditions.append(DigitalPlatform.is_active == True)
+
+            # Query digital platforms
+            statement = select(DigitalPlatform).where(and_(*conditions))
+
             results = session.exec(statement).all()
-            
+
             # Build data sources array of strings
             data_sources = []
             seen_sources = set()  # Track unique source names
-            
-            for digital_asset in results:
+
+            for digital_platform in results:
                 # Map asset_type to data source name (from DataSource enum)
-                source_name = _map_asset_type_to_source(digital_asset.asset_type)
-                
+                source_name = _map_asset_type_to_source(digital_platform.asset_type)
+
                 # Add to list if not already included
                 if source_name not in seen_sources:
                     data_sources.append(source_name)
                     seen_sources.add(source_name)
-            
+
             return {
                 "success": True,
                 "customer_id": customer_id,
                 "data_sources": data_sources,  # Simple array of strings: ["ga4", "google_ads"]
                 "total": len(data_sources)
             }
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get digital assets: {str(e)}"
+            detail=f"Failed to get digital platforms: {str(e)}"
         )
 
 
@@ -90,27 +90,27 @@ def _map_asset_type_to_source(asset_type: AssetType) -> str:
 
 
 @router.get("/customer/{customer_id}/summary")
-async def get_customer_assets_summary(
+async def get_customer_platforms_summary(
     customer_id: int,
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
-    Get a summary of digital assets by type for a customer.
+    Get a summary of digital platforms by type for a customer.
     Useful for dashboard displays.
     """
     try:
         with get_session() as session:
-            # Query all digital assets for this customer
-            statement = select(DigitalAsset).where(
-                DigitalAsset.customer_id == customer_id
+            # Query all digital platforms for this customer
+            statement = select(DigitalPlatform).where(
+                DigitalPlatform.customer_id == customer_id
             )
-            
-            assets = session.exec(statement).all()
-            
+
+            platforms = session.exec(statement).all()
+
             # Group by asset type
             summary = {}
-            for asset in assets:
-                asset_type = asset.asset_type.value
+            for platform in platforms:
+                asset_type = platform.asset_type.value
                 if asset_type not in summary:
                     summary[asset_type] = {
                         "count": 0,
@@ -118,27 +118,27 @@ async def get_customer_assets_summary(
                         "inactive": 0,
                         "providers": set()
                     }
-                
+
                 summary[asset_type]["count"] += 1
-                if asset.is_active:
+                if platform.is_active:
                     summary[asset_type]["active"] += 1
                 else:
                     summary[asset_type]["inactive"] += 1
-                summary[asset_type]["providers"].add(asset.provider)
-            
+                summary[asset_type]["providers"].add(platform.provider)
+
             # Convert sets to lists for JSON serialization
             for asset_type in summary:
                 summary[asset_type]["providers"] = list(summary[asset_type]["providers"])
-            
+
             return {
                 "success": True,
                 "customer_id": customer_id,
                 "summary": summary,
-                "total_assets": len(assets)
+                "total_platforms": len(platforms)
             }
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get assets summary: {str(e)}"
+            detail=f"Failed to get platforms summary: {str(e)}"
         )

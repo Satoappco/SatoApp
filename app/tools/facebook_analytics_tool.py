@@ -13,7 +13,7 @@ import os
 
 from app.services.facebook_service import FacebookService
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType
+from app.models.analytics import Connection, DigitalPlatform, AssetType
 from sqlmodel import select, and_
 
 
@@ -171,14 +171,14 @@ class FacebookAnalyticsTool(BaseTool):
         """Get active Facebook connection for user/subclient"""
         with get_session() as session:
             # Look for Facebook social media connections
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
                     Connection.campaigner_id == self.campaigner_id,
-                    DigitalAsset.customer_id == self.customer_id,
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
+                    DigitalPlatform.customer_id == self.customer_id,
+                    DigitalPlatform.provider == "Facebook",
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA,
                     Connection.revoked == False
                 )
             )

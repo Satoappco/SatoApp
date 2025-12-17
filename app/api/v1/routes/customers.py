@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, EmailStr
 from app.core.auth import get_current_user
 from app.models.users import Agency, Campaigner, Customer, CustomerStatus, UserRole, CustomerCampaignerAssignment
 from app.models.customer_data import RTMTable, QuestionsTable
-from app.models.analytics import KpiGoal, DigitalAsset, Connection, UserPropertySelection, KpiValue
+from app.models.analytics import KpiGoal, DigitalPlatform, Connection, UserPropertySelection, KpiValue
 from app.config.database import get_session
 from app.config.logging import get_logger
 from app.services.customer_assignment_service import CustomerAssignmentService
@@ -562,27 +562,27 @@ async def delete_customer(
                 )
             
             # Delete related entries (cascade should handle this, but being explicit)
-            # Connections (must be deleted first as they reference digital_assets)
+            # Connections (must be deleted first as they reference digital_platforms)
             connections = session.exec(
                 select(Connection).where(Connection.customer_id == customer_id)
             ).all()
             # Track digital asset IDs to check for orphans after deletion
-            digital_asset_ids = set()
+            digital_platform_ids = set()
             for connection in connections:
-                digital_asset_ids.add(connection.digital_asset_id)
+                digital_platform_ids.add(connection.digital_platform_id)
                 session.delete(connection)
             session.commit()
 
             # Check for and delete orphaned digital assets
-            from app.services.digital_asset_service import delete_orphaned_digital_asset
-            for asset_id in digital_asset_ids:
-                delete_orphaned_digital_asset(session, asset_id)
+            from app.services.digital_platform_service import delete_orphaned_digital_platform
+            for asset_id in digital_platform_ids:
+                delete_orphaned_digital_platform(session, asset_id)
             
             # Digital Assets
-            digital_assets = session.exec(
-                select(DigitalAsset).where(DigitalAsset.customer_id == customer_id)
+            digital_platforms = session.exec(
+                select(DigitalPlatform).where(DigitalPlatform.customer_id == customer_id)
             ).all()
-            for asset in digital_assets:
+            for asset in digital_platforms:
                 session.delete(asset)
             
             # User Property Selections

@@ -12,7 +12,7 @@ from sqlmodel import select
 
 from app.core.auth import get_current_user
 from app.models.users import Campaigner
-from app.models.analytics import DigitalAsset, Connection, AssetType
+from app.models.analytics import DigitalPlatform, Connection, AssetType
 from app.config.database import get_session
 
 router = APIRouter(prefix="/google-ads", tags=["Google Ads Data"])
@@ -128,14 +128,14 @@ async def get_google_ads_connections(
     """
     try:
         from app.config.database import get_session
-        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from app.models.analytics import Connection, DigitalPlatform, AssetType
         from sqlmodel import select, and_
         
         with get_session() as session:
             # Build query conditions - now with direct customer relationship
             conditions = [
-                DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                DigitalAsset.provider == "Google",
+                DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
+                DigitalPlatform.provider == "Google",
                 Connection.revoked == False,
                 Connection.campaigner_id == current_user.id
             ]
@@ -145,8 +145,8 @@ async def get_google_ads_connections(
                 conditions.append(Connection.customer_id == customer_id)
             
             # Get Google Ads connections
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(and_(*conditions))
             
             results = session.exec(statement).all()
@@ -248,19 +248,19 @@ async def get_google_ads_connection(
     """
     try:
         from app.config.database import get_session
-        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from app.models.analytics import Connection, DigitalPlatform, AssetType
         from sqlmodel import select, and_
         
         with get_session() as session:
             # Verify user owns this connection
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
                     Connection.id == connection_id,
                     Connection.campaigner_id == current_user.id,
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    DigitalAsset.provider == "Google"
+                    DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
+                    DigitalPlatform.provider == "Google"
                 )
             )
             
@@ -333,19 +333,19 @@ async def revoke_google_ads_connection(
     
     try:
         from app.config.database import get_session
-        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from app.models.analytics import Connection, DigitalPlatform, AssetType
         from sqlmodel import select, and_
         
         with get_session() as session:
             # Verify user owns this connection
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
                     Connection.id == connection_id,
                     Connection.campaigner_id == current_user.id,
-                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                    DigitalAsset.provider == "Google"
+                    DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
+                    DigitalPlatform.provider == "Google"
                 )
             )
             
@@ -384,15 +384,15 @@ async def revoke_google_ads_connection(
                 # Continue anyway to delete from our DB
 
             # Store the digital asset ID before deleting the connection
-            digital_asset_id = connection.digital_asset_id
+            digital_platform_id = connection.digital_platform_id
 
             # Delete the connection from our database
             session.delete(connection)
             session.commit()
 
             # Check if the digital asset should be deleted (no remaining connections)
-            from app.services.digital_asset_service import delete_orphaned_digital_asset
-            asset_deleted = delete_orphaned_digital_asset(session, digital_asset_id)
+            from app.services.digital_platform_service import delete_orphaned_digital_platform
+            asset_deleted = delete_orphaned_digital_platform(session, digital_platform_id)
 
             message = "Google Ads connection deleted successfully"
             if asset_deleted:
@@ -466,12 +466,12 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
             
             # Create a Google Ads connection with the selected account details
             from app.config.database import get_session
-            from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
+            from app.models.analytics import DigitalPlatform, Connection, AssetType, AuthType
             from datetime import datetime, timedelta
             
             with get_session() as session:
                 # Create digital asset for Google Ads account
-                digital_asset = DigitalAsset(
+                digital_platform = DigitalPlatform(
                     customer_id=request.customer_id,  # Use the provided customer_id
                     asset_type=AssetType.GOOGLE_ADS,
                     provider="Google",
@@ -488,9 +488,9 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
                     },
                     is_active=True
                 )
-                session.add(digital_asset)
+                session.add(digital_platform)
                 session.commit()
-                session.refresh(digital_asset)
+                session.refresh(digital_platform)
                 
                 # Encrypt tokens
                 access_token_enc = ga_service._encrypt_token(request.access_token)
@@ -502,7 +502,7 @@ async def create_ads_connection(request: CreateAdsConnectionRequest):
                 # Create connection
                 connection = Connection(
                     user_id=user.id,
-                    digital_asset_id=digital_asset.id,
+                    digital_platform_id=digital_platform.id,
                     auth_type=AuthType.OAUTH2,
                     access_token_enc=access_token_enc,
                     refresh_token_enc=refresh_token_enc,
@@ -636,12 +636,12 @@ async def get_available_google_ads_accounts(
     try:
         with get_session() as session:
             # Find any active Google Ads connection for this user and subclient
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 Connection.campaigner_id == current_user.id,
-                DigitalAsset.customer_id == customer_id,
-                DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                DigitalPlatform.customer_id == customer_id,
+                DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
                 Connection.revoked == False
             ).limit(1)
             
@@ -654,7 +654,7 @@ async def get_available_google_ads_accounts(
                     "accounts": []
                 }
             
-            connection, digital_asset = result
+            connection, digital_platform = result
             
             # Check if token needs refresh (with 5-minute buffer)
             from datetime import timedelta
@@ -778,9 +778,9 @@ async def get_available_google_ads_accounts(
             
             # Mark which accounts are already connected
             connected_account_ids = []
-            assets_statement = select(DigitalAsset).where(
-                DigitalAsset.customer_id == customer_id,
-                DigitalAsset.asset_type == AssetType.GOOGLE_ADS
+            assets_statement = select(DigitalPlatform).where(
+                DigitalPlatform.customer_id == customer_id,
+                DigitalPlatform.asset_type == AssetType.GOOGLE_ADS
             )
             connected_assets = session.exec(assets_statement).all()
             connected_account_ids = [asset.external_id for asset in connected_assets]

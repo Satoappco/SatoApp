@@ -23,7 +23,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.Column('digital_asset_id', sa.Integer(), nullable=False),
+    sa.Column('digital_platform_id', sa.Integer(), nullable=False),
     sa.Column('subclient_id', sa.Integer(), nullable=False),
     sa.Column('platform_campaign_id', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('campaign_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
@@ -39,7 +39,7 @@ def upgrade() -> None:
     sa.Column('campaign_status', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('meta', sa.JSON(), nullable=True),
-    sa.ForeignKeyConstraint(['digital_asset_id'], ['digital_assets.id'], ),
+    sa.ForeignKeyConstraint(['digital_platform_id'], ['digital_platforms.id'], ),
     sa.ForeignKeyConstraint(['subclient_id'], ['sub_customers.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -65,8 +65,8 @@ def downgrade() -> None:
     op.add_column('campaign_mappings', sa.Column('google_ads_asset_id', sa.INTEGER(), autoincrement=False, nullable=True))
     op.drop_constraint(None, 'campaign_mappings', type_='foreignkey')
     op.drop_constraint(None, 'campaign_mappings', type_='foreignkey')
-    op.create_foreign_key(op.f('campaign_mappings_ga4_asset_id_fkey'), 'campaign_mappings', 'digital_assets', ['ga4_asset_id'], ['id'])
-    op.create_foreign_key(op.f('campaign_mappings_google_ads_asset_id_fkey'), 'campaign_mappings', 'digital_assets', ['google_ads_asset_id'], ['id'])
+    op.create_foreign_key(op.f('campaign_mappings_ga4_asset_id_fkey'), 'campaign_mappings', 'digital_platforms', ['ga4_asset_id'], ['id'])
+    op.create_foreign_key(op.f('campaign_mappings_google_ads_asset_id_fkey'), 'campaign_mappings', 'digital_platforms', ['google_ads_asset_id'], ['id'])
     op.alter_column('campaign_mappings', 'google_ads_campaign_id',
                existing_type=sa.Integer(),
                type_=sa.VARCHAR(length=255),

@@ -1,4 +1,4 @@
-"""add unique constraint to digital_assets
+"""add unique constraint to digital_platforms
 
 Revision ID: asset001_2025
 Revises: trace001_2025
@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """
-    Add unique constraint to digital_assets table to prevent duplicate assets.
+    Add unique constraint to digital_platforms table to prevent duplicate assets.
 
     Constraint: (customer_id, external_id, asset_type) must be unique.
     This ensures one asset per customer per external platform ID per asset type.
@@ -28,36 +28,36 @@ def upgrade() -> None:
     # First, update any foreign key references from duplicates to the one we're keeping (MIN id)
     op.execute("""
         UPDATE connections c
-        SET digital_asset_id = (
+        SET digital_platform_id = (
             SELECT MIN(id)
-            FROM digital_assets da2
+            FROM digital_platforms da2
             WHERE da2.customer_id = da.customer_id
             AND da2.external_id = da.external_id
             AND da2.asset_type = da.asset_type
         )
-        FROM digital_assets da
-        WHERE c.digital_asset_id = da.id
+        FROM digital_platforms da
+        WHERE c.digital_platform_id = da.id
         AND da.id NOT IN (
             SELECT MIN(id)
-            FROM digital_assets
+            FROM digital_platforms
             GROUP BY customer_id, external_id, asset_type
         )
     """)
 
     # Now delete any duplicate rows (keep the one with MIN id)
     op.execute("""
-        DELETE FROM digital_assets a
+        DELETE FROM digital_platforms a
         WHERE a.id NOT IN (
             SELECT MIN(id)
-            FROM digital_assets
+            FROM digital_platforms
             GROUP BY customer_id, external_id, asset_type
         )
     """)
 
     # Add the unique constraint
     op.create_unique_constraint(
-        'uq_digital_asset_customer_external_type',
-        'digital_assets',
+        'uq_digital_platform_customer_external_type',
+        'digital_platforms',
         ['customer_id', 'external_id', 'asset_type']
     )
 
@@ -65,7 +65,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove the unique constraint."""
     op.drop_constraint(
-        'uq_digital_asset_customer_external_type',
-        'digital_assets',
+        'uq_digital_platform_customer_external_type',
+        'digital_platforms',
         type_='unique'
     )

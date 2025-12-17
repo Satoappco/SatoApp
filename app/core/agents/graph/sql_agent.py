@@ -350,10 +350,10 @@ IMPORTANT SQL WRITING RULES:
    ```
 
    **For metrics table:**
-   - MUST join through digital_assets → customers → campaigners:
+   - MUST join through digital_platforms → customers → campaigners:
    ```sql
    FROM metrics m
-   JOIN digital_assets da ON da.id = m.platform_id
+   JOIN digital_platforms da ON da.id = m.platform_id
    JOIN customers c ON c.id = da.customer_id
    JOIN campaigners camp ON camp.agency_id = c.agency_id
    WHERE camp.id = :campaigner_id

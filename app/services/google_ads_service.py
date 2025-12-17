@@ -15,7 +15,7 @@ from google.auth.transport.requests import Request
 from sqlmodel import select, and_
 
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
+from app.models.analytics import DigitalPlatform, Connection, AssetType, AuthType
 from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
@@ -122,9 +122,9 @@ class GoogleAdsService:
 
         with get_session() as session:
             # Create or update the digital asset
-            from app.services.digital_asset_service import upsert_digital_asset
+            from app.services.digital_platform_service import upsert_digital_platform
 
-            digital_asset = upsert_digital_asset(
+            digital_platform = upsert_digital_platform(
                 session=session,
                 customer_id=customer_id,
                 external_id=account_id,
@@ -154,7 +154,7 @@ class GoogleAdsService:
 
             # Create or update connection using centralized query
             connection = get_connection_for_save(
-                digital_asset_id=digital_asset.id,
+                digital_platform_id=digital_platform.id,
                 campaigner_id=campaigner_id,
                 auth_type=AuthType.OAUTH2,
                 session=session,
@@ -179,7 +179,7 @@ class GoogleAdsService:
             else:
                 # Create new connection
                 connection = Connection(
-                    digital_asset_id=digital_asset.id,
+                    digital_platform_id=digital_platform.id,
                     customer_id=customer_id,
                     campaigner_id=campaigner_id,
                     auth_type=AuthType.OAUTH2,
@@ -250,7 +250,7 @@ class GoogleAdsService:
             return {
                 "success": True,
                 "connection_id": connection.id,
-                "digital_asset_id": digital_asset.id,
+                "digital_platform_id": digital_platform.id,
                 "account_id": account_id,
                 "account_name": account_name,
                 "expires_at": expires_at.isoformat(),
@@ -263,8 +263,8 @@ class GoogleAdsService:
         with get_session() as session:
             # Get connection with digital asset
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     and_(
                         Connection.id == connection_id,
@@ -278,7 +278,7 @@ class GoogleAdsService:
             if not result:
                 raise ValueError("Connection not found or revoked")
 
-            connection, digital_asset = result
+            connection, digital_platform = result
 
             # Decrypt refresh token
             if not connection.refresh_token_enc:
@@ -743,27 +743,27 @@ class GoogleAdsService:
         with get_session() as session:
             conditions = [
                 Connection.campaigner_id == campaigner_id,
-                DigitalAsset.provider == "Google",
+                DigitalPlatform.provider == "Google",
                 Connection.revoked == False,
             ]
 
             # Check for GOOGLE_ADS asset type (database uses 'GOOGLE_ADS' uppercase)
-            conditions.append(DigitalAsset.asset_type == AssetType.GOOGLE_ADS_CAPS)
+            conditions.append(DigitalPlatform.asset_type == AssetType.GOOGLE_ADS_CAPS)
 
             # Add customer_id filter if provided
             if customer_id is not None:
-                conditions.append(DigitalAsset.customer_id == customer_id)
+                conditions.append(DigitalPlatform.customer_id == customer_id)
 
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(and_(*conditions))
             )
 
             results = session.exec(statement).all()
 
             connections = []
-            for connection, digital_asset in results:
+            for connection, digital_platform in results:
                 # Check if token is outdated using backend logic (avoids timezone issues)
                 is_outdated = (
                     self.is_token_expired(connection.expires_at)
@@ -783,12 +783,12 @@ class GoogleAdsService:
                 connections.append(
                     {
                         "connection_id": connection.id,
-                        "digital_asset_id": digital_asset.id,
-                        "customer_id": digital_asset.external_id,
-                        "account_name": digital_asset.name,
+                        "digital_platform_id": digital_platform.id,
+                        "customer_id": digital_platform.external_id,
+                        "account_name": digital_platform.name,
                         "account_email": connection.account_email,
                         "expires_at": format_datetime(connection.expires_at),
-                        "is_active": digital_asset.is_active,
+                        "is_active": digital_platform.is_active,
                         "created_at": format_datetime(connection.created_at),
                         "is_outdated": is_outdated,
                     }

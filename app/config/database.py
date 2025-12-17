@@ -44,7 +44,7 @@ def init_database():
     from app.models import (
         BaseModel, Campaigner, Agency, Customer, CampaignerSession,
         AgentConfig, RoutingRule,
-        DigitalAsset, Connection, KpiGoal, UserPropertySelection, KpiCatalog,
+        DigitalPlatform, Connection, KpiGoal, UserPropertySelection, KpiCatalog,
         RTMTable, QuestionsTable
     )
     from sqlmodel import SQLModel

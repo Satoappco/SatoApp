@@ -42,7 +42,7 @@ def upgrade() -> None:
     sa.Column('leads', sa.Integer(), nullable=True),
     sa.Column('spent', sa.Float(), nullable=True),
     sa.Column('conversions', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['platform_id'], ['digital_assets.id'], ),
+    sa.ForeignKeyConstraint(['platform_id'], ['digital_platforms.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('metric_date', 'item_id', 'platform_id', name='uq_metrics_date_item_platform')
     )

@@ -21,7 +21,7 @@ from .routes import (
     admin,
     agencies,
     property_selections,
-    digital_assets,
+    digital_platforms,
     campaigners,
     customers,
     connections,
@@ -67,7 +67,7 @@ api_router.include_router(facebook_marketing_oauth.router, tags=["facebook-marke
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(agencies.router, tags=["agencies"])
 api_router.include_router(property_selections.router, tags=["property-selections"])
-api_router.include_router(digital_assets.router, tags=["digital-assets"])
+api_router.include_router(digital_platforms.router, tags=["digital-platforms"])
 api_router.include_router(campaigners.router, tags=["campaigners"])
 api_router.include_router(customers.router, tags=["customers"])
 api_router.include_router(connections.router, tags=["connections"])

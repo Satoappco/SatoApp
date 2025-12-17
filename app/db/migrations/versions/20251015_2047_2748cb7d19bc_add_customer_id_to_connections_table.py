@@ -20,7 +20,7 @@ depends_on = None
 def upgrade() -> None:
     """
     Add customer_id to connections table to improve query performance and match frontend logic.
-    This allows direct customer-based queries without joining through digital_assets.
+    This allows direct customer-based queries without joining through digital_platforms.
     """
     print("🔗 Adding customer_id to connections table...")
     print("📊 This will improve query performance and match frontend customer-centric logic...")
@@ -34,18 +34,18 @@ def upgrade() -> None:
         print(f"⚠️  Could not add customer_id column: {e}")
         return
     
-    # Populate customer_id from digital_assets table
+    # Populate customer_id from digital_platforms table
     try:
-        print("🔄 Populating customer_id from digital_assets...")
+        print("🔄 Populating customer_id from digital_platforms...")
         op.execute("""
             UPDATE connections 
             SET customer_id = (
-                SELECT digital_assets.customer_id 
-                FROM digital_assets 
-                WHERE digital_assets.id = connections.digital_asset_id
+                SELECT digital_platforms.customer_id 
+                FROM digital_platforms 
+                WHERE digital_platforms.id = connections.digital_platform_id
             )
         """)
-        print("✅ Successfully populated customer_id from digital_assets")
+        print("✅ Successfully populated customer_id from digital_platforms")
     except Exception as e:
         print(f"⚠️  Could not populate customer_id: {e}")
         return

@@ -10,7 +10,7 @@ from app.core.utils import generate_session_id, get_current_timestamp
 from app.core.exceptions import SatoAppException
 from app.config.logging import get_logger
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection
+from app.models.analytics import DigitalPlatform, Connection
 from sqlmodel import select, and_
 
 logger = get_logger("services.dialogcx")
@@ -47,25 +47,25 @@ class DialogCXService:
             # Return real data from database
             with get_session() as session:
                 # Query actual user assets from database
-                statement = select(DigitalAsset, Connection).join(
-                    Connection, DigitalAsset.id == Connection.digital_asset_id
+                statement = select(DigitalPlatform, Connection).join(
+                    Connection, DigitalPlatform.id == Connection.digital_platform_id
                 ).where(
                     and_(
                         Connection.campaigner_id == campaigner_id,
                         Connection.revoked == False,
-                        DigitalAsset.is_active == True
+                        DigitalPlatform.is_active == True
                     )
                 )
                 
                 results = session.exec(statement).all()
                 
                 assets = []
-                for digital_asset, connection in results:
+                for digital_platform, connection in results:
                     assets.append({
-                        'asset_type': digital_asset.asset_type.value.lower(),
-                        'platform': digital_asset.provider,
-                        'asset_id': digital_asset.external_id,
-                        'is_active': digital_asset.is_active,
+                        'asset_type': digital_platform.asset_type.value.lower(),
+                        'platform': digital_platform.provider,
+                        'asset_id': digital_platform.external_id,
+                        'is_active': digital_platform.is_active,
                         'connection_id': connection.id
                     })
                 

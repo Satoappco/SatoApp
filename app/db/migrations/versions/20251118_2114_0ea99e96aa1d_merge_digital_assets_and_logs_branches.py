@@ -1,4 +1,4 @@
-"""merge_digital_assets_and_logs_branches
+"""merge_digital_platforms_and_logs_branches
 
 Revision ID: 0ea99e96aa1d
 Revises: asset001_2025, f3e9abe63d49

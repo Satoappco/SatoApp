@@ -24,7 +24,7 @@ from google.auth.transport.requests import Request
 from sqlmodel import select, and_
 
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
+from app.models.analytics import DigitalPlatform, Connection, AssetType, AuthType
 from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.config.settings import get_settings
@@ -135,12 +135,12 @@ class GoogleAnalyticsService:
         with get_session() as session:
             # First, deactivate all other GA4 assets for this user/subclient
             print(f"DEBUG: Deactivating other GA4 assets for user {campaigner_id}, subclient {customer_id}")
-            deactivate_statement = select(DigitalAsset).where(
+            deactivate_statement = select(DigitalPlatform).where(
                 and_(
-                    DigitalAsset.customer_id == customer_id,
-                    DigitalAsset.asset_type == AssetType.GA4,
-                    DigitalAsset.provider == "Google",
-                    DigitalAsset.is_active == True
+                    DigitalPlatform.customer_id == customer_id,
+                    DigitalPlatform.asset_type == AssetType.GA4,
+                    DigitalPlatform.provider == "Google",
+                    DigitalPlatform.is_active == True
                 )
             )
             other_assets = session.exec(deactivate_statement).all()
@@ -150,9 +150,9 @@ class GoogleAnalyticsService:
             session.commit()
             
             # Create or update digital asset for this property
-            from app.services.digital_asset_service import upsert_digital_asset
+            from app.services.digital_platform_service import upsert_digital_platform
 
-            digital_asset = upsert_digital_asset(
+            digital_platform = upsert_digital_platform(
                 session=session,
                 customer_id=customer_id,
                 external_id=property_id,
@@ -170,7 +170,7 @@ class GoogleAnalyticsService:
                 },
                 is_active=True
             )
-            print(f"DEBUG: Upserted digital asset {digital_asset.id} for property {property_id}")
+            print(f"DEBUG: Upserted digital asset {digital_platform.id} for property {property_id}")
             
             # Encrypt tokens
             access_token_enc = self._encrypt_token(access_token)
@@ -183,7 +183,7 @@ class GoogleAnalyticsService:
             
             # Check for existing connection using centralized query
             connection = get_connection_for_save(
-                digital_asset_id=digital_asset.id,
+                digital_platform_id=digital_platform.id,
                 campaigner_id=campaigner_id,
                 auth_type=AuthType.OAUTH2,
                 session=session
@@ -207,10 +207,10 @@ class GoogleAnalyticsService:
                 connection.failure_reason = None
                 connection.last_failure_at = None
             else:
-                print(f"DEBUG: Creating new connection for user {campaigner_id} and asset {digital_asset.id}")
+                print(f"DEBUG: Creating new connection for user {campaigner_id} and asset {digital_platform.id}")
                 # Create new connection
                 connection = Connection(
-                    digital_asset_id=digital_asset.id,
+                    digital_platform_id=digital_platform.id,
                     customer_id=customer_id,
                     campaigner_id=campaigner_id,
                     auth_type=AuthType.OAUTH2,
@@ -251,7 +251,7 @@ class GoogleAnalyticsService:
             
             return {
                 "connection_id": connection.id,
-                "digital_asset_id": digital_asset.id,
+                "digital_platform_id": digital_platform.id,
                 "property_id": property_id,
                 "property_name": property_name,
                 "account_email": account_email,
@@ -264,8 +264,8 @@ class GoogleAnalyticsService:
         
         with get_session() as session:
             # Get connection with digital asset
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
                     Connection.id == connection_id,
@@ -277,7 +277,7 @@ class GoogleAnalyticsService:
             if not result:
                 raise ValueError("Connection not found or revoked")
             
-            connection, digital_asset = result
+            connection, digital_platform = result
             
             # Decrypt refresh token
             refresh_token = self._decrypt_token(connection.refresh_token_enc)
@@ -327,7 +327,7 @@ class GoogleAnalyticsService:
                 # Try automatic token renewal first
                 try:
                     print(f"🔄 Attempting automatic token renewal for connection {connection_id}...")
-                    renewed = await self.automatic_token_renewal(connection_id, connection, digital_asset)
+                    renewed = await self.automatic_token_renewal(connection_id, connection, digital_platform)
                     if renewed:
                         print(f"✅ Automatic token renewal successful!")
                         return renewed
@@ -493,7 +493,7 @@ class GoogleAnalyticsService:
                     "message": "Refresh token expired. Please re-authorize with comprehensive scopes."
                 }
 
-    async def automatic_token_renewal(self, connection_id: int, connection, digital_asset) -> Dict[str, Any]:
+    async def automatic_token_renewal(self, connection_id: int, connection, digital_platform) -> Dict[str, Any]:
         """
         Automatically renew tokens programmatically for B2B systems
         This method attempts to get fresh tokens without user intervention
@@ -861,25 +861,25 @@ class GoogleAnalyticsService:
         with get_session() as session:
             conditions = [
                 Connection.campaigner_id == campaigner_id,
-                DigitalAsset.provider == "Google",
+                DigitalPlatform.provider == "Google",
                 Connection.revoked == False
             ]
             
             # Check for GA4 asset type
-            conditions.append(DigitalAsset.asset_type == AssetType.GA4)
+            conditions.append(DigitalPlatform.asset_type == AssetType.GA4)
             
             # Add customer_id filter if provided - now direct on connections table
             if customer_id is not None:
                 conditions.append(Connection.customer_id == customer_id)
             
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(and_(*conditions))
             
             results = session.exec(statement).all()
             
             connections = []
-            for connection, digital_asset in results:
+            for connection, digital_platform in results:
                 # Check if token is outdated using backend logic (avoids timezone issues)
                 is_outdated = self.is_ga_token_expired(connection.expires_at) if connection.expires_at else True
                 
@@ -894,13 +894,13 @@ class GoogleAnalyticsService:
                 
                 connections.append({
                     "connection_id": connection.id,
-                    "digital_asset_id": digital_asset.id,
-                    "property_id": digital_asset.external_id,
-                    "property_name": digital_asset.name,
+                    "digital_platform_id": digital_platform.id,
+                    "property_id": digital_platform.external_id,
+                    "property_name": digital_platform.name,
                     "account_email": connection.account_email,
                     "expires_at": format_datetime(connection.expires_at),
                     "last_used_at": format_datetime(connection.last_used_at),
-                    "is_active": digital_asset.is_active,
+                    "is_active": digital_platform.is_active,
                     "is_outdated": is_outdated
                 })
             
@@ -945,15 +945,15 @@ class GoogleAnalyticsService:
                 # Continue anyway to delete from our DB
 
             # Store the digital asset ID before deleting the connection
-            digital_asset_id = connection.digital_asset_id
+            digital_platform_id = connection.digital_platform_id
 
             # Delete the connection from our database
             session.delete(connection)
             session.commit()
 
             # Check if the digital asset should be deleted (no remaining connections)
-            from app.services.digital_asset_service import delete_orphaned_digital_asset
-            asset_deleted = delete_orphaned_digital_asset(session, digital_asset_id)
+            from app.services.digital_platform_service import delete_orphaned_digital_platform
+            asset_deleted = delete_orphaned_digital_platform(session, digital_platform_id)
 
             return {
                 "success": True,

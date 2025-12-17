@@ -12,7 +12,7 @@ import logging
 import os
 
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType
+from app.models.analytics import Connection, DigitalPlatform, AssetType
 from app.api.dependencies import get_current_user
 from app.utils.connection_failure_utils import (
     record_connection_failure,
@@ -178,14 +178,14 @@ async def get_connections_health(
     with get_session() as session:
         # Get all connections for this campaigner and customer
         query = (
-            select(Connection, DigitalAsset)
-            .join(DigitalAsset)
+            select(Connection, DigitalPlatform)
+            .join(DigitalPlatform)
             .where(
                 and_(
                     Connection.campaigner_id == campaigner_id,
                     Connection.customer_id == customer_id,
                     Connection.revoked == False,
-                    DigitalAsset.is_active == True,
+                    DigitalPlatform.is_active == True,
                 )
             )
         )
@@ -255,8 +255,8 @@ async def get_connection_health(
     with get_session() as session:
         # Get connection with asset info
         query = (
-            select(Connection, DigitalAsset)
-            .join(DigitalAsset)
+            select(Connection, DigitalPlatform)
+            .join(DigitalPlatform)
             .where(
                 and_(
                     Connection.id == connection_id,
@@ -316,14 +316,14 @@ async def get_failing_connections_endpoint(
     with get_session() as session:
         # Get failing connections
         query = (
-            select(Connection, DigitalAsset)
-            .join(DigitalAsset)
+            select(Connection, DigitalPlatform)
+            .join(DigitalPlatform)
             .where(
                 and_(
                     Connection.campaigner_id == campaigner_id,
                     Connection.failure_count >= min_failure_count,
                     Connection.revoked == False,
-                    DigitalAsset.is_active == True,
+                    DigitalPlatform.is_active == True,
                 )
             )
         )
@@ -500,9 +500,9 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
     with get_session() as session:
         # Get all active connections for all users
         query = (
-            select(Connection, DigitalAsset)
-            .join(DigitalAsset)
-            .where(and_(Connection.revoked == False, DigitalAsset.is_active == True))
+            select(Connection, DigitalPlatform)
+            .join(DigitalPlatform)
+            .where(and_(Connection.revoked == False, DigitalPlatform.is_active == True))
         )
 
         results = session.exec(query).all()
@@ -739,7 +739,7 @@ async def refresh_all_tokens(_: None = Depends(verify_internal_token)):
 
 
 def _invalidate_connection_and_create_clickup_task(
-    session, connection: Connection, asset: DigitalAsset, failure_reason: str
+    session, connection: Connection, asset: DigitalPlatform, failure_reason: str
 ):
     """Invalidate a connection and create a ClickUp task for it."""
     try:

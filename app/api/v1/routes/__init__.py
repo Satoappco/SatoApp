@@ -19,7 +19,7 @@ from . import facebook_marketing_oauth
 from . import admin
 from . import agencies
 from . import property_selections
-from . import digital_assets
+from . import digital_platforms
 from . import campaigners
 from . import customers
 from . import connections
@@ -39,7 +39,7 @@ __all__ = [
     "google_analytics_oauth", "google_ads", "google_ads_oauth",
     "facebook", "facebook_oauth",
     "facebook_page_oauth", "facebook_marketing_oauth", "admin",
-    "agencies", "property_selections", "digital_assets", "campaigners",
+    "agencies", "property_selections", "digital_platforms", "campaigners",
     "customers", "connections", "crewai", "database_management", "customer_data",
     "countries_currencies", "oauth_state", "campaign_sync", "logs",
     "customer_assignments", "metrics", "tasks"

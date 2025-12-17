@@ -23,7 +23,7 @@ from google.auth.transport.requests import Request
 from app.services.google_analytics_service import GoogleAnalyticsService
 from app.utils.async_utils import run_async_in_thread
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType
+from app.models.analytics import Connection, DigitalPlatform, AssetType
 from sqlmodel import select, and_
 
 
@@ -192,15 +192,15 @@ class GA4AnalyticsTool(BaseTool):
         """Get user's GA4 connection ID for the specified property and subclient"""
         
         with get_session() as session:
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
                     Connection.campaigner_id == campaigner_id,
-                    DigitalAsset.customer_id == self.customer_id,
-                    DigitalAsset.asset_type == AssetType.ANALYTICS,
-                    DigitalAsset.provider == "Google",
-                    DigitalAsset.external_id == property_id,
+                    DigitalPlatform.customer_id == self.customer_id,
+                    DigitalPlatform.asset_type == AssetType.ANALYTICS,
+                    DigitalPlatform.provider == "Google",
+                    DigitalPlatform.external_id == property_id,
                     Connection.revoked == False
                 )
             )

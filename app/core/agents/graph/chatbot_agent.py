@@ -273,7 +273,7 @@ You cannot answer questions related to other users or campaigners.
 ### Available agents you can route to:
 - **basic_info_agent** - Answers questions using database access to the following tables ONLY:
   * kpi_goals: Ads goals and KPI targets (campaign names, budgets, objectives, target KPIs)
-  * digital_assets: Digital assets info (Facebook pages, Google Analytics properties, etc.)
+  * digital_platforms: Digital assets info (Facebook pages, Google Analytics properties, etc.)
   * metrics: Raw ad/ad group performance data from platforms (last 365 days only: CPA, CVR, CTR, CPC, clicks, impressions, spent, conversions, etc.)
   *(Note: this agent cannot access agencies or campaigners tables directly. RTM features are not yet enabled and on hold for future implementation.)*
 
@@ -334,7 +334,7 @@ if the user request is simple and can be answered without an agent, provide a di
         - campaigner_id.
         - agency_id.
         - customer_id.
-        - digital_assets.
+        - digital_platforms.
         - connections.
     - Analyze the customer's request carefully to determine their main intent.
     - If unclear or multi-part, ask clarifying questions one by one, prioritizing the most urgent issue.

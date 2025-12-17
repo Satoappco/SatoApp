@@ -258,7 +258,7 @@ async def create_facebook_page_connection(
     try:
         from app.services.facebook_service import FacebookService
         from app.config.database import get_session
-        from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
+        from app.models.analytics import DigitalPlatform, Connection, AssetType, AuthType
         from datetime import datetime, timedelta
         
         facebook_service = FacebookService()
@@ -267,12 +267,12 @@ async def create_facebook_page_connection(
             # First, deactivate all other SOCIAL_MEDIA assets for this campaigner/customer
             print(f"DEBUG: Deactivating other SOCIAL_MEDIA assets for campaigner {request.campaigner_id}, customer {request.customer_id}")
             from sqlmodel import select, and_
-            deactivate_statement = select(DigitalAsset).where(
+            deactivate_statement = select(DigitalPlatform).where(
                 and_(
-                    DigitalAsset.customer_id == request.customer_id,
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.is_active == True
+                    DigitalPlatform.customer_id == request.customer_id,
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA,
+                    DigitalPlatform.provider == "Facebook",
+                    DigitalPlatform.is_active == True
                 )
             )
             other_assets = session.exec(deactivate_statement).all()
@@ -282,7 +282,7 @@ async def create_facebook_page_connection(
             session.commit()
             
             # Create digital asset for the specific page
-            digital_asset = DigitalAsset(
+            digital_platform = DigitalPlatform(
                 customer_id=request.customer_id,
                 asset_type=AssetType.SOCIAL_MEDIA,
                 provider="Facebook",
@@ -302,9 +302,9 @@ async def create_facebook_page_connection(
                 },
                 is_active=True
             )
-            session.add(digital_asset)
+            session.add(digital_platform)
             session.commit()
-            session.refresh(digital_asset)
+            session.refresh(digital_platform)
             
             # Encrypt access token
             access_token_enc = facebook_service._encrypt_token(request.access_token)
@@ -316,7 +316,7 @@ async def create_facebook_page_connection(
             # Check for existing connection and update if found
             connection_statement = select(Connection).where(
                 and_(
-                    Connection.digital_asset_id == digital_asset.id,
+                    Connection.digital_platform_id == digital_platform.id,
                     Connection.campaigner_id == request.campaigner_id,
                     Connection.auth_type == AuthType.OAUTH2
                 )
@@ -325,7 +325,7 @@ async def create_facebook_page_connection(
 
             if connection:
                 # Update existing connection
-                print(f"DEBUG: Updating existing connection {connection.id} for asset {digital_asset.id}")
+                print(f"DEBUG: Updating existing connection {connection.id} for asset {digital_platform.id}")
                 connection.access_token_enc = access_token_enc
                 connection.token_hash = token_hash
                 connection.expires_at = expires_at
@@ -340,9 +340,9 @@ async def create_facebook_page_connection(
                 connection.last_failure_at = None
             else:
                 # Create new connection
-                print(f"DEBUG: Creating new connection for asset {digital_asset.id}")
+                print(f"DEBUG: Creating new connection for asset {digital_platform.id}")
                 connection = Connection(
-                    digital_asset_id=digital_asset.id,
+                    digital_platform_id=digital_platform.id,
                     customer_id=request.customer_id,
                     campaigner_id=request.campaigner_id,
                     auth_type=AuthType.OAUTH2,
@@ -367,10 +367,10 @@ async def create_facebook_page_connection(
                 message=f"Successfully connected Facebook page: {request.page_name}",
                 connections=[{
                     "connection_id": connection.id,
-                    "digital_asset_id": digital_asset.id,
-                    "asset_name": digital_asset.name,
-                    "asset_type": digital_asset.asset_type,
-                    "external_id": digital_asset.external_id
+                    "digital_platform_id": digital_platform.id,
+                    "asset_name": digital_platform.name,
+                    "asset_type": digital_platform.asset_type,
+                    "external_id": digital_platform.external_id
                 }],
                 user_name=request.user_name,
                 user_email=request.user_email

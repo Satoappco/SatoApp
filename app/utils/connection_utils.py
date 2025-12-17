@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 import logging
 from sqlmodel import select, and_
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType, AuthType
+from app.models.analytics import Connection, DigitalPlatform, AssetType, AuthType
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +22,17 @@ def get_facebook_connections(campaigner_id: int, customer_id: int, asset_type: s
         asset_type: Type of asset (SOCIAL_MEDIA or ADVERTISING)
         
     Returns:
-        List of (Connection, DigitalAsset) tuples
+        List of (Connection, DigitalPlatform) tuples
     """
     with get_session() as session:
-        statement = select(Connection, DigitalAsset).join(
-            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+        statement = select(Connection, DigitalPlatform).join(
+            DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
                 Connection.campaigner_id == campaigner_id,
                 Connection.customer_id == customer_id,  # Now direct on connections table
-                DigitalAsset.provider == "Facebook",
-                DigitalAsset.asset_type == getattr(AssetType, asset_type),
+                DigitalPlatform.provider == "Facebook",
+                DigitalPlatform.asset_type == getattr(AssetType, asset_type),
                 Connection.revoked == False
             )
         )
@@ -69,17 +69,17 @@ def get_ga4_connections(campaigner_id: int, customer_id: int) -> List[tuple]:
         customer_id: Subclient ID
         
     Returns:
-        List of (Connection, DigitalAsset) tuples
+        List of (Connection, DigitalPlatform) tuples
     """
     with get_session() as session:
-        statement = select(Connection, DigitalAsset).join(
-            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+        statement = select(Connection, DigitalPlatform).join(
+            DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
                 Connection.campaigner_id == campaigner_id,
                 Connection.customer_id == customer_id,  # Now direct on connections table
-                DigitalAsset.provider == "Google Analytics",
-                DigitalAsset.asset_type == AssetType.ANALYTICS,
+                DigitalPlatform.provider == "Google Analytics",
+                DigitalPlatform.asset_type == AssetType.ANALYTICS,
                 Connection.revoked == False
             )
         )
@@ -96,17 +96,17 @@ def get_google_ads_connections(campaigner_id: int, customer_id: int) -> List[tup
         customer_id: Subclient ID
         
     Returns:
-        List of (Connection, DigitalAsset) tuples
+        List of (Connection, DigitalPlatform) tuples
     """
     with get_session() as session:
-        statement = select(Connection, DigitalAsset).join(
-            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+        statement = select(Connection, DigitalPlatform).join(
+            DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
                 Connection.campaigner_id == campaigner_id,
                 Connection.customer_id == customer_id,  # Now direct on connections table
-                DigitalAsset.provider == "Google Ads",
-                DigitalAsset.asset_type == AssetType.ADVERTISING,
+                DigitalPlatform.provider == "Google Ads",
+                DigitalPlatform.asset_type == AssetType.ADVERTISING,
                 Connection.revoked == False
             )
         )
@@ -122,11 +122,11 @@ def get_connection_by_id(connection_id: int) -> Optional[tuple]:
         connection_id: Connection ID
         
     Returns:
-        (Connection, DigitalAsset) tuple or None
+        (Connection, DigitalPlatform) tuple or None
     """
     with get_session() as session:
-        statement = select(Connection, DigitalAsset).join(
-            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+        statement = select(Connection, DigitalPlatform).join(
+            DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
         ).where(Connection.id == connection_id)
         
         result = session.exec(statement).first()
@@ -145,8 +145,8 @@ def get_user_connections_summary(campaigner_id: int, customer_id: int) -> Dict[s
         Dictionary with connection counts by provider and type
     """
     with get_session() as session:
-        statement = select(DigitalAsset.provider, DigitalAsset.asset_type).join(
-            Connection, Connection.digital_asset_id == DigitalAsset.id
+        statement = select(DigitalPlatform.provider, DigitalPlatform.asset_type).join(
+            Connection, Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
                 Connection.campaigner_id == campaigner_id,
@@ -178,7 +178,7 @@ def validate_connection_access(campaigner_id: int, connection_id: int) -> bool:
     """
     with get_session() as session:
         statement = select(Connection).join(
-            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
                 Connection.id == connection_id,
@@ -196,7 +196,7 @@ def validate_connection_access(campaigner_id: int, connection_id: int) -> bool:
 # ========================================
 
 def get_connection_for_save(
-    digital_asset_id: int,
+    digital_platform_id: int,
     campaigner_id: int,
     auth_type: AuthType,
     session: Optional[Any] = None
@@ -206,7 +206,7 @@ def get_connection_for_save(
     Used to check if a connection already exists before creating or updating.
 
     Args:
-        digital_asset_id: Digital asset ID
+        digital_platform_id: Digital asset ID
         campaigner_id: Campaigner ID
         auth_type: Authentication type (OAUTH2, API_KEY, etc.)
         session: Optional database session (creates new one if not provided)
@@ -223,7 +223,7 @@ def get_connection_for_save(
     try:
         statement = select(Connection).where(
             and_(
-                Connection.digital_asset_id == digital_asset_id,
+                Connection.digital_platform_id == digital_platform_id,
                 Connection.campaigner_id == campaigner_id,
                 Connection.auth_type == auth_type
             )
@@ -235,7 +235,7 @@ def get_connection_for_save(
 
 
 def get_active_connection(
-    digital_asset_id: int,
+    digital_platform_id: int,
     customer_id: int,
     campaigner_id: int,
     session: Optional[Any] = None
@@ -245,7 +245,7 @@ def get_active_connection(
     Used by credential managers to fetch connection details for MCP initialization.
 
     Args:
-        digital_asset_id: Digital asset ID
+        digital_platform_id: Digital asset ID
         customer_id: Customer ID
         campaigner_id: Campaigner ID
         session: Optional database session (creates new one if not provided)
@@ -262,7 +262,7 @@ def get_active_connection(
     try:
         statement = select(Connection).where(
             and_(
-                Connection.digital_asset_id == digital_asset_id,
+                Connection.digital_platform_id == digital_platform_id,
                 Connection.customer_id == customer_id,
                 Connection.campaigner_id == campaigner_id,
                 Connection.revoked != True
@@ -315,19 +315,19 @@ def get_connection_by_platform(
 
         # Build where conditions
         conditions = [
-            DigitalAsset.asset_type == asset_type,
+            DigitalPlatform.asset_type == asset_type,
             Connection.campaigner_id == campaigner_id,
             Connection.revoked == False,
-            DigitalAsset.is_active == True
+            DigitalPlatform.is_active == True
         ]
 
         # Add customer_id filter if provided
         if customer_id is not None:
-            conditions.append(DigitalAsset.customer_id == customer_id)
+            conditions.append(DigitalPlatform.customer_id == customer_id)
 
         statement = select(Connection).join(
-            DigitalAsset,
-            Connection.digital_asset_id == DigitalAsset.id
+            DigitalPlatform,
+            Connection.digital_platform_id == DigitalPlatform.id
         ).where(and_(*conditions))
 
         return session.exec(statement).first()
@@ -362,15 +362,15 @@ def get_connections_by_asset_type(
 
     try:
         statement = select(Connection).join(
-            DigitalAsset,
-            Connection.digital_asset_id == DigitalAsset.id
+            DigitalPlatform,
+            Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
-                DigitalAsset.asset_type == asset_type,
-                DigitalAsset.customer_id == customer_id,
+                DigitalPlatform.asset_type == asset_type,
+                DigitalPlatform.customer_id == customer_id,
                 Connection.campaigner_id == campaigner_id,
                 Connection.revoked == False,
-                DigitalAsset.is_active == True
+                DigitalPlatform.is_active == True
             )
         ).order_by(Connection.rotated_at.desc())  # Most recently rotated first
 
@@ -404,14 +404,14 @@ def get_all_active_connections(
 
     try:
         statement = select(Connection).join(
-            DigitalAsset,
-            Connection.digital_asset_id == DigitalAsset.id
+            DigitalPlatform,
+            Connection.digital_platform_id == DigitalPlatform.id
         ).where(
             and_(
-                DigitalAsset.customer_id == customer_id,
+                DigitalPlatform.customer_id == customer_id,
                 Connection.campaigner_id == campaigner_id,
                 Connection.revoked == False,
-                DigitalAsset.is_active == True
+                DigitalPlatform.is_active == True
             )
         ).order_by(Connection.last_used_at.desc())  # Most recently used first
 
