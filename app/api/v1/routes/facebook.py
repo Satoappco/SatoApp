@@ -14,6 +14,8 @@ from app.services.facebook_service import FacebookService
 from app.core.auth import get_current_user
 from app.core.rbac import user_can_access_customer
 from app.models.users import Campaigner
+from datetime import datetime, timezone, timedelta
+
 
 router = APIRouter(prefix="/facebook", tags=["facebook"])
 
@@ -229,14 +231,12 @@ async def fetch_facebook_data(
     try:
         # Verify user owns this connection and has access to the customer
         with get_session() as session:
-            statement = (
-                select(Connection, DigitalPlatform)
-                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
-                .where(
-                    and_(
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
+            ).where(
+                and_(
                         Connection.id == request.connection_id,
                         Connection.campaigner_id == current_user.id,
-                    )
                 )
             )
             result = session.exec(statement).first()

@@ -28,7 +28,13 @@ from app.models.users import (
     CustomerCampaignerAssignment,
 )
 from app.models.customer_data import RTMTable, QuestionsTable
-from app.models.analytics import KpiGoal, DigitalPlatform, Connection, UserPropertySelection, KpiValue
+from app.models.analytics import (
+    KpiGoal,
+    DigitalPlatform,
+    Connection,
+    UserPropertySelection,
+    KpiValue,
+)
 from app.config.database import get_session
 from app.config.logging import get_logger
 from app.services.customer_assignment_service import CustomerAssignmentService
