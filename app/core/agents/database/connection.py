@@ -69,6 +69,12 @@ def get_db_engine(pooling: bool = True) -> Engine:
     Args:
         pooling: Whether to use connection pooling (default: True)
 
+    Environment Variables:
+        DB_POOL_SIZE: Number of persistent connections (default: 10)
+        DB_MAX_OVERFLOW: Additional connections under load (default: 20)
+        DB_POOL_TIMEOUT: Seconds to wait for connection (default: 30)
+        DB_POOL_RECYCLE: Recycle connections after N seconds (default: 3600)
+
     Returns:
         SQLAlchemy engine instance
     """
@@ -79,6 +85,10 @@ def get_db_engine(pooling: bool = True) -> Engine:
 
         engine_kwargs = {
             "echo": os.getenv("SQL_ECHO", "false").lower() == "true",
+            "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+            "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+            "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
+            "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "3600")),
         }
 
         # Disable pooling if requested (useful for serverless environments)

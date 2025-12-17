@@ -11,7 +11,7 @@ from sqlmodel import select
 from app.core.auth import get_current_user
 from app.core.rbac import user_can_access_customer
 from app.models.users import Campaigner, Customer
-from app.models.analytics import DigitalAsset, Connection, AssetType
+from app.models.analytics import DigitalPlatform, Connection, AssetType
 from app.services.google_analytics_service import GoogleAnalyticsService
 from app.config.database import get_session
 
@@ -36,7 +36,7 @@ class GAConnectionResponse(BaseModel):
     """Response model for GA connection"""
 
     connection_id: int
-    digital_asset_id: int
+    digital_platform_id: int
     property_id: str
     property_name: str
     account_email: str
@@ -150,8 +150,8 @@ async def get_ga_connection(
         # Verify campaigner owns this connection
         with get_session() as session:
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     Connection.id == connection_id,
                     Connection.campaigner_id == current_user.id,
@@ -451,8 +451,8 @@ async def get_ga_properties(
         # Verify campaigner owns this connection
         with get_session() as session:
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     Connection.id == connection_id,
                     Connection.campaigner_id == current_user.id,
@@ -465,14 +465,14 @@ async def get_ga_properties(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found"
                 )
 
-            connection, digital_asset = result
+            connection, digital_platform = result
 
             # Return property info
             return {
-                "property_id": digital_asset.external_id,
-                "property_name": digital_asset.name,
+                "property_id": digital_platform.external_id,
+                "property_name": digital_platform.name,
                 "account_email": connection.account_email,
-                "meta": digital_asset.meta,
+                "meta": digital_platform.meta,
             }
 
     except HTTPException:
@@ -497,12 +497,12 @@ async def get_available_ga_properties(
         with get_session() as session:
             # Find any active GA connection for this campaigner and customer
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     Connection.campaigner_id == current_user.id,
-                    DigitalAsset.customer_id == customer_id,
-                    DigitalAsset.asset_type == AssetType.GA4,
+                    DigitalPlatform.customer_id == customer_id,
+                    DigitalPlatform.asset_type == AssetType.GA4,
                     Connection.revoked == False,
                 )
                 .limit(1)
@@ -517,7 +517,7 @@ async def get_available_ga_properties(
                     "properties": [],
                 }
 
-            connection, digital_asset = result
+            connection, digital_platform = result
 
             # Check if token needs refresh (with 5-minute buffer)
             from datetime import timedelta
@@ -624,9 +624,9 @@ async def get_available_ga_properties(
 
             # Mark which properties are already connected
             connected_property_ids = []
-            assets_statement = select(DigitalAsset).where(
-                DigitalAsset.customer_id == customer_id,
-                DigitalAsset.asset_type == AssetType.GA4,
+            assets_statement = select(DigitalPlatform).where(
+                DigitalPlatform.customer_id == customer_id,
+                DigitalPlatform.asset_type == AssetType.GA4,
             )
             connected_assets = session.exec(assets_statement).all()
             connected_property_ids = [asset.external_id for asset in connected_assets]

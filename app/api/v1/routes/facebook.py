@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlmodel import select, and_
 
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType
+from app.models.analytics import Connection, DigitalPlatform, AssetType
 from app.services.facebook_service import FacebookService
 from app.core.auth import get_current_user
 from app.core.rbac import user_can_access_customer
@@ -87,7 +87,7 @@ async def get_facebook_connections(
             conditions = [
                 Connection.campaigner_id
                 == current_user.id,  # Real authenticated user ID
-                DigitalAsset.provider == "Facebook",
+                DigitalPlatform.provider == "Facebook",
                 Connection.revoked == False,
             ]
 
@@ -97,8 +97,8 @@ async def get_facebook_connections(
 
             # Get Facebook connections for the current user - still need to join for asset info
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(and_(*conditions))
             )
 
@@ -194,16 +194,16 @@ async def revoke_facebook_connection(
                 # Continue anyway to delete from our DB
 
             # Store the digital asset ID before deleting the connection
-            digital_asset_id = connection.digital_asset_id
+            digital_platform_id = connection.digital_platform_id
 
             # Delete the connection from our database
             session.delete(connection)
             session.commit()
 
             # Check if the digital asset should be deleted (no remaining connections)
-            from app.services.digital_asset_service import delete_orphaned_digital_asset
+            from app.services.digital_platform_service import delete_orphaned_digital_platform
 
-            asset_deleted = delete_orphaned_digital_asset(session, digital_asset_id)
+            asset_deleted = delete_orphaned_digital_platform(session, digital_platform_id)
 
             message = "Facebook connection deleted successfully"
             if asset_deleted:
@@ -234,8 +234,8 @@ async def fetch_facebook_data(
         # Verify user owns this connection and has access to the customer
         with get_session() as session:
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     and_(
                         Connection.id == request.connection_id,
@@ -293,8 +293,8 @@ async def get_facebook_pages(
         with get_session() as session:
             # Verify user owns this connection
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     and_(
                         Connection.id == connection_id,
@@ -312,11 +312,11 @@ async def get_facebook_pages(
             connection, asset = result
 
             # Get all pages for this user
-            pages_statement = select(DigitalAsset).where(
+            pages_statement = select(DigitalPlatform).where(
                 and_(
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
-                    DigitalAsset.subclient_id == asset.subclient_id,
+                    DigitalPlatform.provider == "Facebook",
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA,
+                    DigitalPlatform.subclient_id == asset.subclient_id,
                 )
             )
             pages = session.exec(pages_statement).all()
@@ -354,8 +354,8 @@ async def get_facebook_ad_accounts(
         with get_session() as session:
             # Verify user owns this connection
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     and_(
                         Connection.id == connection_id,
@@ -373,11 +373,11 @@ async def get_facebook_ad_accounts(
             connection, asset = result
 
             # Get all ad accounts for this user
-            ad_accounts_statement = select(DigitalAsset).where(
+            ad_accounts_statement = select(DigitalPlatform).where(
                 and_(
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.asset_type == AssetType.ADVERTISING,
-                    DigitalAsset.subclient_id == asset.subclient_id,
+                    DigitalPlatform.provider == "Facebook",
+                    DigitalPlatform.asset_type == AssetType.ADVERTISING,
+                    DigitalPlatform.subclient_id == asset.subclient_id,
                 )
             )
             ad_accounts = session.exec(ad_accounts_statement).all()
@@ -415,13 +415,13 @@ async def get_available_facebook_pages(
         with get_session() as session:
             # Find any active Facebook Page connection for this user and subclient
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     Connection.campaigner_id == current_user.id,
-                    DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
-                    DigitalAsset.provider == "Facebook",
+                    DigitalPlatform.subclient_id == subclient_id,
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA,
+                    DigitalPlatform.provider == "Facebook",
                     Connection.revoked == False,
                 )
                 .limit(1)
@@ -436,7 +436,7 @@ async def get_available_facebook_pages(
                     "pages": [],
                 }
 
-            connection, digital_asset = result
+            connection, digital_platform = result
 
             # Check if token is expired or expiring soon, and refresh if needed
             from datetime import timedelta
@@ -449,6 +449,7 @@ async def get_available_facebook_pages(
                 print(f"🔄 Facebook token expired or expiring soon, refreshing...")
                 try:
                     # Refresh the token using the service method
+                    facebook_service = FacebookService()
                     refresh_result = await facebook_service.refresh_facebook_token(
                         connection.id
                     )
@@ -480,10 +481,10 @@ async def get_available_facebook_pages(
 
             # Mark which pages are already connected
             connected_page_ids = []
-            assets_statement = select(DigitalAsset).where(
-                DigitalAsset.subclient_id == subclient_id,
-                DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
-                DigitalAsset.provider == "Facebook",
+            assets_statement = select(DigitalPlatform).where(
+                DigitalPlatform.subclient_id == subclient_id,
+                DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA,
+                DigitalPlatform.provider == "Facebook",
             )
             connected_assets = session.exec(assets_statement).all()
             connected_page_ids = [asset.external_id for asset in connected_assets]
@@ -523,13 +524,13 @@ async def get_available_facebook_ad_accounts(
         with get_session() as session:
             # Find any active Facebook Ads connection for this user and subclient
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     Connection.campaigner_id == current_user.id,
-                    DigitalAsset.subclient_id == subclient_id,
-                    DigitalAsset.asset_type == AssetType.ADVERTISING,
-                    DigitalAsset.provider == "Facebook",
+                    DigitalPlatform.subclient_id == subclient_id,
+                    DigitalPlatform.asset_type == AssetType.ADVERTISING,
+                    DigitalPlatform.provider == "Facebook",
                     Connection.revoked == False,
                 )
                 .limit(1)
@@ -544,9 +545,10 @@ async def get_available_facebook_ad_accounts(
                     "ad_accounts": [],
                 }
 
-            connection, digital_asset = result
+            connection, digital_platform = result
 
             # Check if token is expired or expiring soon, and refresh if needed
+            from datetime import timedelta
             buffer_time = timedelta(minutes=5)
             if (
                 connection.expires_at
@@ -555,6 +557,7 @@ async def get_available_facebook_ad_accounts(
                 print(f"🔄 Facebook token expired or expiring soon, refreshing...")
                 try:
                     # Refresh the token using the service method
+                    facebook_service = FacebookService()
                     refresh_result = await facebook_service.refresh_facebook_token(
                         connection.id
                     )
@@ -586,10 +589,10 @@ async def get_available_facebook_ad_accounts(
 
             # Mark which ad accounts are already connected
             connected_ad_account_ids = []
-            assets_statement = select(DigitalAsset).where(
-                DigitalAsset.subclient_id == subclient_id,
-                DigitalAsset.asset_type == AssetType.ADVERTISING,
-                DigitalAsset.provider == "Facebook",
+            assets_statement = select(DigitalPlatform).where(
+                DigitalPlatform.subclient_id == subclient_id,
+                DigitalPlatform.asset_type == AssetType.ADVERTISING,
+                DigitalPlatform.provider == "Facebook",
             )
             connected_assets = session.exec(assets_statement).all()
             connected_ad_account_ids = [asset.external_id for asset in connected_assets]

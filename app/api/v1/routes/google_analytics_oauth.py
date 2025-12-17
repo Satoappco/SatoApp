@@ -26,15 +26,15 @@ async def fix_analytics_assets():
     """Fix all 'analytics' asset types to 'GA4' and activate them"""
     try:
         from app.config.database import get_session
-        from app.models.analytics import DigitalAsset, AssetType
+        from app.models.analytics import DigitalPlatform, AssetType
         from sqlmodel import select, and_
         
         with get_session() as session:
             # Find all analytics assets from Google
-            statement = select(DigitalAsset).where(
+            statement = select(DigitalPlatform).where(
                 and_(
-                    DigitalAsset.provider == "Google",
-                    DigitalAsset.asset_type == "analytics"
+                    DigitalPlatform.provider == "Google",
+                    DigitalPlatform.asset_type == "analytics"
                 )
             )
             assets = session.exec(statement).all()
@@ -164,18 +164,18 @@ async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
                 # Query database for existing connections
                 if campaigner_id and customer_id:
                     from app.config.database import get_session
-                    from app.models.analytics import Connection, DigitalAsset, AssetType
+                    from app.models.analytics import DigitalPlatform, AssetType
                     from sqlmodel import select, and_
                     
                     with get_session() as session:
                         # Find existing GA4 connections
-                        statement = select(Connection, DigitalAsset).join(
-                            DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                        statement = select(Connection, DigitalPlatform).join(
+                            DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                         ).where(
                             and_(
                                 Connection.campaigner_id == campaigner_id,
                                 Connection.customer_id == customer_id,
-                                DigitalAsset.asset_type == AssetType.GA4,
+                                DigitalPlatform.asset_type == AssetType.GA4,
                                 Connection.revoked == False,
                                 Connection.expires_at.isnot(None)
                             )

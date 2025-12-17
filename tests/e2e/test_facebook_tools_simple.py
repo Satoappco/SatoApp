@@ -18,29 +18,29 @@ def test_facebook_connections():
     
     try:
         from app.config.database import get_session
-        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from app.models.analytics import Connection, DigitalPlatform, AssetType
         from sqlmodel import select, and_
         
         with get_session() as session:
             # Check for social media connections
-            social_statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            social_statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA,
+                    DigitalPlatform.provider == "Facebook",
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA,
                     Connection.revoked == False
                 )
             )
             social_connections = session.exec(social_statement).all()
             
             # Check for advertising connections
-            ad_statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            ad_statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(
                 and_(
-                    DigitalAsset.provider == "Facebook",
-                    DigitalAsset.asset_type == AssetType.ADVERTISING,
+                    DigitalPlatform.provider == "Facebook",
+                    DigitalPlatform.asset_type == AssetType.ADVERTISING,
                     Connection.revoked == False
                 )
             )

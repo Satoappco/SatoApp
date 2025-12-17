@@ -23,7 +23,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.Column('digital_asset_id', sa.Integer(), nullable=False),
+    sa.Column('digital_platform_id', sa.Integer(), nullable=False),
     sa.Column('subclient_id', sa.Integer(), nullable=False),
     sa.Column('platform_campaign_id', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
     sa.Column('campaign_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
@@ -39,7 +39,7 @@ def upgrade() -> None:
     sa.Column('campaign_status', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('meta', sa.JSON(), nullable=True),
-    sa.ForeignKeyConstraint(['digital_asset_id'], ['digital_assets.id'], ),
+    sa.ForeignKeyConstraint(['digital_platform_id'], ['digital_assets.id'], ),
     sa.ForeignKeyConstraint(['subclient_id'], ['sub_customers.id'], ),
     sa.PrimaryKeyConstraint('id')
     )

@@ -6,10 +6,10 @@ Provides upsert functionality to avoid duplicate digital assets.
 
 from typing import Optional, Dict, Any
 from sqlmodel import Session, select, and_
-from app.models.analytics import DigitalAsset, AssetType
+from app.models.analytics import DigitalPlatform, AssetType
 
 
-def upsert_digital_asset(
+def upsert_digital_platform(
     session: Session,
     customer_id: int,
     external_id: str,
@@ -20,7 +20,7 @@ def upsert_digital_asset(
     url: Optional[str] = None,
     meta: Optional[Dict[str, Any]] = None,
     is_active: bool = True
-) -> DigitalAsset:
+) -> DigitalPlatform:
     """
     Create or update a digital asset.
 
@@ -40,14 +40,14 @@ def upsert_digital_asset(
         is_active: Whether the asset is active
 
     Returns:
-        DigitalAsset: The created or updated digital asset
+        DigitalPlatform: The created or updated digital asset
     """
     # Try to find existing asset
-    statement = select(DigitalAsset).where(
+    statement = select(DigitalPlatform).where(
         and_(
-            DigitalAsset.customer_id == customer_id,
-            DigitalAsset.external_id == external_id,
-            DigitalAsset.asset_type == asset_type
+            DigitalPlatform.customer_id == customer_id,
+            DigitalPlatform.external_id == external_id,
+            DigitalPlatform.asset_type == asset_type
         )
     )
     existing_asset = session.exec(statement).first()
@@ -66,7 +66,7 @@ def upsert_digital_asset(
         return existing_asset
     else:
         # Create new asset
-        new_asset = DigitalAsset(
+        new_asset = DigitalPlatform(
             customer_id=customer_id,
             external_id=external_id,
             asset_type=asset_type,
@@ -83,12 +83,12 @@ def upsert_digital_asset(
         return new_asset
 
 
-def get_digital_asset(
+def get_digital_platform(
     session: Session,
     customer_id: int,
     external_id: str,
     asset_type: AssetType
-) -> Optional[DigitalAsset]:
+) -> Optional[DigitalPlatform]:
     """
     Get a digital asset by its unique identifiers.
 
@@ -99,25 +99,25 @@ def get_digital_asset(
         asset_type: Type of asset
 
     Returns:
-        DigitalAsset or None if not found
+        DigitalPlatform or None if not found
     """
-    statement = select(DigitalAsset).where(
+    statement = select(DigitalPlatform).where(
         and_(
-            DigitalAsset.customer_id == customer_id,
-            DigitalAsset.external_id == external_id,
-            DigitalAsset.asset_type == asset_type
+            DigitalPlatform.customer_id == customer_id,
+            DigitalPlatform.external_id == external_id,
+            DigitalPlatform.asset_type == asset_type
         )
     )
     return session.exec(statement).first()
 
 
-def delete_orphaned_digital_asset(session: Session, digital_asset_id: int) -> bool:
+def delete_orphaned_digital_platform(session: Session, digital_platform_id: int) -> bool:
     """
     Delete a digital asset if it has no connections.
 
     Args:
         session: Database session
-        digital_asset_id: ID of the digital asset to check
+        digital_platform_id: ID of the digital asset to check
 
     Returns:
         bool: True if the asset was deleted, False otherwise
@@ -125,12 +125,12 @@ def delete_orphaned_digital_asset(session: Session, digital_asset_id: int) -> bo
     from app.models.analytics import Connection
 
     # Check if the digital asset has any remaining connections
-    statement = select(Connection).where(Connection.digital_asset_id == digital_asset_id)
+    statement = select(Connection).where(Connection.digital_platform_id == digital_platform_id)
     remaining_connections = session.exec(statement).first()
 
     if remaining_connections is None:
         # No connections remain, delete the digital asset
-        asset = session.get(DigitalAsset, digital_asset_id)
+        asset = session.get(DigitalPlatform, digital_platform_id)
         if asset:
             session.delete(asset)
             session.commit()

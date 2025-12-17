@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 from app.utils.connection_failure_utils import (
     record_connection_failure,
     record_connection_success,
-    get_connection_by_digital_asset_id,
+    get_connection_by_digital_platform_id,
     get_failing_connections,
     should_retry_connection,
 )
@@ -24,7 +24,7 @@ def mock_connection():
     """Create a mock connection for testing."""
     return Connection(
         id=123,
-        digital_asset_id=1,
+        digital_platform_id=1,
         customer_id=1,
         campaigner_id=1,
         auth_type=AuthType.OAUTH2,
@@ -41,7 +41,7 @@ def failing_connection():
     """Create a connection with existing failures."""
     return Connection(
         id=456,
-        digital_asset_id=2,
+        digital_platform_id=2,
         customer_id=1,
         campaigner_id=1,
         auth_type=AuthType.OAUTH2,
@@ -211,8 +211,8 @@ class TestRecordConnectionSuccess:
         assert failing_connection.failure_count == original_count
 
 
-class TestGetConnectionByDigitalAssetId:
-    """Tests for get_connection_by_digital_asset_id function."""
+class TestGetConnectionByDigitalPlatformId:
+    """Tests for get_connection_by_digital_platform_id function."""
 
     @patch('app.utils.connection_failure_utils.get_session')
     def test_finds_connection_by_asset_id(self, mock_get_session, mock_connection):
@@ -223,7 +223,7 @@ class TestGetConnectionByDigitalAssetId:
         mock_session.exec.return_value.first.return_value = mock_connection
 
         # Execute
-        result = get_connection_by_digital_asset_id(1)
+        result = get_connection_by_digital_platform_id(1)
 
         # Assert
         assert result == mock_connection
@@ -237,7 +237,7 @@ class TestGetConnectionByDigitalAssetId:
         mock_session.exec.return_value.first.return_value = mock_connection
 
         # Execute
-        result = get_connection_by_digital_asset_id(1, campaigner_id=1)
+        result = get_connection_by_digital_platform_id(1, campaigner_id=1)
 
         # Assert
         assert result == mock_connection
@@ -251,7 +251,7 @@ class TestGetConnectionByDigitalAssetId:
         mock_session.exec.return_value.first.return_value = None
 
         # Execute
-        result = get_connection_by_digital_asset_id(1)
+        result = get_connection_by_digital_platform_id(1)
 
         # Assert
         assert result is None

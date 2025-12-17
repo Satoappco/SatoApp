@@ -395,17 +395,17 @@ async def delete_worker(
             ).all()
 
             # Track digital asset IDs to check for orphans after deletion
-            digital_asset_ids = set()
+            digital_platform_ids = set()
             for connection in connections_to_delete:
-                digital_asset_ids.add(connection.digital_asset_id)
+                digital_platform_ids.add(connection.digital_platform_id)
                 session.delete(connection)
             session.commit()
 
             # Check for and delete orphaned digital assets
-            from app.services.digital_asset_service import delete_orphaned_digital_asset
+            from app.services.digital_platform_service import delete_orphaned_digital_platform
 
-            for asset_id in digital_asset_ids:
-                delete_orphaned_digital_asset(session, asset_id)
+            for asset_id in digital_platform_ids:
+                delete_orphaned_digital_platform(session, asset_id)
 
             # Delete all user property selections for this worker
             property_selections_to_delete = session.exec(

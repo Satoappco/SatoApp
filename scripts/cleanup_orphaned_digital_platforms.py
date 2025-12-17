@@ -14,7 +14,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection
+from app.models.analytics import DigitalPlatform, Connection
 from sqlmodel import select
 
 
@@ -30,12 +30,12 @@ def cleanup_orphaned_assets(dry_run=True):
         # Find active assets without any connections
         # Using a NOT EXISTS subquery
         orphaned_assets = session.exec(
-            select(DigitalAsset).where(
-                DigitalAsset.is_active == True,
-                ~DigitalAsset.id.in_(
-                    select(Connection.digital_asset_id).distinct()
+            select(DigitalPlatform).where(
+                DigitalPlatform.is_active == True,
+                ~DigitalPlatform.id.in_(
+                    select(Connection.digital_platform_id).distinct()
                 )
-            ).order_by(DigitalAsset.created_at.desc())
+            ).order_by(DigitalPlatform.created_at.desc())
         ).all()
 
         if not orphaned_assets:

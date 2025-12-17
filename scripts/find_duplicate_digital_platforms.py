@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection
+from app.models.analytics import DigitalPlatform, Connection
 from sqlmodel import select, func
 from sqlalchemy import and_
 
@@ -20,16 +20,16 @@ def find_duplicates():
     with get_session() as session:
         # Find groups that have more than one asset
         query = select(
-            DigitalAsset.customer_id,
-            DigitalAsset.external_id,
-            DigitalAsset.asset_type,
-            func.count(DigitalAsset.id).label('count')
+            DigitalPlatform.customer_id,
+            DigitalPlatform.external_id,
+            DigitalPlatform.asset_type,
+            func.count(DigitalPlatform.id).label('count')
         ).group_by(
-            DigitalAsset.customer_id,
-            DigitalAsset.external_id,
-            DigitalAsset.asset_type
+            DigitalPlatform.customer_id,
+            DigitalPlatform.external_id,
+            DigitalPlatform.asset_type
         ).having(
-            func.count(DigitalAsset.id) > 1
+            func.count(DigitalPlatform.id) > 1
         )
 
         duplicate_groups = session.exec(query).all()
@@ -47,20 +47,20 @@ def find_duplicates():
 
             # Get all assets in this group
             assets = session.exec(
-                select(DigitalAsset).where(
+                select(DigitalPlatform).where(
                     and_(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.external_id == external_id,
-                        DigitalAsset.asset_type == asset_type
+                        DigitalPlatform.customer_id == customer_id,
+                        DigitalPlatform.external_id == external_id,
+                        DigitalPlatform.asset_type == asset_type
                     )
-                ).order_by(DigitalAsset.created_at)
+                ).order_by(DigitalPlatform.created_at)
             ).all()
 
             for asset in assets:
                 # Check if this asset has connections
                 connection_count = session.exec(
                     select(func.count(Connection.id)).where(
-                        Connection.digital_asset_id == asset.id
+                        Connection.digital_platform_id == asset.id
                     )
                 ).first()
 

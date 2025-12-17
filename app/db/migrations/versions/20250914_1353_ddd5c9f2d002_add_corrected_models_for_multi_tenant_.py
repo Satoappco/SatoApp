@@ -62,7 +62,7 @@ def upgrade() -> None:
     op.add_column('chat_messages', sa.Column('execution_time', sa.Float(), nullable=True))
     op.drop_column('chat_messages', 'user_id')
     op.drop_column('chat_messages', 'analysis_execution_id')
-    op.add_column('connections', sa.Column('digital_asset_id', sa.Integer(), nullable=False))
+    op.add_column('connections', sa.Column('digital_platform_id', sa.Integer(), nullable=False))
     op.add_column('connections', sa.Column('user_id', sa.Integer(), nullable=False))
     op.alter_column('connections', 'auth_type',
                existing_type=sa.VARCHAR(length=50),
@@ -85,7 +85,7 @@ def upgrade() -> None:
                type_=sqlmodel.sql.sqltypes.AutoString(length=64),
                existing_nullable=True)
     op.create_foreign_key(None, 'connections', 'users', ['user_id'], ['id'])
-    op.create_foreign_key(None, 'connections', 'digital_assets', ['digital_asset_id'], ['id'])
+    op.create_foreign_key(None, 'connections', 'digital_assets', ['digital_platform_id'], ['id'])
     op.drop_column('connections', 'sync_status')
     op.drop_column('connections', 'last_sync_at')
     op.drop_column('connections', 'error_count')
@@ -394,7 +394,7 @@ def downgrade() -> None:
                type_=sa.VARCHAR(length=50),
                existing_nullable=False)
     op.drop_column('connections', 'user_id')
-    op.drop_column('connections', 'digital_asset_id')
+    op.drop_column('connections', 'digital_platform_id')
     op.add_column('chat_messages', sa.Column('analysis_execution_id', sa.INTEGER(), autoincrement=False, nullable=True))
     op.add_column('chat_messages', sa.Column('user_id', sa.INTEGER(), autoincrement=False, nullable=False))
     op.drop_column('chat_messages', 'execution_time')

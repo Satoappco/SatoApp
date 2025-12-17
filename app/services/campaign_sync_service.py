@@ -13,11 +13,11 @@ from typing import Dict, Any, Optional, List
 from sqlmodel import select, and_, or_, Session
 
 from app.config.database import get_session
-from app.models.analytics import KpiGoal, KpiValue, Connection, DigitalAsset, AssetType
+from app.models.analytics import DigitalPlatform, AssetType
+from app.models.analytics import KpiGoal, KpiValue, Connection
 from app.services.google_ads_service import GoogleAdsService
 from app.services.facebook_service import FacebookService
 from app.utils.connection_utils import get_google_ads_connections, get_facebook_connections
-
 
 def get_google_client_id() -> str:
     """Get Google client ID from environment"""
@@ -198,7 +198,7 @@ class CampaignSyncService:
         except Exception as e:
             return f"Error: {str(e)}"
     
-    def fetch_google_ads_campaign_metrics(self, campaign_id: str, ad_group_id: Optional[str], ad_id: Optional[str], connection: Connection, digital_asset: DigitalAsset) -> Optional[Dict[str, Any]]:
+    def fetch_google_ads_campaign_metrics(self, campaign_id: str, ad_group_id: Optional[str], ad_id: Optional[str], connection: Connection, digital_platform: DigitalPlatform) -> Optional[Dict[str, Any]]:
         """Fetch campaign metrics from Google Ads API"""
         try:
             # Calculate yesterday's date for data fetching
@@ -231,7 +231,7 @@ class CampaignSyncService:
             ga_service = client.get_service("GoogleAdsService")
             
             # Get customer ID from digital asset
-            customer_id = digital_asset.external_id
+            customer_id = digital_platform.external_id
             
             # Build query based on granularity
             if ad_id:
@@ -372,7 +372,7 @@ class CampaignSyncService:
             print(f"❌ Error fetching Google Ads metrics: {str(e)}")
             return None
     
-    def fetch_facebook_campaign_metrics(self, campaign_id: str, ad_set_id: Optional[str], ad_id: Optional[str], connection: Connection, digital_asset: DigitalAsset) -> Optional[Dict[str, Any]]:
+    def fetch_facebook_campaign_metrics(self, campaign_id: str, ad_set_id: Optional[str], ad_id: Optional[str], connection: Connection, digital_platform: DigitalPlatform) -> Optional[Dict[str, Any]]:
         """Fetch campaign metrics from Facebook Marketing API"""
         try:
             # Calculate yesterday's date for data fetching
@@ -386,16 +386,16 @@ class CampaignSyncService:
             
             # Get ad account ID from digital asset external_id (format: "act_1428787248149391")
             # Or fall back to meta if stored there
-            ad_account_id = digital_asset.external_id
+            ad_account_id = digital_platform.external_id
             if not ad_account_id or not ad_account_id.startswith('act_'):
                 # Try to get from meta as fallback
-                if isinstance(digital_asset.meta, dict):
-                    ad_account_id = digital_asset.meta.get('ad_account_id')
+                if isinstance(digital_platform.meta, dict):
+                    ad_account_id = digital_platform.meta.get('ad_account_id')
             
             if not ad_account_id or not ad_account_id.startswith('act_'):
-                print(f"❌ No valid ad account ID found in digital asset {digital_asset.id}")
-                print(f"   external_id: {digital_asset.external_id}")
-                print(f"   meta: {digital_asset.meta}")
+                print(f"❌ No valid ad account ID found in digital asset {digital_platform.id}")
+                print(f"   external_id: {digital_platform.external_id}")
+                print(f"   meta: {digital_platform.meta}")
                 return None
             
             # Note: We skip token refresh here since this is a sync method (not async)
@@ -605,19 +605,19 @@ class CampaignSyncService:
                     
                     if "Google Ads" in advertising_channel or "Google" in advertising_channel or "Search Ads" in advertising_channel:
                         connections = session.exec(
-                            select(Connection, DigitalAsset).join(
-                                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                            select(Connection, DigitalPlatform).join(
+                                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                             ).where(
                                 and_(
                                     Connection.customer_id == customer_id,
                                     or_(
-                                        DigitalAsset.provider == "Google Ads",
-                                        DigitalAsset.provider == "Google"
+                                        DigitalPlatform.provider == "Google Ads",
+                                        DigitalPlatform.provider == "Google"
                                     ),
                                     or_(
-                                        DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                                        DigitalAsset.asset_type == AssetType.GOOGLE_ADS_CAPS,
-                                        DigitalAsset.asset_type == AssetType.ADVERTISING
+                                        DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
+                                        DigitalPlatform.asset_type == AssetType.GOOGLE_ADS_CAPS,
+                                        DigitalPlatform.asset_type == AssetType.ADVERTISING
                                     ),
                                     Connection.revoked == False
                                 )
@@ -628,8 +628,8 @@ class CampaignSyncService:
                         if len(connections) == 0:
                             # Debug: Check all connections for this customer
                             all_connections = session.exec(
-                                select(Connection, DigitalAsset).join(
-                                    DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                                select(Connection, DigitalPlatform).join(
+                                    DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                                 ).where(
                                     Connection.customer_id == customer_id
                                 )
@@ -637,7 +637,7 @@ class CampaignSyncService:
                             print(f"   DEBUG: Customer {customer_id} has {len(all_connections)} total connections:")
                             for c, a in all_connections:
                                 print(f"      - {a.provider} / {a.asset_type} / revoked={c.revoked}")
-                        for connection, digital_asset in connections:
+                        for connection, digital_platform in connections:
                             for goal in goals:
                                 print(f"   Fetching metrics for campaign {goal.campaign_id}, ad_group {goal.ad_group_id}, ad {goal.ad_id}")
                                 try:
@@ -646,7 +646,7 @@ class CampaignSyncService:
                                         str(goal.ad_group_id) if goal.ad_group_id else None,
                                         str(goal.ad_id) if goal.ad_id else None,
                                         connection, 
-                                        digital_asset
+                                        digital_platform
                                     )
                                     if metrics:
                                         print(f"   Updating KpiValue for KpiGoal {goal.id}")
@@ -662,16 +662,16 @@ class CampaignSyncService:
                     
                     elif "Facebook" in advertising_channel or "facebook" in advertising_channel.lower():
                         connections = session.exec(
-                            select(Connection, DigitalAsset).join(
-                                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                            select(Connection, DigitalPlatform).join(
+                                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                             ).where(
                                 and_(
                                     Connection.customer_id == customer_id,
-                                    DigitalAsset.provider == "Facebook",
+                                    DigitalPlatform.provider == "Facebook",
                                     or_(
-                                        DigitalAsset.asset_type == AssetType.FACEBOOK_ADS,
-                                        DigitalAsset.asset_type == AssetType.FACEBOOK_ADS_CAPS,
-                                        DigitalAsset.asset_type == AssetType.ADVERTISING
+                                        DigitalPlatform.asset_type == AssetType.FACEBOOK_ADS,
+                                        DigitalPlatform.asset_type == AssetType.FACEBOOK_ADS_CAPS,
+                                        DigitalPlatform.asset_type == AssetType.ADVERTISING
                                     ),
                                     Connection.revoked == False
                                 )
@@ -682,8 +682,8 @@ class CampaignSyncService:
                         if len(connections) == 0:
                             # Debug: Check all connections for this customer
                             all_connections = session.exec(
-                                select(Connection, DigitalAsset).join(
-                                    DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                                select(Connection, DigitalPlatform).join(
+                                    DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                                 ).where(
                                     Connection.customer_id == customer_id
                                 )
@@ -691,7 +691,7 @@ class CampaignSyncService:
                             print(f"   DEBUG: Customer {customer_id} has {len(all_connections)} total connections:")
                             for c, a in all_connections:
                                 print(f"      - {a.provider} / {a.asset_type} / revoked={c.revoked}")
-                        for connection, digital_asset in connections:
+                        for connection, digital_platform in connections:
                             for goal in goals:
                                 print(f"   Fetching metrics for campaign {goal.campaign_id}, ad_set {goal.ad_group_id}, ad {goal.ad_id}")
                                 try:
@@ -700,7 +700,7 @@ class CampaignSyncService:
                                         str(goal.ad_group_id) if goal.ad_group_id else None,  # Facebook calls ad_group "ad_set"
                                         str(goal.ad_id) if goal.ad_id else None,
                                         connection,
-                                        digital_asset
+                                        digital_platform
                                     )
                                     if metrics:
                                         print(f"   Updating KpiValue for KpiGoal {goal.id}")
@@ -802,14 +802,14 @@ class CampaignSyncService:
                         
                         # Get all Google Ads and Facebook Ads digital assets
                         platforms = session.exec(
-                            select(DigitalAsset).where(
+                            select(DigitalPlatform).where(
                                 and_(
-                                    DigitalAsset.customer_id == customer.id,
+                                    DigitalPlatform.customer_id == customer.id,
                                     or_(
-                                        DigitalAsset.provider == "Google Ads",
-                                        DigitalAsset.provider == "Facebook"
+                                        DigitalPlatform.provider == "Google Ads",
+                                        DigitalPlatform.provider == "Facebook"
                                     ),
-                                    DigitalAsset.is_active == True
+                                    DigitalPlatform.is_active == True
                                 )
                             )
                         ).all()
@@ -830,7 +830,7 @@ class CampaignSyncService:
                                 connections = session.exec(
                                     select(Connection).where(
                                         and_(
-                                            Connection.digital_asset_id == platform.id,
+                                            Connection.digital_platform_id == platform.id,
                                             Connection.revoked == False
                                         )
                                     ).order_by(Connection.updated_at.desc())
@@ -1030,7 +1030,7 @@ class CampaignSyncService:
         self, 
         session: Session, 
         customer, 
-        platform: DigitalAsset, 
+        platform: DigitalPlatform, 
         reason: str
     ):
         """Create a ClickUp bug task for connection failure."""
@@ -1080,7 +1080,7 @@ class CampaignSyncService:
     def _sync_google_ads_metrics(
         self,
         session: Session,
-        platform: DigitalAsset,
+        platform: DigitalPlatform,
         connection: Connection,
         sync_dates: List[date]
     ) -> int:
@@ -1235,7 +1235,7 @@ class CampaignSyncService:
     def _sync_facebook_metrics(
         self,
         session: Session,
-        platform: DigitalAsset,
+        platform: DigitalPlatform,
         connection: Connection,
         sync_dates: List[date]
     ) -> int:

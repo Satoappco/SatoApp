@@ -28,7 +28,7 @@ def upgrade() -> None:
     # First, update any foreign key references from duplicates to the one we're keeping (MIN id)
     op.execute("""
         UPDATE connections c
-        SET digital_asset_id = (
+        SET digital_platform_id = (
             SELECT MIN(id)
             FROM digital_assets da2
             WHERE da2.customer_id = da.customer_id
@@ -36,7 +36,7 @@ def upgrade() -> None:
             AND da2.asset_type = da.asset_type
         )
         FROM digital_assets da
-        WHERE c.digital_asset_id = da.id
+        WHERE c.digital_platform_id = da.id
         AND da.id NOT IN (
             SELECT MIN(id)
             FROM digital_assets

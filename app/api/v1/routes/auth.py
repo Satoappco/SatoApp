@@ -67,9 +67,12 @@ async def authenticate_with_google(
         google_user_info = None
         if auth_request.google_token:
             try:
+                logger.info(f"Attempting to verify Google token: {auth_request.google_token[:50]}...")
                 google_user_info = verify_google_token(auth_request.google_token)
+                logger.info(f"Google token verified successfully for: {google_user_info.get('email', 'unknown')}")
             except Exception as e:
-                print(f"Google token verification failed: {e}")
+                logger.error(f"Google token verification failed: {type(e).__name__}: {e}")
+                logger.error(f"Token details: {auth_request.google_token[:100]}...")
                 google_user_info = None
         
         # Extract user information from Google token or user_info
@@ -99,12 +102,27 @@ async def authenticate_with_google(
             )
         
         with get_session() as session:
-            # Check if user exists by Google ID or email
-            statement = select(Campaigner).where(
-                (Campaigner.google_id == google_id) | (Campaigner.email == email)
-            )
+            # Check if user exists by Google ID first (preferred), then by email
+            statement = select(Campaigner).where(Campaigner.google_id == google_id)
             existing_user = session.exec(statement).first()
-            
+
+            # If not found by Google ID, search by email
+            if not existing_user:
+                statement = select(Campaigner).where(Campaigner.email == email)
+                existing_user = session.exec(statement).first()
+
+                # If we found a user by email but there are duplicates with this email,
+                # we need to ensure we get only one and update it with the google_id
+                if existing_user:
+                    # Check if there are multiple users with this email
+                    count_statement = select(Campaigner).where(Campaigner.email == email)
+                    all_users = session.exec(count_statement).all()
+                    if len(all_users) > 1:
+                        logger.warning(f"Found {len(all_users)} users with email {email}. Using the first one and setting google_id.")
+                        # We'll use the first one (already in existing_user) and set its google_id
+                        # to prevent future duplicates
+                        existing_user.google_id = google_id
+
             if existing_user:
                 # Update Google OAuth fields
                 existing_user.google_id = google_id
@@ -194,6 +212,9 @@ async def authenticate_with_google(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Authentication error: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication failed: {str(e)}"

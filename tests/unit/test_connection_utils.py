@@ -15,7 +15,7 @@ from app.utils.connection_utils import (
     get_connections_by_asset_type,
     get_all_active_connections,
 )
-from app.models.analytics import Connection, DigitalAsset, AssetType, AuthType
+from app.models.analytics import Connection, DigitalPlatform, AssetType, AuthType
 
 
 class TestGetConnectionForSave:
@@ -39,7 +39,7 @@ class TestGetConnectionForSave:
 
         # Call function with session
         result = get_connection_for_save(
-            digital_asset_id=100,
+            digital_platform_id=100,
             campaigner_id=50,
             auth_type=AuthType.OAUTH2,
             session=mock_session
@@ -59,7 +59,7 @@ class TestGetConnectionForSave:
 
         # Call function with session
         result = get_connection_for_save(
-            digital_asset_id=100,
+            digital_platform_id=100,
             campaigner_id=50,
             auth_type=AuthType.OAUTH2,
             session=mock_session
@@ -87,7 +87,7 @@ class TestGetActiveConnection:
 
         # Call function with session
         result = get_active_connection(
-            digital_asset_id=100,
+            digital_platform_id=100,
             customer_id=10,
             campaigner_id=50,
             session=mock_session
@@ -107,7 +107,7 @@ class TestGetActiveConnection:
 
         # Call function with session
         result = get_active_connection(
-            digital_asset_id=100,
+            digital_platform_id=100,
             customer_id=10,
             campaigner_id=50,
             session=mock_session
@@ -375,7 +375,7 @@ class TestSessionManagement:
 
         # Call function WITHOUT providing session
         result = get_connection_for_save(
-            digital_asset_id=100,
+            digital_platform_id=100,
             campaigner_id=50,
             auth_type=AuthType.OAUTH2
             # No session parameter
@@ -397,7 +397,7 @@ class TestSessionManagement:
 
         # Call function WITH provided session
         result = get_connection_for_save(
-            digital_asset_id=100,
+            digital_platform_id=100,
             campaigner_id=50,
             auth_type=AuthType.OAUTH2,
             session=mock_session  # Provided session
@@ -421,7 +421,7 @@ class TestQueryCorrectness:
         mock_session.exec.return_value = mock_result
 
         get_active_connection(
-            digital_asset_id=100,
+            digital_platform_id=100,
             customer_id=10,
             campaigner_id=50,
             session=mock_session

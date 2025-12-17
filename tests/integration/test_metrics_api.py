@@ -20,7 +20,7 @@ from app.models.users import (
     UserStatus,
     CustomerStatus,
 )
-from app.models.analytics import DigitalAsset, Metrics, AssetType
+from app.models.analytics import DigitalPlatform, Metrics, AssetType
 from app.core.auth import create_access_token
 
 
@@ -37,8 +37,9 @@ def client(db_session):
     # Patch get_session throughout the app
     with patch('app.config.database.get_session', mock_get_session):
         with patch('app.core.auth.get_session', mock_get_session):
-            with patch('app.api.v1.routes.metrics.get_session', mock_get_session):
-                yield TestClient(app)
+            with patch('app.core.rbac.get_session', mock_get_session):
+                with patch('app.api.v1.routes.metrics.get_session', mock_get_session):
+                    yield TestClient(app)
 
 
 @pytest.fixture
@@ -132,7 +133,7 @@ def setup_test_data(db_session):
     db_session.commit()
 
     # Create digital assets (platforms)
-    asset1 = DigitalAsset(
+    asset1 = DigitalPlatform(
         customer_id=customer1.id,
         asset_type=AssetType.GOOGLE_ADS,
         provider="Google",
@@ -140,7 +141,7 @@ def setup_test_data(db_session):
         external_id="google-ads-123",
         is_active=True,
     )
-    asset2 = DigitalAsset(
+    asset2 = DigitalPlatform(
         customer_id=customer2.id,
         asset_type=AssetType.FACEBOOK_ADS,
         provider="Facebook",
@@ -148,7 +149,7 @@ def setup_test_data(db_session):
         external_id="facebook-ads-456",
         is_active=True,
     )
-    asset3 = DigitalAsset(
+    asset3 = DigitalPlatform(
         customer_id=customer3.id,
         asset_type=AssetType.GOOGLE_ADS,
         provider="Google",

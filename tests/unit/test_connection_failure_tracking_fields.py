@@ -10,7 +10,7 @@ due to missing columns: last_failure_at, failure_count, failure_reason
 
 import pytest
 from datetime import datetime, timezone
-from app.models.analytics import Connection, DigitalAsset, AssetType, AuthType
+from app.models.analytics import Connection, DigitalPlatform, AssetType, AuthType
 
 
 class TestConnectionFailureTrackingFields:
@@ -20,7 +20,7 @@ class TestConnectionFailureTrackingFields:
         """Test that Connection model includes all failure tracking fields."""
         # Create a Connection instance
         connection = Connection(
-            digital_asset_id=1,
+            digital_platform_id=1,
             customer_id=1,
             campaigner_id=1,
             auth_type=AuthType.OAUTH2,
@@ -56,7 +56,7 @@ class TestConnectionFailureTrackingFields:
         failure_time = datetime.now(timezone.utc)
 
         connection = Connection(
-            digital_asset_id=1,
+            digital_platform_id=1,
             customer_id=1,
             campaigner_id=1,
             auth_type=AuthType.OAUTH2,
@@ -85,7 +85,7 @@ class TestConnectionFailureTrackingFields:
     def test_connection_model_fields_have_correct_types(self):
         """Test that Connection model failure tracking fields have correct types."""
         connection = Connection(
-            digital_asset_id=1,
+            digital_platform_id=1,
             customer_id=1,
             campaigner_id=1,
             auth_type=AuthType.OAUTH2,

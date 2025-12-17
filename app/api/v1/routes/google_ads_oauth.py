@@ -27,17 +27,17 @@ async def clear_connections_with_invalid_scopes():
     """
     try:
         from app.config.database import get_session
-        from app.models.analytics import Connection, DigitalAsset, AssetType
+        from app.models.analytics import DigitalPlatform, AssetType
         from sqlmodel import select, and_
 
         with get_session() as session:
             # Find Google Ads connections with Analytics scopes
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     and_(
-                        DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                        DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
                         Connection.auth_type == "oauth2",
                     )
                 )
@@ -132,22 +132,22 @@ async def get_oauth_url(redirect_uri: str, state: Optional[str] = None):
                 # Query database for existing connections
                 if campaigner_id and customer_id:
                     from app.config.database import get_session
-                    from app.models.analytics import Connection, DigitalAsset, AssetType
+                    from app.models.analytics import DigitalPlatform, AssetType
                     from sqlmodel import select, and_
 
                     with get_session() as session:
                         # Find existing Google Ads connections
                         statement = (
-                            select(Connection, DigitalAsset)
+                            select(Connection, DigitalPlatform)
                             .join(
-                                DigitalAsset,
-                                Connection.digital_asset_id == DigitalAsset.id,
+                                DigitalPlatform,
+                                Connection.digital_platform_id == DigitalPlatform.id,
                             )
                             .where(
                                 and_(
                                     Connection.campaigner_id == campaigner_id,
                                     Connection.customer_id == customer_id,
-                                    DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
+                                    DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
                                     Connection.revoked == False,
                                     Connection.expires_at.isnot(None),
                                 )

@@ -31,7 +31,7 @@ class TestGoogleAdsServiceRefreshTokenHandling:
         assert result is not None
         assert isinstance(result, bytes)
 
-    @patch("app.services.digital_asset_service.upsert_digital_asset")
+    @patch("app.services.digital_platform_service.upsert_digital_platform")
     @patch("app.services.google_ads_service.get_session")
     async def test_save_connection_with_none_refresh_token(
         self, mock_get_session, mock_upsert

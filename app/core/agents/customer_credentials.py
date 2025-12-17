@@ -5,7 +5,7 @@ import logging
 import os
 from sqlmodel import select
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection, AssetType
+from app.models.analytics import DigitalPlatform, Connection, AssetType
 from app.services.google_ads_service import GoogleAdsService
 from app.services.facebook_service import FacebookService
 from app.utils.connection_utils import get_active_connection
@@ -22,7 +22,7 @@ class CustomerCredentialManager:
         self.facebook_ads_service = FacebookService()
         
     def fetch_customer_platforms(self, customer_id: int) -> List[str]:
-        """Fetch customer's enabled platforms from digital_assets table.
+        """Fetch customer's enabled platforms from digital_platforms table.
 
         Args:
             customer_id: Customer ID
@@ -34,16 +34,16 @@ class CustomerCredentialManager:
         try:
             with get_session() as session:
                 # Get digital assets for this customer
-                digital_assets = session.exec(
-                    select(DigitalAsset).where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.is_active == True
+                digital_platforms = session.exec(
+                    select(DigitalPlatform).where(
+                        DigitalPlatform.customer_id == customer_id,
+                        DigitalPlatform.is_active == True
                     )
                 ).all()
 
                 # Extract unique platforms from asset_type and provider
                 platform_set = set()
-                for asset in digital_assets:
+                for asset in digital_platforms:
                     asset_type_str = asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type)
                     # provider = asset.provider.lower() if asset.provider else ""
 
@@ -81,15 +81,15 @@ class CustomerCredentialManager:
                 # Get Google Analytics digital asset for this customer
                 # Join with connections to only get assets that have active connections
                 ga_asset = session.exec(
-                    select(DigitalAsset)
-                    .join(Connection, DigitalAsset.id == Connection.digital_asset_id)
+                    select(DigitalPlatform)
+                    .join(Connection, DigitalPlatform.id == Connection.digital_platform_id)
                     .where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.GA4,
-                        DigitalAsset.is_active == True,
+                        DigitalPlatform.customer_id == customer_id,
+                        DigitalPlatform.asset_type == AssetType.GA4,
+                        DigitalPlatform.is_active == True,
                         Connection.revoked != True
                     )
-                    .order_by(DigitalAsset.created_at.desc())
+                    .order_by(DigitalPlatform.created_at.desc())
                 ).first()
 
                 if not ga_asset:
@@ -98,7 +98,7 @@ class CustomerCredentialManager:
 
                 # Get the connection using centralized query
                 connection = get_active_connection(
-                    digital_asset_id=ga_asset.id,
+                    digital_platform_id=ga_asset.id,
                     customer_id=customer_id,
                     campaigner_id=campaigner_id,
                     session=session
@@ -169,15 +169,15 @@ class CustomerCredentialManager:
                 # Get Google Ads digital asset for this customer
                 # Join with connections to only get assets that have active connections
                 gads_asset = session.exec(
-                    select(DigitalAsset)
-                    .join(Connection, DigitalAsset.id == Connection.digital_asset_id)
+                    select(DigitalPlatform)
+                    .join(Connection, DigitalPlatform.id == Connection.digital_platform_id)
                     .where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.GOOGLE_ADS,
-                        DigitalAsset.is_active == True,
+                        DigitalPlatform.customer_id == customer_id,
+                        DigitalPlatform.asset_type == AssetType.GOOGLE_ADS,
+                        DigitalPlatform.is_active == True,
                         Connection.revoked != True
                     )
-                    .order_by(DigitalAsset.created_at.desc())
+                    .order_by(DigitalPlatform.created_at.desc())
                 ).first()
 
                 if not gads_asset:
@@ -186,7 +186,7 @@ class CustomerCredentialManager:
 
                 # Get the connection using centralized query
                 connection = get_active_connection(
-                    digital_asset_id=gads_asset.id,
+                    digital_platform_id=gads_asset.id,
                     customer_id=customer_id,
                     campaigner_id=campaigner_id,
                     session=session
@@ -250,15 +250,15 @@ class CustomerCredentialManager:
                 # Get Facebook Ads digital asset for this customer
                 # Join with connections to only get assets that have active connections
                 fb_asset = session.exec(
-                    select(DigitalAsset)
-                    .join(Connection, DigitalAsset.id == Connection.digital_asset_id)
+                    select(DigitalPlatform)
+                    .join(Connection, DigitalPlatform.id == Connection.digital_platform_id)
                     .where(
-                        DigitalAsset.customer_id == customer_id,
-                        DigitalAsset.asset_type == AssetType.FACEBOOK_ADS,
-                        DigitalAsset.is_active == True,
+                        DigitalPlatform.customer_id == customer_id,
+                        DigitalPlatform.asset_type == AssetType.FACEBOOK_ADS,
+                        DigitalPlatform.is_active == True,
                         Connection.revoked != True
                     )
-                    .order_by(DigitalAsset.created_at.desc())
+                    .order_by(DigitalPlatform.created_at.desc())
                 ).first()
 
                 if not fb_asset:
@@ -267,7 +267,7 @@ class CustomerCredentialManager:
 
                 # Get the connection using centralized query
                 connection = get_active_connection(
-                    digital_asset_id=fb_asset.id,
+                    digital_platform_id=fb_asset.id,
                     customer_id=customer_id,
                     campaigner_id=campaigner_id,
                     session=session
@@ -275,7 +275,7 @@ class CustomerCredentialManager:
 
                 if not connection or not connection.access_token_enc:
                     logger.warning(f"⚠️  [CredentialManager] No active connection for Facebook Ads asset")
-                    logger.debug(f"digital_asset_id: {fb_asset.id}, customer_id: {customer_id}, campaigner_id: {campaigner_id} could not get: {'connection' if not connection else 'access_token'}")
+                    logger.debug(f"digital_platform_id: {fb_asset.id}, customer_id: {customer_id}, campaigner_id: {campaigner_id} could not get: {'connection' if not connection else 'access_token'}")
                     return None
 
                 # Decrypt the access token
@@ -341,7 +341,7 @@ class CustomerCredentialManager:
 
 
     # def fetch_and_validate_customer_platforms(self, campaigner_id, customer_id: int) -> List[str]:
-    #     """Fetch customer's enabled platforms from digital_assets table.
+    #     """Fetch customer's enabled platforms from digital_platforms table.
 
     #     Args:
     #         campaigner_id: Campaigner ID

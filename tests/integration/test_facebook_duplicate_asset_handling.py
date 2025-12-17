@@ -6,7 +6,7 @@ Tests that the system properly handles duplicate digital assets during connectio
 import pytest
 from datetime import datetime, timezone
 from sqlmodel import Session, select
-from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
+from app.models.analytics import DigitalPlatform, Connection, AssetType, AuthType
 from app.models.users import Agency, Customer, Campaigner
 
 
@@ -51,7 +51,7 @@ class TestFacebookDuplicateAssetHandling:
 
             # Create initial digital asset
             ad_account_id = "act_test_123"
-            initial_asset = DigitalAsset(
+            initial_asset = DigitalPlatform(
                 customer_id=customer.id,
                 asset_type=AssetType.FACEBOOK_ADS,
                 provider="Facebook",
@@ -73,10 +73,10 @@ class TestFacebookDuplicateAssetHandling:
 
             # Now simulate creating a "duplicate" by querying for existing asset first
             existing_asset = session.exec(
-                select(DigitalAsset).where(
-                    DigitalAsset.customer_id == customer.id,
-                    DigitalAsset.external_id == ad_account_id,
-                    DigitalAsset.asset_type == AssetType.FACEBOOK_ADS
+                select(DigitalPlatform).where(
+                    DigitalPlatform.customer_id == customer.id,
+                    DigitalPlatform.external_id == ad_account_id,
+                    DigitalPlatform.asset_type == AssetType.FACEBOOK_ADS
                 )
             ).first()
 
@@ -98,10 +98,10 @@ class TestFacebookDuplicateAssetHandling:
 
             # Verify the asset was updated, not duplicated
             all_assets = session.exec(
-                select(DigitalAsset).where(
-                    DigitalAsset.customer_id == customer.id,
-                    DigitalAsset.external_id == ad_account_id,
-                    DigitalAsset.asset_type == AssetType.FACEBOOK_ADS
+                select(DigitalPlatform).where(
+                    DigitalPlatform.customer_id == customer.id,
+                    DigitalPlatform.external_id == ad_account_id,
+                    DigitalPlatform.asset_type == AssetType.FACEBOOK_ADS
                 )
             ).all()
 
@@ -148,7 +148,7 @@ class TestFacebookDuplicateAssetHandling:
 
             # Create initial digital asset for a Facebook Page
             page_id = "123456789"
-            initial_asset = DigitalAsset(
+            initial_asset = DigitalPlatform(
                 customer_id=customer.id,
                 asset_type=AssetType.SOCIAL_MEDIA,
                 provider="Facebook",
@@ -170,10 +170,10 @@ class TestFacebookDuplicateAssetHandling:
 
             # Now simulate creating a "duplicate" by querying for existing asset first
             existing_asset = session.exec(
-                select(DigitalAsset).where(
-                    DigitalAsset.customer_id == customer.id,
-                    DigitalAsset.external_id == page_id,
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA
+                select(DigitalPlatform).where(
+                    DigitalPlatform.customer_id == customer.id,
+                    DigitalPlatform.external_id == page_id,
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA
                 )
             ).first()
 
@@ -194,10 +194,10 @@ class TestFacebookDuplicateAssetHandling:
 
             # Verify the asset was updated, not duplicated
             all_assets = session.exec(
-                select(DigitalAsset).where(
-                    DigitalAsset.customer_id == customer.id,
-                    DigitalAsset.external_id == page_id,
-                    DigitalAsset.asset_type == AssetType.SOCIAL_MEDIA
+                select(DigitalPlatform).where(
+                    DigitalPlatform.customer_id == customer.id,
+                    DigitalPlatform.external_id == page_id,
+                    DigitalPlatform.asset_type == AssetType.SOCIAL_MEDIA
                 )
             ).all()
 

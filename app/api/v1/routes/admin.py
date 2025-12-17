@@ -9,7 +9,7 @@ from datetime import datetime
 
 from app.core.security import verify_api_key
 from app.config.database import get_session
-from app.models.analytics import Connection, DigitalAsset, AssetType
+from app.models.analytics import Connection, DigitalPlatform, AssetType
 from app.models.users import Campaigner
 from app.services.agent_service import AgentService
 
@@ -100,21 +100,21 @@ async def get_all_connections(
         with get_session() as session:
             from sqlmodel import select
             
-            statement = select(Connection, DigitalAsset).join(
-                DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+            statement = select(Connection, DigitalPlatform).join(
+                DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
             ).where(Connection.revoked == False)
             
             results = session.exec(statement).all()
             
             connections = []
-            for connection, asset in results:
+            for connection, platform in results:
                 connections.append({
                     "connection_id": connection.id,
                     "customer_id": connection.customer_id,
                     "campaigner_id": connection.campaigner_id,
-                    "asset_name": asset.name,
-                    "asset_type": asset.asset_type,
-                    "provider": asset.provider,
+                    "platform_name": platform.name,
+                    "platform_type": platform.asset_type,
+                    "provider": platform.provider,
                     "status": "Active" if not connection.revoked else "Revoked",
                     "expires_at": connection.expires_at,
                     "created_at": connection.created_at

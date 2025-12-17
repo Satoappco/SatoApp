@@ -39,9 +39,9 @@ class TestNewAssetMetricsSync:
         mock_connection = Mock()
         mock_connection.id = 1
 
-        # Mock upsert_digital_asset
+        # Mock upsert_digital_platform
         with patch(
-            "app.services.digital_asset_service.upsert_digital_asset",
+            "app.services.digital_platform_service.upsert_digital_platform",
             return_value=mock_digital_asset,
         ):
             with patch(
@@ -110,7 +110,7 @@ class TestNewAssetMetricsSync:
                 ],
             ):
                 with patch(
-                    "app.services.digital_asset_service.upsert_digital_asset",
+                    "app.services.digital_platform_service.upsert_digital_platform",
                     return_value=mock_digital_asset,
                 ):
                     with patch(
@@ -235,7 +235,7 @@ class TestNewAssetMetricsSync:
         mock_session.refresh.return_value = None
 
         with patch(
-            "app.services.digital_asset_service.upsert_digital_asset",
+            "app.services.digital_platform_service.upsert_digital_platform",
             return_value=mock_digital_asset,
         ):
             with patch(
@@ -254,9 +254,9 @@ class TestNewAssetMetricsSync:
                     account_email="test@example.com",
                 )
 
-        # Mock upsert_digital_asset
+        # Mock upsert_digital_platform
         with patch(
-            "app.services.digital_asset_service.upsert_digital_asset",
+            "app.services.digital_platform_service.upsert_digital_platform",
             return_value=mock_digital_asset,
         ):
             with patch(

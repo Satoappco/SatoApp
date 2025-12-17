@@ -18,7 +18,7 @@ from app.core.agents.database.connection import get_db_connection
 from .sql_validator import SQLValidator
 from ....models import (
     Customer,
-    KpiGoal, KpiValue, DigitalAsset, Connection,
+    KpiGoal, KpiValue, DigitalPlatform, Connection,
     Metrics, RTMTable, QuestionsTable
 )
 from app.services.chat_trace_service import ChatTraceService
@@ -43,7 +43,7 @@ class PostgresTool(BaseTool):
     - customers: Customer/client information
     - kpi_goals: Campaign goals and KPI targets
     - kpi_values: Actual KPI measurements
-    - digital_assets: Digital assets (social media, analytics accounts, etc.)
+    - digital_platforms: Digital platforms (social media, analytics accounts, etc.)
     - connections: OAuth connections and API credentials
     - metrics: Raw ad/ad group performance data (last 90 days: CPA, CVR, CTR, CPC, clicks, impressions, spent, conversions, etc.)
 
@@ -243,7 +243,7 @@ class PostgresTool(BaseTool):
         - customers
         - kpi_goals
         - kpi_values
-        - digital_assets
+        - digital_platforms
         - connections
         - metrics (last 90 days only)
 
@@ -260,7 +260,7 @@ class PostgresTool(BaseTool):
             # "customers": Customer,
             "kpi_goals": KpiGoal,
             # "kpi_values": KpiValue,
-            "digital_assets": DigitalAsset,
+            "digital_platforms": DigitalPlatform,
             # "connections": Connection,
             "metrics": Metrics,
         }
@@ -275,9 +275,9 @@ class PostgresTool(BaseTool):
                 "kpi_goals_to_campaigner": "kpi_goals.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 # "kpi_values_to_campaigner": "kpi_values.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 # "customers_to_campaigner": "customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "digital_assets_to_campaigner": "digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
+                "digital_platforms_to_campaigner": "digital_platforms.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
                 # "connections_to_campaigner": "connections.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id",
-                "metrics_to_campaigner": "metrics.platform_id → digital_assets.id → digital_assets.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id"
+                "metrics_to_campaigner": "metrics.platform_id → digital_platforms.id → digital_platforms.customer_id → customers.id → customers.agency_id = campaigners.agency_id → campaigners.id = :campaigner_id"
             },
             "note": "metrics table contains only last 90 days of data"
         }
@@ -349,12 +349,12 @@ class PostgresTool(BaseTool):
             schema["example_join"] = "FROM customers c JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
         elif table_name == "campaigners":
             schema["security"] = "Auto-filtered by campaigner_id"
-        elif table_name in ["digital_assets", "connections"]:
+        elif table_name in ["digital_platforms", "connections"]:
             schema["security"] = f"MUST join: {table_name} → customers → campaigners"
             schema["example_join"] = f"FROM {table_name} da JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
         elif table_name == "metrics":
-            schema["security"] = "MUST join: metrics → digital_assets → customers → campaigners"
-            schema["example_join"] = "FROM metrics m JOIN digital_assets da ON da.id = m.platform_id JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
+            schema["security"] = "MUST join: metrics → digital_platforms → customers → campaigners"
+            schema["example_join"] = "FROM metrics m JOIN digital_platforms da ON da.id = m.platform_id JOIN customers c ON c.id = da.customer_id JOIN campaigners camp ON camp.agency_id = c.agency_id WHERE camp.id = :campaigner_id"
             schema["data_retention"] = "Only last 90 days of data available"
 
         return schema

@@ -198,21 +198,21 @@ async def manual_sync_campaign(
                 )
             
             # Get connection and digital asset
-            from app.models.analytics import Connection, DigitalAsset, AssetType
+            from app.models.analytics import DigitalPlatform, AssetType
             
             if "Google Ads" in kpi_goal.advertising_channel or "Google" in kpi_goal.advertising_channel:
                 connections = session.exec(
-                    select(Connection, DigitalAsset).join(
-                        DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                    select(Connection, DigitalPlatform).join(
+                        DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                     ).where(
                         Connection.customer_id == kpi_goal.customer_id
                     )
                 ).all()
                 
-                for connection, digital_asset in connections:
-                    if digital_asset.provider == "Google Ads":
+                for connection, digital_platform in connections:
+                    if digital_platform.provider == "Google Ads":
                         metrics = sync_service.fetch_google_ads_campaign_metrics(
-                            kpi_goal.campaign_id, connection, digital_asset
+                            kpi_goal.campaign_id, connection, digital_platform
                         )
                         if metrics:
                             sync_service.update_kpi_value(kpi_goal, metrics)
@@ -220,17 +220,17 @@ async def manual_sync_campaign(
             
             elif "Facebook" in kpi_goal.advertising_channel:
                 connections = session.exec(
-                    select(Connection, DigitalAsset).join(
-                        DigitalAsset, Connection.digital_asset_id == DigitalAsset.id
+                    select(Connection, DigitalPlatform).join(
+                        DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id
                     ).where(
                         Connection.customer_id == kpi_goal.customer_id
                     )
                 ).all()
                 
-                for connection, digital_asset in connections:
-                    if digital_asset.provider == "Facebook":
+                for connection, digital_platform in connections:
+                    if digital_platform.provider == "Facebook":
                         metrics = sync_service.fetch_facebook_campaign_metrics(
-                            kpi_goal.campaign_id, connection, digital_asset
+                            kpi_goal.campaign_id, connection, digital_platform
                         )
                         if metrics:
                             sync_service.update_kpi_value(kpi_goal, metrics)

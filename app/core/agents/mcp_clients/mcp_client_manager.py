@@ -26,7 +26,7 @@ from app.core.agents.mcp_clients.mcp_registry import MCPServer, MCPSelector
 from app.core.agents.mcp_clients.mcp_validator import MCPValidator, MCPValidationResult
 from app.core.agents.mcp_clients.http_client import HTTPMCPClient
 from app.config.database import get_session
-from app.models.analytics import Connection, AssetType, DigitalAsset
+from app.models.analytics import Connection, AssetType, DigitalPlatform
 from app.utils.connection_utils import get_connection_by_platform
 from sqlmodel import select, and_
 

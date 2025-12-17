@@ -31,7 +31,7 @@ class AnalyticsCrewPlaceholder:
         self.credential_manager = CustomerCredentialManager()
 
     def _fetch_customer_platforms(self, customer_id: int) -> List[str]:
-        """Fetch customer's enabled platforms from digital_assets table."""
+        """Fetch customer's enabled platforms from digital_platforms table."""
         return self.credential_manager.fetch_customer_platforms(customer_id)
 
     def _fetch_google_analytics_token(self, customer_id: int, campaigner_id: int) -> Optional[Dict[str, str]]:
@@ -69,7 +69,7 @@ class AnalyticsCrewPlaceholder:
 
         if customer_id:
             logger.info(f"🔍 [AnalyticsCrew] Auto-fetching data for customer {customer_id}")
-            # Fetch customer's platforms and credentials from digital_assets table
+            # Fetch customer's platforms and credentials from digital_platforms table
             credentials = self.credential_manager.fetch_all_credentials(customer_id, campaigner_id)
             platforms = credentials.get("platforms", [])
             logger.info(f"✅ [AnalyticsCrew] Fetched platforms: {platforms}")

@@ -32,7 +32,7 @@ from app.core.oauth.token_refresh import (
 from app.core.agents.mcp_clients.mcp_validator import MCPValidator, ValidationStatus
 from app.core.agents.mcp_clients.mcp_client_manager import MCPClientManager
 from app.core.agents.mcp_clients.mcp_registry import MCPServer
-from app.models.analytics import Connection, AssetType, DigitalAsset, AuthType
+from app.models.analytics import Connection, AssetType, DigitalPlatform, AuthType
 from app.config.database import get_session
 
 
@@ -40,7 +40,7 @@ from app.config.database import get_session
 def test_connection(db_session):
     """Create a test connection in database."""
     # Create digital asset
-    asset = DigitalAsset(
+    asset = DigitalPlatform(
         customer_id=1,
         external_id="test-ga4-property",
         asset_type=AssetType.ANALYTICS,
@@ -55,7 +55,7 @@ def test_connection(db_session):
 
     # Create connection
     connection = Connection(
-        digital_asset_id=asset.id,
+        digital_platform_id=asset.id,
         customer_id=1,
         campaigner_id=1,
         auth_type=AuthType.OAUTH2,

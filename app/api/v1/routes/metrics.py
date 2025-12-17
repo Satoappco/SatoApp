@@ -11,7 +11,8 @@ from sqlmodel import select, and_, or_, col, func
 from app.core.auth import get_current_user
 from app.core.rbac import get_accessible_customers, user_can_access_customer
 from app.models.users import Campaigner, UserRole, CustomerCampaignerAssignment
-from app.models.analytics import Metrics, DigitalAsset
+from app.models.analytics import DigitalPlatform
+from app.models.analytics import Metrics
 from app.models.users import Customer
 from app.models.settings import AppSettings
 from app.config.database import get_session
@@ -205,8 +206,8 @@ async def get_metrics(
 
             # Get platform IDs for accessible customers
             platform_ids = session.exec(
-                select(DigitalAsset.id).where(
-                    DigitalAsset.customer_id.in_(accessible_customer_ids)
+                select(DigitalPlatform.id).where(
+                    DigitalPlatform.customer_id.in_(accessible_customer_ids)
                 )
             ).all()
 
@@ -401,8 +402,8 @@ async def get_aggregated_metrics(
                     conditions.append(Metrics.platform_id == platform_id)
                 elif customer_id:
                     customer_platform_ids = session.exec(
-                        select(DigitalAsset.id).where(
-                            DigitalAsset.customer_id == customer_id
+                        select(DigitalPlatform.id).where(
+                            DigitalPlatform.customer_id == customer_id
                         )
                     ).all()
                     if customer_platform_ids:
@@ -455,8 +456,8 @@ async def get_aggregated_metrics(
                     customer_ids = [customer_id]
 
                 platform_ids = session.exec(
-                    select(DigitalAsset.id).where(
-                        DigitalAsset.customer_id.in_(customer_ids)
+                    select(DigitalPlatform.id).where(
+                        DigitalPlatform.customer_id.in_(customer_ids)
                     )
                 ).all()
 
@@ -520,8 +521,8 @@ async def get_aggregated_metrics(
                     assigned_customer_ids = [customer_id]
 
                 platform_ids = session.exec(
-                    select(DigitalAsset.id).where(
-                        DigitalAsset.customer_id.in_(assigned_customer_ids)
+                    select(DigitalPlatform.id).where(
+                        DigitalPlatform.customer_id.in_(assigned_customer_ids)
                     )
                 ).all()
 

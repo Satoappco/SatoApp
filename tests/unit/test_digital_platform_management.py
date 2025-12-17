@@ -1,26 +1,26 @@
 """
-Unit tests for digital asset management
+Unit tests for digital platform management
 """
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from sqlalchemy.orm import Session
 from app.api.v1.routes.database_management import (
-    delete_digital_asset,
-    get_digital_asset_dependencies,
+    delete_digital_platform,
+    get_digital_platform_dependencies,
 )
-from app.models.analytics import DigitalAsset, Connection, AssetType
+from app.models.analytics import DigitalPlatform, Connection, AssetType
 from fastapi import HTTPException
 
 
-class TestDigitalAssetDeletion:
+class TestDigitalPlatformDeletion:
     @pytest.mark.asyncio
     @patch("app.api.v1.routes.database_management.get_session")
-    async def test_delete_digital_asset_success_no_dependencies(self, mock_get_session):
-        """Test successful deletion of digital asset with no dependencies"""
+    async def test_delete_digital_platform_success_no_dependencies(self, mock_get_session):
+        """Test successful deletion of digital platform with no dependencies"""
         # Mock session and asset
         mock_session = MagicMock()
-        mock_asset = Mock(spec=DigitalAsset)
+        mock_asset = Mock(spec=DigitalPlatform)
         mock_asset.id = 1
         mock_asset.name = "Test Asset"
 
@@ -39,7 +39,7 @@ class TestDigitalAssetDeletion:
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function
-        result = await delete_digital_asset(1)
+        result = await delete_digital_platform(1)
 
         # Assertions
         assert result["success"] is True
@@ -49,17 +49,17 @@ class TestDigitalAssetDeletion:
         assert result["deleted"]["campaigns_affected"] == 0
 
         # Verify calls
-        mock_session.get.assert_called_once_with(DigitalAsset, 1)
+        mock_session.get.assert_called_once_with(DigitalPlatform, 1)
         mock_session.delete.assert_called_once_with(mock_asset)
         mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("app.api.v1.routes.database_management.get_session")
-    async def test_delete_digital_asset_with_connections(self, mock_get_session):
-        """Test deletion of digital asset with connections"""
+    async def test_delete_digital_platform_with_connections(self, mock_get_session):
+        """Test deletion of digital platform with connections"""
         # Mock session, asset, and connections
         mock_session = MagicMock()
-        mock_asset = Mock(spec=DigitalAsset)
+        mock_asset = Mock(spec=DigitalPlatform)
         mock_asset.id = 1
         mock_asset.name = "Test Asset"
 
@@ -82,7 +82,7 @@ class TestDigitalAssetDeletion:
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function
-        result = await delete_digital_asset(1)
+        result = await delete_digital_platform(1)
 
         # Assertions
         assert result["success"] is True
@@ -96,26 +96,26 @@ class TestDigitalAssetDeletion:
 
     @pytest.mark.asyncio
     @patch("app.api.v1.routes.database_management.get_session")
-    async def test_delete_digital_asset_not_found(self, mock_get_session):
-        """Test deletion of non-existent digital asset"""
+    async def test_delete_digital_platform_not_found(self, mock_get_session):
+        """Test deletion of non-existent digital platform"""
         mock_session = MagicMock()
         mock_session.get.return_value = None
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function and expect exception
         with pytest.raises(HTTPException) as exc_info:
-            await delete_digital_asset(999)
+            await delete_digital_platform(999)
 
         assert exc_info.value.status_code == 404
         assert "Digital asset not found" in exc_info.value.detail
 
     @pytest.mark.asyncio
     @patch("app.api.v1.routes.database_management.get_session")
-    async def test_get_digital_asset_dependencies(self, mock_get_session):
-        """Test getting dependencies for a digital asset"""
+    async def test_get_digital_platform_dependencies(self, mock_get_session):
+        """Test getting dependencies for a digital platform"""
         # Mock session, asset, and dependencies
         mock_session = MagicMock()
-        mock_asset = Mock(spec=DigitalAsset)
+        mock_asset = Mock(spec=DigitalPlatform)
         mock_asset.id = 1
         mock_asset.name = "Test Asset"
         mock_asset.asset_type = AssetType.GA4
@@ -144,10 +144,10 @@ class TestDigitalAssetDeletion:
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function
-        result = await get_digital_asset_dependencies(1)
+        result = await get_digital_platform_dependencies(1)
 
         # Assertions
-        assert result["asset_id"] == 1
+        assert result["platform_id"] == 1
         assert result["asset_name"] == "Test Asset"
         assert result["asset_type"] == AssetType.GA4
         assert result["dependencies"]["connections"] == 1
@@ -157,15 +157,15 @@ class TestDigitalAssetDeletion:
 
     @pytest.mark.asyncio
     @patch("app.api.v1.routes.database_management.get_session")
-    async def test_get_digital_asset_dependencies_not_found(self, mock_get_session):
-        """Test getting dependencies for non-existent digital asset"""
+    async def test_get_digital_platform_dependencies_not_found(self, mock_get_session):
+        """Test getting dependencies for non-existent digital platform"""
         mock_session = MagicMock()
         mock_session.get.return_value = None
         mock_get_session.return_value.__enter__.return_value = mock_session
 
         # Call the function and expect exception
         with pytest.raises(HTTPException) as exc_info:
-            await get_digital_asset_dependencies(999)
+            await get_digital_platform_dependencies(999)
 
         assert exc_info.value.status_code == 404
         assert "Digital asset not found" in exc_info.value.detail

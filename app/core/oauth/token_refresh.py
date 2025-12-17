@@ -168,18 +168,18 @@ def update_connection_token(
 ) -> None:
     """Update connection with refreshed token."""
     with get_session() as session:
-        from app.models.analytics import DigitalAsset
+        from app.models.analytics import DigitalPlatform
         from sqlmodel import and_
 
         # Find connection for this asset type
         connection = session.exec(
             select(Connection)
-            .join(DigitalAsset)
+            .join(DigitalPlatform)
             .where(
                 and_(
                     Connection.campaigner_id == campaigner_id,
-                    DigitalAsset.asset_type == asset_type,
-                    DigitalAsset.is_active == True
+                    DigitalPlatform.asset_type == asset_type,
+                    DigitalPlatform.is_active == True
                 )
             )
         ).first()
@@ -201,17 +201,17 @@ def update_connection_token(
 def mark_needs_reauth(campaigner_id: int, asset_type: AssetType) -> None:
     """Mark a connection as needing re-authentication."""
     with get_session() as session:
-        from app.models.analytics import DigitalAsset
+        from app.models.analytics import DigitalPlatform
         from sqlmodel import and_
 
         connection = session.exec(
             select(Connection)
-            .join(DigitalAsset)
+            .join(DigitalPlatform)
             .where(
                 and_(
                     Connection.campaigner_id == campaigner_id,
-                    DigitalAsset.asset_type == asset_type,
-                    DigitalAsset.is_active == True
+                    DigitalPlatform.asset_type == asset_type,
+                    DigitalPlatform.is_active == True
                 )
             )
         ).first()
@@ -247,7 +247,7 @@ def refresh_tokens_for_platforms(
     Raises:
         OAuthRefreshError: If token refresh fails critically
     """
-    from app.models.analytics import DigitalAsset
+    from app.models.analytics import DigitalPlatform
     from sqlmodel import and_
 
     refreshed_tokens = user_tokens.copy()
@@ -257,12 +257,12 @@ def refresh_tokens_for_platforms(
         with get_session() as session:
             conn = session.exec(
                 select(Connection)
-                .join(DigitalAsset)
+                .join(DigitalPlatform)
                 .where(
                     and_(
                         Connection.campaigner_id == campaigner_id,
-                        DigitalAsset.asset_type == AssetType.GA4,
-                        DigitalAsset.is_active == True
+                        DigitalPlatform.asset_type == AssetType.GA4,
+                        DigitalPlatform.is_active == True
                     )
                 )
             ).first()
@@ -302,12 +302,12 @@ def refresh_tokens_for_platforms(
         with get_session() as session:
             conn = session.exec(
                 select(Connection)
-                .join(DigitalAsset)
+                .join(DigitalPlatform)
                 .where(
                     and_(
                         Connection.campaigner_id == campaigner_id,
-                        DigitalAsset.asset_type == AssetType.GOOGLE_ADS_CAPS,
-                        DigitalAsset.is_active == True
+                        DigitalPlatform.asset_type == AssetType.GOOGLE_ADS_CAPS,
+                        DigitalPlatform.is_active == True
                     )
                 )
             ).first()
@@ -342,12 +342,12 @@ def refresh_tokens_for_platforms(
         with get_session() as session:
             conn = session.exec(
                 select(Connection)
-                .join(DigitalAsset)
+                .join(DigitalPlatform)
                 .where(
                     and_(
                         Connection.campaigner_id == campaigner_id,
-                        DigitalAsset.asset_type == AssetType.FACEBOOK_ADS_CAPS,
-                        DigitalAsset.is_active == True
+                        DigitalPlatform.asset_type == AssetType.FACEBOOK_ADS_CAPS,
+                        DigitalPlatform.is_active == True
                     )
                 )
             ).first()

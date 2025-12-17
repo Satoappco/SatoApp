@@ -42,7 +42,7 @@ def upgrade() -> None:
             SET customer_id = (
                 SELECT digital_assets.customer_id 
                 FROM digital_assets 
-                WHERE digital_assets.id = connections.digital_asset_id
+                WHERE digital_assets.id = connections.digital_platform_id
             )
         """)
         print("✅ Successfully populated customer_id from digital_assets")

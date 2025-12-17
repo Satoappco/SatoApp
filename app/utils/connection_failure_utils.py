@@ -107,15 +107,15 @@ def record_connection_success(
         return False
 
 
-def get_connection_by_digital_asset_id(
-    digital_asset_id: int,
+def get_connection_by_digital_platform_id(
+    digital_platform_id: int,
     campaigner_id: Optional[int] = None
 ) -> Optional[Connection]:
     """
     Get an active connection for a digital asset.
 
     Args:
-        digital_asset_id: ID of the digital asset
+        digital_platform_id: ID of the digital asset
         campaigner_id: Optional campaigner ID to filter by
 
     Returns:
@@ -124,7 +124,7 @@ def get_connection_by_digital_asset_id(
     try:
         with get_session() as session:
             query = select(Connection).where(
-                Connection.digital_asset_id == digital_asset_id,
+                Connection.digital_platform_id == digital_platform_id,
                 Connection.revoked == False
             )
 

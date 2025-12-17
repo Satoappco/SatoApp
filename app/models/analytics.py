@@ -35,19 +35,19 @@ class AuthType(str, Enum):
     TOKEN = "token"
 
 
-class DigitalAsset(BaseModel, table=True):
-    """Digital assets for sub-clients - נכסים דיגיטליים"""
-    __tablename__ = "digital_assets"
+class DigitalPlatform(BaseModel, table=True):
+    """Digital platforms for sub-clients - נכסים דיגיטליים"""
+    __tablename__ = "digital_platforms"
 
     # Relationships
     customer_id: int = Field(foreign_key="customers.id")
 
-    # Asset identification
+    # Platform identification
     asset_type: AssetType = Field()
     provider: str = Field(max_length=100)  # "Google", "Facebook", "TikTok", "LinkedIn"
     name: str = Field(max_length=255)  # Human-readable name
     handle: Optional[str] = Field(default=None, max_length=100)  # @username, page name
-    url: Optional[str] = Field(default=None, max_length=500)  # Asset URL
+    url: Optional[str] = Field(default=None, max_length=500)  # Platform URL
     external_id: str = Field(max_length=255)  # Platform's unique ID
 
     # Metadata (provider-specific information)
@@ -59,19 +59,19 @@ class DigitalAsset(BaseModel, table=True):
 
     is_active: bool = Field(default=True)
 
-    # Unique constraint: one asset per (customer_id, external_id, asset_type)
+    # Unique constraint: one platform per (customer_id, external_id, asset_type)
     __table_args__ = (
         UniqueConstraint('customer_id', 'external_id', 'asset_type',
-                        name='uq_digital_asset_customer_external_type'),
+                        name='uq_digital_platform_customer_external_type'),
     )
 
 
 class Connection(BaseModel, table=True):
-    """OAuth connections and API credentials for digital assets"""
+    """OAuth connections and API credentials for digital platforms"""
     __tablename__ = "connections"
 
     # Relationships
-    digital_asset_id: int = Field(foreign_key="digital_assets.id")
+    digital_platform_id: int = Field(foreign_key="digital_platforms.id")
     customer_id: int = Field(foreign_key="customers.id")  # Direct customer relationship for better queries
     campaigner_id: int = Field(foreign_key="campaigners.id")  # Who created the connection
 
@@ -308,7 +308,7 @@ class Metrics(BaseModel, table=True):
     # Date and identification
     metric_date: date = Field(index=True, description="Metric date")
     item_id: str = Field(max_length=100, index=True, description="Ad ID or Ad Group ID from platform")
-    platform_id: int = Field(foreign_key="digital_assets.id", index=True, description="Digital asset (platform) ID")
+    platform_id: int = Field(foreign_key="digital_platforms.id", index=True, description="Digital platform ID")
     item_type: str = Field(max_length=20, description="Type: 'ad' or 'ad_group'")
 
     # Performance Metrics (all optional as not all platforms provide all metrics)

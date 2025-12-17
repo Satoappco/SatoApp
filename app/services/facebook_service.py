@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List
 from sqlmodel import select, and_
 
 from app.config.database import get_session
-from app.models.analytics import DigitalAsset, Connection, AssetType, AuthType
+from app.models.analytics import DigitalPlatform, Connection, AssetType, AuthType
 from app.models.users import Campaigner
 from app.core.security import get_secret_key
 from app.utils.security_utils import get_token_crypto
@@ -291,9 +291,9 @@ class FacebookService:
 
             for page in pages:
                 # Create or update digital asset
-                from app.services.digital_asset_service import upsert_digital_asset
+                from app.services.digital_platform_service import upsert_digital_platform
 
-                digital_asset = upsert_digital_asset(
+                digital_platform = upsert_digital_platform(
                     session=session,
                     customer_id=customer_id,
                     external_id=page["id"],
@@ -313,11 +313,11 @@ class FacebookService:
                     },
                     is_active=True,
                 )
-                created_assets.append(digital_asset)
+                created_assets.append(digital_platform)
 
             # Create digital assets for ad accounts
             for ad_account in ad_accounts:
-                digital_asset = upsert_digital_asset(
+                digital_platform = upsert_digital_platform(
                     session=session,
                     customer_id=customer_id,
                     external_id=ad_account["id"],
@@ -335,7 +335,7 @@ class FacebookService:
                     },
                     is_active=True,
                 )
-                created_assets.append(digital_asset)
+                created_assets.append(digital_platform)
 
             # Create connections for each asset
             connections = []
@@ -350,7 +350,7 @@ class FacebookService:
                 # Check for existing connection
                 connection_statement = select(Connection).where(
                     and_(
-                        Connection.digital_asset_id == asset.id,
+                        Connection.digital_platform_id == asset.id,
                         Connection.campaigner_id == campaigner_id,
                         Connection.revoked == False,
                     )
@@ -369,7 +369,7 @@ class FacebookService:
                 else:
                     # Create new connection
                     connection = Connection(
-                        digital_asset_id=asset.id,
+                        digital_platform_id=asset.id,
                         customer_id=customer_id,
                         campaigner_id=campaigner_id,
                         auth_type=AuthType.OAUTH2,
@@ -470,17 +470,17 @@ class FacebookService:
                 "connections": [
                     {
                         "connection_id": conn.id,
-                        "digital_asset_id": conn.digital_asset_id,
+                        "digital_platform_id": conn.digital_platform_id,
                         "asset_name": get_asset_attribute(
-                            conn.digital_asset_id,
+                            conn.digital_platform_id,
                             "name",
-                            f"Unknown Asset (ID: {conn.digital_asset_id})",
+                            f"Unknown Asset (ID: {conn.digital_platform_id})",
                         ),
                         "asset_type": get_asset_attribute(
-                            conn.digital_asset_id, "asset_type", "unknown"
+                            conn.digital_platform_id, "asset_type", "unknown"
                         ),
                         "external_id": get_asset_attribute(
-                            conn.digital_asset_id, "external_id", None
+                            conn.digital_platform_id, "external_id", None
                         ),
                     }
                     for conn in connections
@@ -655,8 +655,8 @@ class FacebookService:
         with get_session() as session:
             # Get connection and asset info
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(Connection.id == connection_id)
             )
 
@@ -759,7 +759,7 @@ class FacebookService:
 
     async def _fetch_page_insights(
         self,
-        asset: DigitalAsset,
+        asset: DigitalPlatform,
         access_token: str,
         start_date: str,
         end_date: str,
@@ -841,7 +841,7 @@ class FacebookService:
 
     async def _fetch_ad_insights(
         self,
-        asset: DigitalAsset,
+        asset: DigitalPlatform,
         access_token: str,
         start_date: str,
         end_date: str,
@@ -909,7 +909,7 @@ class FacebookService:
 
     async def _fetch_page_posts(
         self,
-        asset: DigitalAsset,
+        asset: DigitalPlatform,
         access_token: str,
         start_date: str,
         end_date: str,
@@ -949,8 +949,8 @@ class FacebookService:
         with get_session() as session:
             # Get connection with digital asset
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(
                     and_(Connection.id == connection_id, Connection.revoked == False)
                 )
@@ -960,7 +960,7 @@ class FacebookService:
             if not result:
                 raise ValueError("Connection not found or revoked")
 
-            connection, digital_asset = result
+            connection, digital_platform = result
 
             # Decrypt access token
             access_token = self._decrypt_token(connection.access_token_enc)
@@ -1043,8 +1043,8 @@ class FacebookService:
                 if connection.expires_at
                 else None,
                 "connection_id": connection_id,
-                "asset_name": digital_asset.name,
-                "asset_type": digital_asset.asset_type,
+                "asset_name": digital_platform.name,
+                "asset_type": digital_platform.asset_type,
             }
 
     async def get_facebook_connection_for_user(
@@ -1058,8 +1058,8 @@ class FacebookService:
 
             conditions = [
                 Connection.campaigner_id == campaigner_id,
-                DigitalAsset.customer_id == customer_id,
-                DigitalAsset.provider == "Facebook",
+                DigitalPlatform.customer_id == customer_id,
+                DigitalPlatform.provider == "Facebook",
                 Connection.revoked == False,
             ]
 
@@ -1068,18 +1068,18 @@ class FacebookService:
                 # Check for both ADVERTISING and FACEBOOK_ADS types (database has both)
                 conditions.append(
                     or_(
-                        DigitalAsset.asset_type == "ADVERTISING",
-                        DigitalAsset.asset_type == "FACEBOOK_ADS",
-                        DigitalAsset.asset_type == "facebook_ads",
+                        DigitalPlatform.asset_type == "ADVERTISING",
+                        DigitalPlatform.asset_type == "FACEBOOK_ADS",
+                        DigitalPlatform.asset_type == "facebook_ads",
                     )
                 )
             else:
-                conditions.append(DigitalAsset.asset_type == asset_type)
+                conditions.append(DigitalPlatform.asset_type == asset_type)
 
             # Look for Facebook connections
             statement = (
-                select(Connection, DigitalAsset)
-                .join(DigitalAsset, Connection.digital_asset_id == DigitalAsset.id)
+                select(Connection, DigitalPlatform)
+                .join(DigitalPlatform, Connection.digital_platform_id == DigitalPlatform.id)
                 .where(and_(*conditions))
             )
 
@@ -1093,8 +1093,8 @@ class FacebookService:
             real_connections = []
             fake_connections = []
 
-            for connection, digital_asset in results:
-                external_id = digital_asset.external_id
+            for connection, digital_platform in results:
+                external_id = digital_platform.external_id
                 is_valid = False
 
                 # Validate based on asset type
@@ -1110,23 +1110,23 @@ class FacebookService:
                     )
 
                 if is_valid:
-                    real_connections.append((connection, digital_asset))
+                    real_connections.append((connection, digital_platform))
                 else:
-                    fake_connections.append((connection, digital_asset))
+                    fake_connections.append((connection, digital_platform))
 
             # Always use real connections first, never fake ones
             if real_connections:
-                connection, digital_asset = real_connections[0]
+                connection, digital_platform = real_connections[0]
                 print(
-                    f"✅ Using REAL Facebook ID: {digital_asset.external_id} ({digital_asset.name}) - Type: {asset_type}"
+                    f"✅ Using REAL Facebook ID: {digital_platform.external_id} ({digital_platform.name}) - Type: {asset_type}"
                 )
             elif fake_connections:
-                connection, digital_asset = fake_connections[0]
+                connection, digital_platform = fake_connections[0]
                 print(
-                    f"⚠️ WARNING: Using fake/invalid Facebook ID: {digital_asset.external_id} ({digital_asset.name}) - This will cause API errors!"
+                    f"⚠️ WARNING: Using fake/invalid Facebook ID: {digital_platform.external_id} ({digital_platform.name}) - This will cause API errors!"
                 )
                 return {
-                    "error": f"Invalid Facebook ID: {digital_asset.external_id}. Please re-authenticate your Facebook account.",
+                    "error": f"Invalid Facebook ID: {digital_platform.external_id}. Please re-authenticate your Facebook account.",
                     "status": "error",
                     "requires_reauth": True,
                     "suggestion": "Please re-authenticate your Facebook account in the Connections tab",
@@ -1139,10 +1139,10 @@ class FacebookService:
                 refreshed_token = await self.refresh_facebook_token(connection.id)
                 return {
                     "connection_id": connection.id,
-                    "digital_asset_id": digital_asset.id,
-                    "asset_name": digital_asset.name,
-                    "asset_type": digital_asset.asset_type,
-                    "external_id": digital_asset.external_id,
+                    "digital_platform_id": digital_platform.id,
+                    "asset_name": digital_platform.name,
+                    "asset_type": digital_platform.asset_type,
+                    "external_id": digital_platform.external_id,
                     "access_token": refreshed_token["access_token"],
                     "expires_at": refreshed_token["expires_at"],
                 }
@@ -1151,16 +1151,16 @@ class FacebookService:
                     return {
                         "error": "Facebook token is completely invalid. Please re-authenticate your Facebook account.",
                         "connection_id": connection.id,
-                        "digital_asset_id": digital_asset.id,
-                        "asset_name": digital_asset.name,
+                        "digital_platform_id": digital_platform.id,
+                        "asset_name": digital_platform.name,
                         "requires_reauth": True,
                     }
                 elif "expired" in str(e).lower():
                     return {
                         "error": "Facebook token has expired. Please re-authenticate your Facebook account.",
                         "connection_id": connection.id,
-                        "digital_asset_id": digital_asset.id,
-                        "asset_name": digital_asset.name,
+                        "digital_platform_id": digital_platform.id,
+                        "asset_name": digital_platform.name,
                         "requires_reauth": True,
                     }
                 else:

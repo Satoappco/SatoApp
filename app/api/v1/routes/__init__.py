@@ -19,7 +19,7 @@ from . import facebook_marketing_oauth
 from . import admin
 from . import agencies
 from . import property_selections
-from . import digital_assets
+from . import digital_platforms
 from . import campaigners
 from . import customers
 from . import connections
@@ -52,7 +52,7 @@ __all__ = [
     "admin",
     "agencies",
     "property_selections",
-    "digital_assets",
+    "digital_platforms",
     "campaigners",
     "customers",
     "connections",

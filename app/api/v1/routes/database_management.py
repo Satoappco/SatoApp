@@ -33,7 +33,7 @@ from app.models.analytics import (
     KpiValue,
     KpiSettings,
     DefaultKpiSettings,
-    DigitalAsset,
+    DigitalPlatform,
     Connection,
     UserPropertySelection,
     Audience,
@@ -317,7 +317,7 @@ class KpiGoalBulkUpdateResponse(BaseModel):
     errors: List[Dict[str, Any]]
 
 
-class DigitalAssetCreate(BaseModel):
+class DigitalPlatformCreate(BaseModel):
     """Schema for creating a Digital Asset entry"""
 
     customer_id: int
@@ -331,7 +331,7 @@ class DigitalAssetCreate(BaseModel):
     is_active: bool = True
 
 
-class DigitalAssetUpdate(BaseModel):
+class DigitalPlatformUpdate(BaseModel):
     """Schema for updating a Digital Asset entry"""
 
     customer_id: Optional[int] = None
@@ -1736,34 +1736,34 @@ async def get_customers(
         )
 
 
-@router.get("/digital-assets")
-async def get_digital_assets(
+@router.get("/digital-platforms")
+async def get_digital_platforms(
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
-    active_only: bool = Query(False, description="Return only active assets"),
-    asset_type: Optional[str] = Query(None, description="Filter by asset type"),
+    active_only: bool = Query(False, description="Return only active platforms"),
+    asset_type: Optional[str] = Query(None, description="Filter by platform type"),
     limit: int = Query(100, description="Maximum number of results"),
     offset: int = Query(0, description="Offset for pagination"),
     current_user: Campaigner = Depends(get_current_user),
 ):
-    """Get digital assets with optional filtering by customer"""
+    """Get digital platforms with optional filtering by customer"""
     try:
         with get_session() as session:
-            statement = select(DigitalAsset)
+            statement = select(DigitalPlatform)
 
             # Apply filters
             conditions = []
             if customer_id:
-                conditions.append(DigitalAsset.customer_id == customer_id)
+                conditions.append(DigitalPlatform.customer_id == customer_id)
             if active_only:
-                conditions.append(DigitalAsset.is_active == True)
+                conditions.append(DigitalPlatform.is_active == True)
             if asset_type:
-                conditions.append(DigitalAsset.asset_type == asset_type)
+                conditions.append(DigitalPlatform.asset_type == asset_type)
 
             if conditions:
                 statement = statement.where(and_(*conditions))
 
             statement = (
-                statement.order_by(DigitalAsset.created_at.desc())
+                statement.order_by(DigitalPlatform.created_at.desc())
                 .offset(offset)
                 .limit(limit)
             )
@@ -1798,36 +1798,36 @@ async def get_digital_assets(
         )
 
 
-@router.get("/digital-assets/{asset_id}")
-async def get_digital_asset(
-    asset_id: int, current_user: Campaigner = Depends(get_current_user)
+@router.get("/digital-platforms/{platform_id}")
+async def get_digital_platform(
+    platform_id: int, current_user: Campaigner = Depends(get_current_user)
 ):
-    """Get a specific digital asset"""
+    """Get a specific digital platform"""
     try:
         with get_session() as session:
-            asset = session.get(DigitalAsset, asset_id)
+            platform = session.get(DigitalPlatform, platform_id)
 
-            if not asset:
+            if not platform:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Digital asset not found",
+                    detail="Digital platform not found",
                 )
 
             return {
                 "success": True,
-                "asset": {
-                    "id": asset.id,
-                    "customer_id": asset.customer_id,
-                    "asset_type": asset.asset_type,
-                    "provider": asset.provider,
-                    "name": asset.name,
-                    "handle": asset.handle,
-                    "url": asset.url,
-                    "external_id": asset.external_id,
-                    "metadata": asset.meta,
-                    "is_active": asset.is_active,
-                    "created_at": asset.created_at.isoformat(),
-                    "updated_at": asset.updated_at.isoformat(),
+                "platform": {
+                    "id": platform.id,
+                    "customer_id": platform.customer_id,
+                    "asset_type": platform.asset_type,
+                    "provider": platform.provider,
+                    "name": platform.name,
+                    "handle": platform.handle,
+                    "url": platform.url,
+                    "external_id": platform.external_id,
+                    "metadata": platform.meta,
+                    "is_active": platform.is_active,
+                    "created_at": platform.created_at.isoformat(),
+                    "updated_at": platform.updated_at.isoformat(),
                 },
             }
 
@@ -1836,13 +1836,13 @@ async def get_digital_asset(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch digital asset: {str(e)}",
+            detail=f"Failed to fetch digital platform: {str(e)}",
         )
 
 
-@router.post("/digital-assets")
-async def create_digital_asset(
-    asset_data: DigitalAssetCreate,
+@router.post("/digital-platforms")
+async def create_digital_platform(
+    asset_data: DigitalPlatformCreate,
 ):
     """Create a new digital asset"""
     try:
@@ -1856,9 +1856,9 @@ async def create_digital_asset(
                 )
 
             # Use upsert to create or update digital asset
-            from app.services.digital_asset_service import upsert_digital_asset
+            from app.services.digital_platform_service import upsert_digital_platform
 
-            new_asset = upsert_digital_asset(
+            new_asset = upsert_digital_platform(
                 session=session,
                 customer_id=asset_data.customer_id,
                 external_id=asset_data.external_id,
@@ -1899,15 +1899,15 @@ async def create_digital_asset(
         )
 
 
-@router.put("/digital-assets/{asset_id}")
-async def update_digital_asset(
-    asset_id: int,
-    asset_data: DigitalAssetUpdate,
+@router.put("/digital-platforms/{platform_id}")
+async def update_digital_platform(
+    platform_id: int,
+    asset_data: DigitalPlatformUpdate,
 ):
     """Update a digital asset"""
     try:
         with get_session() as session:
-            asset = session.get(DigitalAsset, asset_id)
+            asset = session.get(DigitalPlatform, platform_id)
 
             if not asset:
                 raise HTTPException(
@@ -1954,14 +1954,14 @@ async def update_digital_asset(
         )
 
 
-@router.get("/digital-assets/{asset_id}/dependencies")
-async def get_digital_asset_dependencies(
-    asset_id: int,
+@router.get("/digital-platforms/{platform_id}/dependencies")
+async def get_digital_platform_dependencies(
+    platform_id: int,
 ):
     """Get dependencies for a digital asset before deletion"""
     try:
         with get_session() as session:
-            asset = session.get(DigitalAsset, asset_id)
+            asset = session.get(DigitalPlatform, platform_id)
 
             if not asset:
                 raise HTTPException(
@@ -1971,27 +1971,27 @@ async def get_digital_asset_dependencies(
 
             # Find all connections for this asset
             connections = session.exec(
-                select(Connection).where(Connection.digital_asset_id == asset_id)
+                select(Connection).where(Connection.digital_platform_id == platform_id)
             ).all()
 
             # Find campaign mappings that reference this asset (using raw SQL since no model exists)
             # Check campaigns table
             campaigns_result = session.execute(
-                sa_text("SELECT id FROM campaigns WHERE digital_asset_id = :asset_id"),
-                {"asset_id": asset_id},
+                sa_text("SELECT id FROM campaigns WHERE digital_platform_id = :platform_id"),
+                {"platform_id": platform_id},
             ).fetchall()
 
-            # Check campaign_mappings table for ga4_asset_id and google_ads_asset_id
+            # Check campaign_mappings table for ga4_platform_id and google_ads_platform_id
             mappings_result = session.execute(
                 sa_text("""
                     SELECT id FROM campaign_mappings
-                    WHERE ga4_asset_id = :asset_id OR google_ads_asset_id = :asset_id
+                    WHERE ga4_platform_id = :platform_id OR google_ads_platform_id = :platform_id
                 """),
-                {"asset_id": asset_id},
+                {"platform_id": platform_id},
             ).fetchall()
 
             return {
-                "asset_id": asset_id,
+                "platform_id": platform_id,
                 "asset_name": asset.name,
                 "asset_type": asset.asset_type,
                 "dependencies": {
@@ -2011,14 +2011,14 @@ async def get_digital_asset_dependencies(
         )
 
 
-@router.delete("/digital-assets/{asset_id}")
-async def delete_digital_asset(
-    asset_id: int,
+@router.delete("/digital-platforms/{platform_id}")
+async def delete_digital_platform(
+    platform_id: int,
 ):
     """Delete a digital asset and all associated connections"""
     try:
         with get_session() as session:
-            asset = session.get(DigitalAsset, asset_id)
+            asset = session.get(DigitalPlatform, platform_id)
 
             if not asset:
                 raise HTTPException(
@@ -2028,23 +2028,23 @@ async def delete_digital_asset(
 
             # Find all connections for this asset
             connections = session.exec(
-                select(Connection).where(Connection.digital_asset_id == asset_id)
+                select(Connection).where(Connection.digital_platform_id == platform_id)
             ).all()
 
             # Find campaign mappings that reference this asset (using raw SQL since no model exists)
             # Check campaigns table
             campaigns_result = session.execute(
-                sa_text("SELECT id FROM campaigns WHERE digital_asset_id = :asset_id"),
-                {"asset_id": asset_id},
+                sa_text("SELECT id FROM campaigns WHERE digital_platform_id = :platform_id"),
+                {"platform_id": platform_id},
             ).fetchall()
 
-            # Check campaign_mappings table for ga4_asset_id and google_ads_asset_id
+            # Check campaign_mappings table for ga4_platform_id and google_ads_platform_id
             mappings_result = session.execute(
                 sa_text("""
                     SELECT id FROM campaign_mappings
-                    WHERE ga4_asset_id = :asset_id OR google_ads_asset_id = :asset_id
+                    WHERE ga4_platform_id = :platform_id OR google_ads_platform_id = :platform_id
                 """),
-                {"asset_id": asset_id},
+                {"platform_id": platform_id},
             ).fetchall()
 
             # Count dependencies
@@ -2058,18 +2058,18 @@ async def delete_digital_asset(
                 session.execute(
                     sa_text("""
                         UPDATE campaign_mappings
-                        SET ga4_asset_id = NULL
-                        WHERE ga4_asset_id = :asset_id
+                        SET ga4_platform_id = NULL
+                        WHERE ga4_platform_id = :platform_id
                     """),
-                    {"asset_id": asset_id},
+                    {"platform_id": platform_id},
                 )
                 session.execute(
                     sa_text("""
                         UPDATE campaign_mappings
-                        SET google_ads_asset_id = NULL
-                        WHERE google_ads_asset_id = :asset_id
+                        SET google_ads_platform_id = NULL
+                        WHERE google_ads_platform_id = :platform_id
                     """),
-                    {"asset_id": asset_id},
+                    {"platform_id": platform_id},
                 )
 
             # Delete connections first (they reference the asset)
@@ -2122,7 +2122,7 @@ async def get_connections(
                 "connections": [
                     {
                         "id": conn.id,
-                        "digital_asset_id": conn.digital_asset_id,
+                        "digital_platform_id": conn.digital_platform_id,
                         "customer_id": conn.customer_id,
                         "campaigner_id": conn.campaigner_id,
                         "auth_type": conn.auth_type,
@@ -2965,10 +2965,10 @@ async def get_available_tables():
             },
             # Digital assets and connections
             {
-                "name": "digital_assets",
+                "name": "digital_platforms",
                 "label": "Digital Assets",
                 "description": "Connected digital assets",
-                "endpoint": "/api/v1/database/digital-assets",
+                "endpoint": "/api/v1/database/digital-platforms",
             },
             {
                 "name": "connections",
