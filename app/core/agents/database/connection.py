@@ -3,6 +3,7 @@
 import os
 import logging
 from typing import Optional
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
@@ -49,7 +50,9 @@ def get_database_url() -> str:
             "Please set DATABASE_URL or (DB_USER, DB_PASSWORD, DB_HOST, DB_NAME)"
         )
 
-    database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    # URL-encode the password to handle special characters like @, %, etc.
+    encoded_password = quote_plus(db_password)
+    database_url = f"postgresql://{db_user}:{encoded_password}@{db_host}:{db_port}/{db_name}"
     logger.debug(f"Built database URL from components: {db_user}@{db_host}:{db_port}/{db_name}")
 
     return database_url

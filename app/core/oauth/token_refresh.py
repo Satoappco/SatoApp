@@ -268,7 +268,10 @@ def refresh_tokens_for_platforms(
             ).first()
 
             if conn and (is_token_expired(conn.expires_at) or force_refresh):
-                logger.info(f"🔄 Google Analytics token expired, refreshing...")
+                if force_refresh:
+                    logger.info(f"🔄 Forcing Google Analytics token refresh... (expired:{is_token_expired(conn.expires_at)})")
+                else: #if is_token_expired(conn.expires_at):
+                    logger.info(f"🔄 Google Analytics token expired, refreshing...")
                 try:
                     # Note: refresh_token should be decrypted in production
                     # For now, assuming we have access to the refresh token
