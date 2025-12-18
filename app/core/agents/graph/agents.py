@@ -10,6 +10,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient as MCPClient
 from ..crew.crew import AnalyticsCrew
 from .sql_agent import SQLBasicInfoAgent
 from .single_analytics_agent import SingleAnalyticsAgent
+from .deep_research_agent import DeepResearchAgent
 from ..customer_credentials import CustomerCredentialManager
 from ..mcp_clients.mcp_registry import MCPSelector
 from app.services.chat_trace_service import ChatTraceService
@@ -178,7 +179,8 @@ def get_agent(agent_name: str, llm: BaseChatModel):
         # "basic_info_agent_legacy": BasicInfoAgent,  # Legacy version kept for reference
         "analytics_crew": AnalyticsCrewPlaceholder,
         "single_analytics_agent": SingleAnalyticsAgent,
-        "campaign_planning_crew": CampaignPlanningCrewPlaceholder
+        "campaign_planning_crew": CampaignPlanningCrewPlaceholder,
+        "deep_research_agent": DeepResearchAgent
     }
 
     # Handle analytics agent routing based on configuration

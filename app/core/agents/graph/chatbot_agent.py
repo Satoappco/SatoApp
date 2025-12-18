@@ -279,6 +279,7 @@ You cannot answer questions related to other users or campaigners.
 
 - **analytics_crew** — gathers and analyzes data from all advertising platforms (Facebook Ads, Google Marketing, etc.), for tasks requires analysis and not just single fetching from db.
 - **campaign_planning_crew** — plans new campaigns, creates digital assets, and deploys them to platforms
+- **deep_research_agent** — conducts comprehensive, multi-step research on any topic using web search and analysis. Use for questions like "research the latest trends in...", "give me a comprehensive analysis of...", "investigate...", "I need an in-depth report on..."
 
 ---
 
@@ -291,7 +292,7 @@ No trailing commas are allowed.
 #### When you know which agent to call:
 ```json
 {{
-    "agent": "basic_info_agent" | "analytics_crew" | "campaign_planning_crew",
+    "agent": "basic_info_agent" | "analytics_crew" | "campaign_planning_crew" | "deep_research_agent",
     "task": {{
         "query": "the specific task description",
         "context": {{}}

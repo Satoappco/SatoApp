@@ -1,0 +1,20 @@
+# Deep Research MCP Server Dependencies
+
+# FastAPI and server
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.6
+
+# LangChain and LangGraph
+langchain>=0.3.0,<1.0.0
+langchain-core>=0.3.0,<1.0.0
+langchain-openai>=0.2.0,<1.0.0
+langchain-anthropic>=0.3.0,<1.0.0
+langchain-google-genai>=2.0.0,<3.0.0
+langgraph>=0.2.0,<2.0.0
+
+# Search providers
+tavily-python==0.5.0
+
+# Utilities
+python-dotenv==1.0.1

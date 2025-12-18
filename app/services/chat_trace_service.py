@@ -1283,6 +1283,104 @@ class ChatTraceService:
 
         return None
 
+    def record_deep_research(
+        self,
+        thread_id: str,
+        query: str,
+        report: Optional[str],
+        sources: List[Dict],
+        session_id: str,
+        execution_time_ms: int,
+        tokens_used: int,
+        config: Dict,
+        success: bool = True,
+        error_message: Optional[str] = None,
+        research_steps_count: int = 0
+    ) -> Optional[ChatTrace]:
+        """
+        Record deep research execution to chat traces.
+
+        Args:
+            thread_id: Thread identifier
+            query: Research query
+            report: Final research report
+            sources: List of discovered sources
+            session_id: Research session ID
+            execution_time_ms: Total execution time
+            tokens_used: Total tokens used
+            config: Research configuration
+            success: Whether research succeeded
+            error_message: Optional error message
+            research_steps_count: Number of research steps completed
+
+        Returns:
+            Created ChatTrace deep_research record or None if conversation not found
+        """
+        session = self._get_session()
+        try:
+            conversation = self.get_conversation(thread_id, session=session)
+            if not conversation:
+                print(f"⚠️ Conversation not found: {thread_id}")
+                return None
+
+            # Get sequence number
+            record_count = session.exec(
+                select(func.count(ChatTrace.id)).where(
+                    and_(
+                        ChatTrace.thread_id == thread_id,
+                        ChatTrace.record_type == RecordType.DEEP_RESEARCH
+                    )
+                )
+            ).one()
+
+            # Create deep research data
+            research_data = {
+                "query": query,
+                "report": report,
+                "sources": sources,
+                "session_id": session_id,
+                "execution_time_ms": execution_time_ms,
+                "tokens_used": tokens_used,
+                "config": config,
+                "success": success,
+                "error_message": error_message,
+                "research_steps_count": research_steps_count
+            }
+
+            # Create ChatTrace record
+            research_trace = ChatTrace(
+                thread_id=thread_id,
+                record_type=RecordType.DEEP_RESEARCH,
+                campaigner_id=conversation.campaigner_id,
+                customer_id=conversation.customer_id,
+                data=research_data,
+                sequence_number=record_count
+            )
+
+            session.add(research_trace)
+
+            # Update conversation metrics
+            conversation.data["total_tokens"] = conversation.data.get("total_tokens", 0) + tokens_used
+            conversation.updated_at = datetime.now(timezone.utc)
+
+            # Mark data as modified for SQLAlchemy
+            flag_modified(conversation, "data")
+
+            session.add(conversation)
+            session.commit()
+            session.refresh(research_trace)
+
+            print(f"✅ Recorded deep research: thread_id={thread_id}, session_id={session_id}, id={research_trace.id}")
+
+            return research_trace
+
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Failed to record deep research: {e}")
+            raise
+        finally:
+            self._close_session(session)
+
     def flush_langfuse(self):
         """Flush pending Langfuse traces."""
         if not LANGFUSE_AVAILABLE:

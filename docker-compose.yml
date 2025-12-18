@@ -59,6 +59,39 @@ services:
           cpus: '0.25'
           memory: 256M
 
+  # Deep Research MCP HTTP Server
+  mcp-deep-research:
+    build:
+      context: ./app/mcps/deep-research-mcp-server
+      dockerfile: Dockerfile
+    container_name: sato-mcp-deep-research
+    ports:
+      - "8004:8004"
+    environment:
+      - MCP_HTTP_HOST=0.0.0.0
+      - MCP_HTTP_PORT=8004
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import httpx; httpx.get(\"http://localhost:8004/health\", timeout=5.0)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - sato-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
   # Facebook Ads MCP HTTP Server (placeholder for future implementation)
   # mcp-fb:
   #   build:

@@ -60,6 +60,7 @@ class RecordType(str, Enum):
     AGENT_STEP = "agent_step"          # Agent reasoning steps
     TOOL_USAGE = "tool_usage"          # Tool/function calls
     CREWAI_EXECUTION = "crewai_execution"  # CrewAI analysis results
+    DEEP_RESEARCH = "deep_research"    # Deep research execution results
 
 
 class ChatTrace(BaseModel, table=True):
@@ -130,6 +131,20 @@ class ChatTrace(BaseModel, table=True):
         "success": bool,
         "error_message": "...",
         "analysis_id": "..."
+      }
+
+    DEEP_RESEARCH:
+      {
+        "query": str,
+        "report": str,
+        "sources": [{"url": str, "title": str, ...}],
+        "session_id": str,
+        "execution_time_ms": int,
+        "tokens_used": int,
+        "config": {...},
+        "success": bool,
+        "error_message": Optional[str],
+        "research_steps_count": int
       }
     """
 

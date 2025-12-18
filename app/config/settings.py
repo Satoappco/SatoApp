@@ -87,6 +87,15 @@ class Settings(BaseSettings):
     # Agent Configuration
     use_database_config: bool = False
 
+    # Deep Research Configuration
+    deep_research_mcp_url: str = "http://localhost:8004"
+    deep_research_default_model: str = "openai:gpt-4o"
+    deep_research_summarization_model: str = "openai:gpt-4o-mini"
+    deep_research_default_search_provider: str = "tavily"  # tavily, anthropic, mcp
+    deep_research_max_iterations: int = 5
+    deep_research_default_depth: str = "medium"  # shallow, medium, deep
+    tavily_api_key: Optional[str] = None
+
     # Performance Configuration
     max_concurrent_analyses: int = 10
     request_timeout_seconds: int = 30
