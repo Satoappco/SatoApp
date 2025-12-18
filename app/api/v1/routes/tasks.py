@@ -158,6 +158,8 @@ async def list_tasks(
     ),
     is_overdue: Optional[bool] = Query(None, description="Filter overdue tasks"),
     search: Optional[str] = Query(None, description="Search in title and description"),
+    start_date: Optional[datetime] = Query(None, description="Filter tasks created after this date (inclusive)"),
+    end_date: Optional[datetime] = Query(None, description="Filter tasks created before this date (inclusive)"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     sort_by: str = Query("created_at", description="Field to sort by"),
@@ -240,6 +242,22 @@ async def list_tasks(
                         Task.description.ilike(search_pattern),
                     )
                 )
+
+            # Apply date range filters
+            if start_date:
+                # Ensure start_date is timezone-aware for comparison
+                if start_date.tzinfo is None:
+                    start_date = start_date.replace(tzinfo=timezone.utc)
+                statement = statement.where(Task.created_at >= start_date)
+
+            if end_date:
+                # Ensure end_date is timezone-aware for comparison
+                # Include the entire end_date by setting it to end of day
+                if end_date.tzinfo is None:
+                    end_date = end_date.replace(tzinfo=timezone.utc)
+                # Set to end of day (23:59:59) to make it inclusive
+                end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                statement = statement.where(Task.created_at <= end_date)
 
             # Get total count before pagination
             count_statement = select(func.count()).select_from(statement.subquery())

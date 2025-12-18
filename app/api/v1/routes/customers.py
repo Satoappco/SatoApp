@@ -6,7 +6,7 @@ Handles CRUD operations for customers with full initialization
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import select, and_
+from sqlmodel import select, and_, func
 from pydantic import BaseModel, Field, EmailStr
 
 from app.core.auth import get_current_user
@@ -27,6 +27,7 @@ from app.models.users import (
     UserRole,
     CustomerCampaignerAssignment,
 )
+from app.models.tasks import Task, TaskStatus
 from app.models.customer_data import RTMTable, QuestionsTable
 from app.models.analytics import (
     KpiGoal,
@@ -176,6 +177,36 @@ async def get_customers(current_user: Campaigner = Depends(get_current_user)):
                         )
                 customer_campaigners[customer.id] = campaigners
 
+            # Count open tasks for each customer
+            customer_open_tasks = {}
+            if customers:
+                customer_ids = [customer.id for customer in customers if customer.id is not None]
+                if customer_ids:
+                    # Define open task statuses
+                    open_statuses = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.ON_HOLD]
+
+                    # Count open tasks per customer
+                    open_tasks_query = (
+                        select(
+                            Task.customer_id,
+                            func.count(Task.id).label('open_tasks_count')
+                        )
+                        .where(
+                            and_(
+                                Task.customer_id.in_(customer_ids),
+                                Task.status.in_(open_statuses),
+                                Task.is_active == True
+                            )
+                        )
+                        .group_by(Task.customer_id)
+                    )
+
+                    open_tasks_results = session.exec(open_tasks_query).all()
+                    customer_open_tasks = {
+                        result.customer_id: result.open_tasks_count
+                        for result in open_tasks_results
+                    }
+
             # Compute priority scores for all customers
             priority_data = []
             for customer in customers:
@@ -236,6 +267,7 @@ async def get_customers(current_user: Campaigner = Depends(get_current_user)):
                             "score", 0
                         ),
                         "priority_details": priority_scores.get(customer.id, {}),
+                        "open_tasks_count": customer_open_tasks.get(customer.id, 0),
                         "created_at": customer.created_at.isoformat()
                         if customer.created_at
                         else None,
