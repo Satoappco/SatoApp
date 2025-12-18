@@ -1,7 +1,7 @@
 """Add deep research tables for comprehensive research feature
 
-Revision ID: 20251218_deep_research
-Revises: 20251218_0001_ensure_unique_email_google_id_campaigners
+Revision ID: 20251218_1400
+Revises: 20251218_0001
 Create Date: 2025-12-18
 
 """
@@ -11,8 +11,8 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '20251218_deep_research'
-down_revision = '20251215_audit_logs'
+revision = '20251218_1400'
+down_revision = '20251218_0001'
 branch_labels = None
 depends_on = None
 
