@@ -3,13 +3,17 @@ API routes for viewing and managing application logs.
 """
 
 from fastapi import APIRouter, HTTPException, Query, Depends
-from typing import Optional, Literal
+from fastapi.responses import StreamingResponse
+from typing import Optional, Literal, AsyncGenerator
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+import asyncio
+import os
+import json
 
 from app.core.file_logger import file_logger
-from app.core.auth import get_current_user
-from app.core.rbac import require_admin
+from app.core.rbac import require_owner
+from app.models.users import Campaigner
 
 router = APIRouter()
 
@@ -36,12 +40,12 @@ async def get_recent_logs(
     lines: int = Query(
         default=100, ge=1, le=10000, description="Number of recent lines to retrieve"
     ),
-    current_user=Depends(require_admin()),
+    current_user=Depends(require_owner()),
 ):
     """
     Get the most recent log entries.
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Query Parameters:**
     - `lines` (int): Number of recent lines to retrieve (default: 100, max: 10000)
@@ -72,12 +76,12 @@ async def search_logs(
         default=100, ge=1, le=10000, description="Maximum number of results"
     ),
     case_sensitive: bool = Query(default=False, description="Case-sensitive search"),
-    current_user=Depends(require_admin()),
+    current_user=Depends(require_owner()),
 ):
     """
     Search for a term in log files.
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Query Parameters:**
     - `query` (str): Search term (required)
@@ -109,12 +113,12 @@ async def get_logs_by_level(
     max_results: int = Query(
         default=100, ge=1, le=10000, description="Maximum number of results"
     ),
-    current_user=Depends(require_admin()),
+    current_user=Depends(require_owner()),
 ):
     """
     Get log entries of a specific level.
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Path Parameters:**
     - `level` (str): Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -151,12 +155,12 @@ async def get_logs_by_timerange(
     max_results: int = Query(
         default=1000, ge=1, le=10000, description="Maximum number of results"
     ),
-    current_user=Depends(require_admin()),
+    current_user=Depends(require_owner()),
 ):
     """
     Get log entries within a time range.
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Query Parameters:**
     - `start_time` (datetime): Start of time range (ISO format, e.g., 2024-01-01T00:00:00)
@@ -192,11 +196,11 @@ async def get_logs_by_timerange(
 
 
 @router.get("/stats", response_model=LogStatsResponse)
-async def get_log_stats(admin_verified: bool = Depends(get_current_user)):
+async def get_log_stats(current_user: Campaigner = Depends(require_owner())):
     """
     Get statistics about log files.
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Returns:**
     - Total number of log files
@@ -222,12 +226,12 @@ async def clear_old_logs(
     days: int = Query(
         default=7, ge=1, le=365, description="Delete logs older than N days"
     ),
-    current_user=Depends(require_admin()),
+    current_user=Depends(require_owner()),
 ):
     """
     Clear log files older than specified days.
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Query Parameters:**
     - `days` (int): Number of days to keep (default: 7, max: 365)
@@ -257,12 +261,12 @@ async def tail_logs(
     follow: bool = Query(
         default=False, description="Keep connection open for live updates"
     ),
-    current_user=Depends(require_admin()),
+    current_user=Depends(require_owner()),
 ):
     """
     Tail the log file (like 'tail -f').
 
-    **Authentication Required**: Admin token
+    **Authentication Required**: Owner token
 
     **Query Parameters:**
     - `lines` (int): Number of lines to show (default: 50, max: 1000)
@@ -287,3 +291,112 @@ async def tail_logs(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to tail logs: {str(e)}")
+
+
+
+
+@router.get("/stream")
+async def stream_logs(
+    lines: int = Query(
+        default=50, ge=1, le=1000, description="Number of initial lines to send"
+    ),
+    current_user: Campaigner = Depends(require_owner()),
+):
+    """
+    Stream log updates in real-time using Server-Sent Events (SSE).
+
+    **Authentication Required**: Owner authentication (via standard auth headers)
+
+    **Query Parameters:**
+    - `lines` (int): Number of initial lines to send (default: 50, max: 1000)
+
+    **Returns:**
+    - Server-Sent Events stream with log updates
+
+    **Note**: Frontend must use fetch() with streaming instead of EventSource
+    because EventSource doesn't support custom authorization headers.
+    """
+
+    async def generate_log_stream() -> AsyncGenerator[str, None]:
+        """Generate log updates for SSE streaming."""
+        # Get initial log lines
+        initial_logs = file_logger.get_recent_logs(lines=lines)
+
+        # Send initial logs as the first event
+        initial_data = {
+            "type": "initial",
+            "logs": initial_logs,
+            "lines_count": len(initial_logs.split("\n")) if initial_logs else 0,
+            "timestamp": datetime.now().isoformat(),
+        }
+        yield f"data: {json.dumps(initial_data)}\n\n"
+
+        # Track the last position in the log file
+        log_file_path = file_logger.log_file
+        last_size = 0
+
+        # Get initial file size
+        if os.path.exists(log_file_path):
+            last_size = os.path.getsize(log_file_path)
+
+        try:
+            while True:
+                # Check if file exists and has grown
+                if os.path.exists(log_file_path):
+                    current_size = os.path.getsize(log_file_path)
+
+                    if current_size > last_size:
+                        # Read new content
+                        with open(log_file_path, 'r', encoding='utf-8') as f:
+                            f.seek(last_size)
+                            new_content = f.read()
+
+                        if new_content.strip():
+                            # Send new log lines
+                            update_data = {
+                                "type": "update",
+                                "logs": new_content,
+                                "lines_count": len(new_content.split("\n")),
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                            yield f"data: {json.dumps(update_data)}\n\n"
+
+                        last_size = current_size
+
+                # Check for log rotation (file size reset)
+                elif last_size > 0:
+                    # File was rotated, send everything from the new file
+                    initial_logs = file_logger.get_recent_logs(lines=lines)
+                    rotation_data = {
+                        "type": "rotation",
+                        "logs": initial_logs,
+                        "lines_count": len(initial_logs.split("\n")) if initial_logs else 0,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    yield f"data: {json.dumps(rotation_data)}\n\n"
+                    last_size = os.path.getsize(log_file_path) if os.path.exists(log_file_path) else 0
+
+                # Wait before checking again
+                await asyncio.sleep(0.5)  # Check every 500ms for new logs
+
+        except asyncio.CancelledError:
+            # Client disconnected
+            yield f"data: {json.dumps({'type': 'disconnect', 'message': 'Stream disconnected'})}\n\n"
+        except Exception as e:
+            # Send error to client
+            error_data = {
+                "type": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    return StreamingResponse(
+        generate_log_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
