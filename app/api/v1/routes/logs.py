@@ -316,19 +316,31 @@ async def stream_logs(
     **Note**: Frontend must use fetch() with streaming instead of EventSource
     because EventSource doesn't support custom authorization headers.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"🔄 [Stream] Log streaming requested by owner {current_user.email} (user_id: {current_user.id})")
+    logger.info(f"🔄 [Stream] Requested lines: {lines}")
+    logger.info(f"🔄 [Stream] Log file path: {file_logger.log_file}")
 
     async def generate_log_stream() -> AsyncGenerator[str, None]:
         """Generate log updates for SSE streaming."""
+        logger.debug(f"🔄 [Stream] Starting log stream generation")
+
         # Get initial log lines
+        logger.debug(f"🔄 [Stream] Fetching initial {lines} log lines")
         initial_logs = file_logger.get_recent_logs(lines=lines)
+        initial_line_count = len(initial_logs.split("\n")) if initial_logs else 0
+        logger.info(f"🔄 [Stream] Retrieved {initial_line_count} initial log lines")
 
         # Send initial logs as the first event
         initial_data = {
             "type": "initial",
             "logs": initial_logs,
-            "lines_count": len(initial_logs.split("\n")) if initial_logs else 0,
+            "lines_count": initial_line_count,
             "timestamp": datetime.now().isoformat(),
         }
+        logger.debug(f"🔄 [Stream] Sending initial event with {initial_line_count} lines")
         yield f"data: {json.dumps(initial_data)}\n\n"
 
         # Track the last position in the log file
@@ -338,52 +350,78 @@ async def stream_logs(
         # Get initial file size
         if os.path.exists(log_file_path):
             last_size = os.path.getsize(log_file_path)
+            logger.debug(f"🔄 [Stream] Initial log file size: {last_size} bytes")
+        else:
+            logger.warning(f"🔄 [Stream] Log file does not exist at {log_file_path}")
 
         try:
+            loop_count = 0
             while True:
+                loop_count += 1
+                if loop_count % 20 == 0:  # Log every 10 seconds (20 * 0.5s)
+                    logger.debug(f"🔄 [Stream] Monitoring loop #{loop_count}, file size: {last_size} bytes")
+
                 # Check if file exists and has grown
                 if os.path.exists(log_file_path):
                     current_size = os.path.getsize(log_file_path)
 
                     if current_size > last_size:
+                        logger.debug(f"🔄 [Stream] File grew from {last_size} to {current_size} bytes (diff: {current_size - last_size} bytes)")
                         # Read new content
                         with open(log_file_path, 'r', encoding='utf-8') as f:
                             f.seek(last_size)
                             new_content = f.read()
 
-                        if new_content.strip():
+                        logger.debug(f"🔄 [Stream] Read {len(new_content)} characters of new content")
+                        logger.debug(f"🔄 [Stream] New content repr: {repr(new_content[:200] if len(new_content) > 200 else new_content)}")
+
+                        new_line_count = len(new_content.split("\n"))
+
+                        # Send update even if content is just whitespace/newlines (strip check might be too strict)
+                        if new_content:  # Changed from new_content.strip() to new_content
+                            logger.debug(f"🔄 [Stream] Sending update with {new_line_count} new lines")
                             # Send new log lines
                             update_data = {
                                 "type": "update",
                                 "logs": new_content,
-                                "lines_count": len(new_content.split("\n")),
+                                "lines_count": new_line_count,
                                 "timestamp": datetime.now().isoformat(),
                             }
                             yield f"data: {json.dumps(update_data)}\n\n"
+                            # Force flush to ensure immediate sending
+                            await asyncio.sleep(0)  # Yield control to force flush
+                        else:
+                            logger.warning(f"🔄 [Stream] New content is completely empty, not sending update")
 
                         last_size = current_size
 
                 # Check for log rotation (file size reset)
                 elif last_size > 0:
+                    logger.warning(f"🔄 [Stream] Log file rotation detected! Size was {last_size}, now file doesn't exist")
                     # File was rotated, send everything from the new file
                     initial_logs = file_logger.get_recent_logs(lines=lines)
+                    rotation_line_count = len(initial_logs.split("\n")) if initial_logs else 0
+                    logger.info(f"🔄 [Stream] Sending rotation event with {rotation_line_count} lines")
                     rotation_data = {
                         "type": "rotation",
                         "logs": initial_logs,
-                        "lines_count": len(initial_logs.split("\n")) if initial_logs else 0,
+                        "lines_count": rotation_line_count,
                         "timestamp": datetime.now().isoformat(),
                     }
                     yield f"data: {json.dumps(rotation_data)}\n\n"
                     last_size = os.path.getsize(log_file_path) if os.path.exists(log_file_path) else 0
+                    logger.debug(f"🔄 [Stream] After rotation, new file size: {last_size} bytes")
 
                 # Wait before checking again
                 await asyncio.sleep(0.5)  # Check every 500ms for new logs
 
         except asyncio.CancelledError:
             # Client disconnected
+            logger.info(f"🔄 [Stream] Client disconnected gracefully for user {current_user.email}")
             yield f"data: {json.dumps({'type': 'disconnect', 'message': 'Stream disconnected'})}\n\n"
         except Exception as e:
             # Send error to client
+            logger.error(f"🔄 [Stream] Error in stream for user {current_user.email}: {str(e)}", exc_info=True)
             error_data = {
                 "type": "error",
                 "error": str(e),
@@ -391,6 +429,7 @@ async def stream_logs(
             }
             yield f"data: {json.dumps(error_data)}\n\n"
 
+    logger.debug(f"🔄 [Stream] Creating StreamingResponse for user {current_user.email}")
     return StreamingResponse(
         generate_log_stream(),
         media_type="text/event-stream",

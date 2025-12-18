@@ -45,8 +45,19 @@ class FileLogger:
         # Create logs directory if it doesn't exist
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create rotating file handler
-        file_handler = RotatingFileHandler(
+        # Force immediate flushing for real-time log streaming
+        class ImmediateFlushHandler(RotatingFileHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+
+            def emit(self, record):
+                super().emit(record)
+                # Force immediate flush after each log entry
+                if self.stream:
+                    self.stream.flush()
+
+        # Create rotating file handler with immediate flushing
+        file_handler = ImmediateFlushHandler(
             filename=str(self.log_file),
             maxBytes=LOG_MAX_BYTES,
             backupCount=LOG_BACKUP_COUNT,
