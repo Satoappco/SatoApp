@@ -133,6 +133,68 @@ async def update_analysis_settings(
         )
 
 
+# Health Check Endpoint
+
+@router.get("/health")
+async def customer_analysis_health_check(db: Session = Depends(get_db)):
+    """
+    Check the health of the customer analysis system.
+
+    Returns:
+        Health status including scheduler state, database connectivity,
+        and pending analyses count
+    """
+    try:
+        from app.services.customer_analysis_scheduler import get_scheduler
+        from app.models.customer_analysis import CustomerAnalysisSession
+        from sqlmodel import select, func
+
+        scheduler = get_scheduler()
+
+        # Count pending/running analyses
+        pending_count = db.exec(
+            select(func.count())
+            .select_from(CustomerAnalysisSession)
+            .where(CustomerAnalysisSession.status.in_(["pending", "running"]))
+        ).first() or 0
+
+        # Count total sessions
+        total_count = db.exec(
+            select(func.count())
+            .select_from(CustomerAnalysisSession)
+        ).first() or 0
+
+        # Count completed sessions (last 24 hours)
+        from datetime import datetime, timedelta
+        day_ago = datetime.utcnow() - timedelta(days=1)
+        recent_completed = db.exec(
+            select(func.count())
+            .select_from(CustomerAnalysisSession)
+            .where(CustomerAnalysisSession.status == "completed")
+            .where(CustomerAnalysisSession.completed_at >= day_ago)
+        ).first() or 0
+
+        return {
+            "status": "healthy",
+            "scheduler_running": scheduler._running if scheduler else False,
+            "database": "connected",
+            "statistics": {
+                "pending_analyses": pending_count,
+                "total_sessions": total_count,
+                "completed_last_24h": recent_completed
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
 # Customer Analysis Endpoints
 
 @router.post("", response_model=AnalysisResponse, status_code=status.HTTP_202_ACCEPTED)

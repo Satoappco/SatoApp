@@ -55,9 +55,9 @@ def campaigner_fixture(session: Session, agency):
     """Create a test campaigner."""
     campaigner = Campaigner(
         email="test@example.com",
-        name="Test Campaigner",
+        full_name="Test Campaigner",
         hashed_password="dummy_hash",
-        role="admin",
+        role="ADMIN",
         agency_id=agency.id
     )
     session.add(campaigner)
@@ -205,9 +205,10 @@ class TestAnalysisSession:
         # Create another campaigner
         other_campaigner = Campaigner(
             email="other@example.com",
-            name="Other Campaigner",
+            full_name="Other Campaigner",
             hashed_password="dummy_hash",
-            role="user"
+            role="ADMIN",
+            agency_id=campaigner.agency_id
         )
         session.add(other_campaigner)
         session.commit()

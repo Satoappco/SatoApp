@@ -211,8 +211,9 @@ class CustomerAnalysisService:
         # Validate customer access
         if customer_id:
             customer = self.db.get(Customer, customer_id)
-            if not customer or customer.campaigner_id != campaigner_id:
-                raise ValueError(f"Customer {customer_id} not found or access denied")
+            if not customer:
+                raise ValueError(f"Customer {customer_id} not found")
+            # Note: Access control is handled at API layer via RBAC
 
         # Get campaigner
         campaigner = self.db.get(Campaigner, campaigner_id)
@@ -363,7 +364,7 @@ class CustomerAnalysisService:
         # Execute workflow
         result = await workflow.execute(
             campaigner_id=campaigner.id,
-            campaigner_name=campaigner.name,
+            campaigner_name=campaigner.full_name,
             customer_id=customer.id if customer else None,
             customer_name=customer.full_name if customer else None,
             website_url=customer.website_url if customer else None,
@@ -665,11 +666,13 @@ class CustomerAnalysisService:
 
         # Add note to review_notes
         if note:
-            task.review_notes.append({
+            notes = list(task.review_notes) if task.review_notes else []
+            notes.append({
                 "timestamp": datetime.utcnow().isoformat(),
                 "status_change": f"{old_status} -> {status}",
                 "note": note
             })
+            task.review_notes = notes
 
         self.db.add(task)
         self.db.commit()

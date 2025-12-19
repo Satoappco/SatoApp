@@ -10,11 +10,20 @@ This workflow orchestrates a comprehensive multi-phase customer analysis includi
 """
 
 import logging
+import json
 from typing import Dict, Any, List, TypedDict, Annotated, Optional
 from datetime import datetime
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log
+)
+from openai import RateLimitError, APIError
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +74,31 @@ class CustomerAnalysisWorkflow:
 
         # Build the workflow graph
         self.graph = self._build_graph()
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((RateLimitError, APIError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING)
+    )
+    async def _invoke_llm_with_retry(self, messages: List, llm=None) -> Any:
+        """
+        Invoke LLM with automatic retry on rate limits and API errors.
+
+        Args:
+            messages: List of messages to send to LLM
+            llm: Optional LLM instance (defaults to self.llm)
+
+        Returns:
+            LLM response
+
+        Raises:
+            Exception: If all retries are exhausted
+        """
+        if llm is None:
+            llm = self.llm
+
+        return await llm.ainvoke(messages)
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow."""
@@ -120,10 +154,10 @@ Format your response as JSON with keys: company_name, industry, target_audience,
 Each value should be a string or array of strings as appropriate."""
 
         try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response = await self._invoke_llm_with_retry([HumanMessage(content=prompt)])
 
             # Parse response
-            import json
+
             client_brief = json.loads(response.content)
 
             return {
@@ -185,9 +219,9 @@ Client Context:
 Format your response as JSON with keys: url, key_pages, products_services, user_experience_notes, technical_seo_score."""
 
         try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response = await self._invoke_llm_with_retry([HumanMessage(content=prompt)])
 
-            import json
+
             website_analysis = json.loads(response.content)
 
             return {
@@ -238,9 +272,9 @@ Provide analysis on:
 Format your response as JSON with keys: competitors (array of objects with name, website, strengths), market_size, trends (array of strings), opportunities (array of strings), threats (array of strings)."""
 
         try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response = await self._invoke_llm_with_retry([HumanMessage(content=prompt)])
 
-            import json
+
             market_research = json.loads(response.content)
 
             return {
@@ -290,9 +324,9 @@ Provide analysis framework for:
 Format your response as JSON with keys: active_campaigns (array), performance_summary (object), key_metrics (object), recommendations (array of strings)."""
 
         try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response = await self._invoke_llm_with_retry([HumanMessage(content=prompt)])
 
-            import json
+
             campaign_analysis = json.loads(response.content)
 
             return {
@@ -351,9 +385,9 @@ Format as JSON with keys: strategic (array), tactical (array), priority_actions 
 Each item should have: title, description, expected_impact, effort_required."""
 
         try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response = await self._invoke_llm_with_retry([HumanMessage(content=prompt)])
 
-            import json
+
             recommendations = json.loads(response.content)
 
             return {
@@ -413,9 +447,9 @@ Format as JSON with keys: period_weeks (8), tasks_by_week.
 tasks_by_week should be an object with week_1 through week_8, each containing an array of tasks."""
 
         try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response = await self._invoke_llm_with_retry([HumanMessage(content=prompt)])
 
-            import json
+
             work_plan = json.loads(response.content)
 
             return {
@@ -501,7 +535,7 @@ tasks_by_week should be an object with week_1 through week_8, each containing an
 
     def _generate_markdown_report(self, state: AnalysisState) -> str:
         """Generate a comprehensive markdown report from the analysis."""
-        import json
+
 
         report = f"""# Customer Analysis Report
 
@@ -734,18 +768,17 @@ tasks_by_week should be an object with week_1 through week_8, each containing an
         return report
 
 
-# Create a singleton instance
-_workflow_instance = None
-
 def get_workflow(
     model_name: str = "gpt-4o",
     summarization_model_name: str = "gpt-4o-mini"
 ) -> CustomerAnalysisWorkflow:
-    """Get or create the workflow instance."""
-    global _workflow_instance
-    if _workflow_instance is None:
-        _workflow_instance = CustomerAnalysisWorkflow(
-            model_name=model_name,
-            summarization_model_name=summarization_model_name
-        )
-    return _workflow_instance
+    """
+    Get a new workflow instance with specified models.
+
+    Note: We create a new instance each time to ensure model parameters
+    are respected and to avoid thread-safety issues.
+    """
+    return CustomerAnalysisWorkflow(
+        model_name=model_name,
+        summarization_model_name=summarization_model_name
+    )
