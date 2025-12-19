@@ -60,9 +60,24 @@ async def lifespan(app: FastAPI):
     logger.info("✅ All required environment variables are present")
 
     init_database()
+
+    # Start customer analysis scheduler
+    try:
+        from app.services.customer_analysis_scheduler import start_scheduler
+        start_scheduler()
+        logger.info("✅ Customer analysis scheduler started")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to start customer analysis scheduler: {str(e)}")
+
     yield
+
     # Shutdown
-    pass
+    try:
+        from app.services.customer_analysis_scheduler import stop_scheduler
+        stop_scheduler()
+        logger.info("✅ Customer analysis scheduler stopped")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to stop customer analysis scheduler: {str(e)}")
 
 
 def create_app() -> FastAPI:
