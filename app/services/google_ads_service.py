@@ -795,3 +795,729 @@ class GoogleAdsService:
                 )
 
             return connections
+
+    # ===================================================================
+    # CAMPAIGN & AD MUTATION METHODS
+    # ===================================================================
+
+    def _get_google_ads_client(self, connection_id: int) -> GoogleAdsClient:
+        """Get authenticated Google Ads client for connection."""
+        with get_session() as session:
+            connection = session.get(Connection, connection_id)
+            if not connection:
+                raise ValueError(f"Connection {connection_id} not found")
+
+            # Decrypt tokens
+            refresh_token = self._decrypt_token(connection.refresh_token_enc)
+
+            # Get developer token
+            developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
+            if not developer_token:
+                raise ValueError("GOOGLE_ADS_DEVELOPER_TOKEN is required for mutations")
+
+            # Create Google Ads client
+            client = GoogleAdsClient.load_from_dict(
+                {
+                    "developer_token": developer_token,
+                    "client_id": get_google_client_id(),
+                    "client_secret": get_google_client_secret(),
+                    "refresh_token": refresh_token,
+                    "use_proto_plus": True,
+                }
+            )
+
+            return client
+
+    # === Campaign Management ===
+
+    async def create_campaign(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_name: str,
+        budget_amount_micros: int,
+        campaign_type: str,
+        bidding_strategy_type: str,
+        bidding_config: Dict[str, Any] = None,
+        network_settings: Dict[str, bool] = None,
+        start_date: str = None,
+        end_date: str = None,
+    ) -> Dict[str, Any]:
+        """Create a new Google Ads campaign with budget and bidding strategy."""
+        from app.services.google_ads_mutations import (
+            get_campaign_service,
+            get_campaign_budget_service,
+            create_budget_operation,
+            create_campaign_operation,
+            apply_network_settings,
+            apply_bidding_strategy,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_campaign_name,
+            validate_campaign_type,
+            validate_bidding_strategy,
+            validate_budget_amount,
+            validate_customer_id,
+            validate_date_format,
+        )
+
+        try:
+            # Validate inputs
+            validate_customer_id(customer_id)
+            validate_campaign_name(campaign_name)
+            validate_campaign_type(campaign_type)
+            validate_bidding_strategy(bidding_strategy_type, bidding_config)
+            validate_budget_amount(budget_amount_micros)
+
+            if start_date:
+                validate_date_format(start_date, "start_date")
+            if end_date:
+                validate_date_format(end_date, "end_date")
+
+            client = self._get_google_ads_client(connection_id)
+
+            # Create budget
+            budget_result = await self._create_budget(
+                client,
+                customer_id,
+                f"{campaign_name} Budget",
+                budget_amount_micros,
+            )
+
+            if not budget_result["success"]:
+                return budget_result
+
+            budget_resource_name = budget_result["resource_names"][0]
+
+            # Create campaign
+            campaign_result = await self._create_campaign_with_settings(
+                client,
+                customer_id,
+                campaign_name,
+                budget_resource_name,
+                campaign_type,
+                bidding_strategy_type,
+                bidding_config,
+                network_settings,
+                start_date,
+                end_date,
+            )
+
+            if campaign_result["success"]:
+                campaign_result["budget_resource_name"] = budget_resource_name
+
+            return campaign_result
+
+        except Exception as e:
+            print(f"❌ Campaign creation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def _create_budget(
+        self,
+        client: GoogleAdsClient,
+        customer_id: str,
+        budget_name: str,
+        amount_micros: int,
+    ) -> Dict[str, Any]:
+        """Create campaign budget - internal helper."""
+        from app.services.google_ads_mutations import (
+            get_campaign_budget_service,
+            create_budget_operation,
+            execute_mutation,
+        )
+
+        budget_service = get_campaign_budget_service(client)
+        budget_operation = create_budget_operation(
+            client,
+            budget_name,
+            amount_micros,
+        )
+
+        return execute_mutation(
+            budget_service.mutate_campaign_budgets,
+            customer_id,
+            [budget_operation],
+            "Budget creation",
+        )
+
+    async def _create_campaign_with_settings(
+        self,
+        client: GoogleAdsClient,
+        customer_id: str,
+        campaign_name: str,
+        budget_resource_name: str,
+        campaign_type: str,
+        bidding_strategy_type: str,
+        bidding_config: Optional[Dict[str, Any]],
+        network_settings: Optional[Dict[str, bool]],
+        start_date: Optional[str],
+        end_date: Optional[str],
+    ) -> Dict[str, Any]:
+        """Create campaign with all settings - internal helper."""
+        from app.services.google_ads_mutations import (
+            get_campaign_service,
+            create_campaign_operation,
+            apply_network_settings,
+            apply_bidding_strategy,
+            execute_mutation,
+        )
+
+        campaign_service = get_campaign_service(client)
+        campaign_operation = create_campaign_operation(
+            client,
+            campaign_name,
+            budget_resource_name,
+            campaign_type,
+        )
+
+        campaign = campaign_operation.create
+
+        # Apply bidding strategy
+        apply_bidding_strategy(
+            client,
+            campaign,
+            bidding_strategy_type,
+            bidding_config or {},
+        )
+
+        # Apply network settings
+        if network_settings:
+            apply_network_settings(campaign, **network_settings)
+        else:
+            apply_network_settings(campaign)  # Use defaults
+
+        # Apply dates if provided
+        if start_date:
+            campaign.start_date = start_date
+        if end_date:
+            campaign.end_date = end_date
+
+        return execute_mutation(
+            campaign_service.mutate_campaigns,
+            customer_id,
+            [campaign_operation],
+            "Campaign creation",
+        )
+
+    async def update_campaign(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_id: str,
+        updates: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update campaign settings using field mask."""
+        from app.services.google_ads_mutations import (
+            get_campaign_service,
+            update_campaign_field,
+            build_campaign_resource_name,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import validate_customer_id
+
+        try:
+            validate_customer_id(customer_id)
+
+            client = self._get_google_ads_client(connection_id)
+            campaign_service = get_campaign_service(client)
+
+            campaign_resource_name = build_campaign_resource_name(
+                customer_id,
+                campaign_id,
+            )
+
+            campaign_operation = update_campaign_field(
+                client,
+                campaign_resource_name,
+                updates,
+            )
+
+            return execute_mutation(
+                campaign_service.mutate_campaigns,
+                customer_id,
+                [campaign_operation],
+                "Campaign update",
+            )
+
+        except Exception as e:
+            print(f"❌ Campaign update failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def update_campaign_status(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_id: str,
+        status: str,
+    ) -> Dict[str, Any]:
+        """Update campaign status."""
+        from app.services.google_ads_validators import validate_campaign_status
+
+        validate_campaign_status(status)
+
+        return await self.update_campaign(
+            connection_id,
+            customer_id,
+            campaign_id,
+            {"status": status},
+        )
+
+    async def remove_campaign(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_id: str,
+    ) -> Dict[str, Any]:
+        """Remove (soft delete) a campaign."""
+        return await self.update_campaign_status(
+            connection_id,
+            customer_id,
+            campaign_id,
+            "REMOVED",
+        )
+
+    # === Budget Management ===
+
+    async def create_campaign_budget(
+        self,
+        connection_id: int,
+        customer_id: str,
+        budget_name: str,
+        amount_micros: int,
+        delivery_method: str = "STANDARD",
+        explicitly_shared: bool = False,
+    ) -> Dict[str, Any]:
+        """Create a new campaign budget."""
+        from app.services.google_ads_mutations import (
+            get_campaign_budget_service,
+            create_budget_operation,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_budget_amount,
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_budget_amount(amount_micros)
+
+            client = self._get_google_ads_client(connection_id)
+            budget_service = get_campaign_budget_service(client)
+
+            budget_operation = create_budget_operation(
+                client,
+                budget_name,
+                amount_micros,
+                delivery_method,
+                explicitly_shared,
+            )
+
+            return execute_mutation(
+                budget_service.mutate_campaign_budgets,
+                customer_id,
+                [budget_operation],
+                "Budget creation",
+            )
+
+        except Exception as e:
+            print(f"❌ Budget creation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def update_campaign_budget(
+        self,
+        connection_id: int,
+        customer_id: str,
+        budget_id: str,
+        amount_micros: int,
+    ) -> Dict[str, Any]:
+        """Update budget amount."""
+        from app.services.google_ads_mutations import (
+            get_campaign_budget_service,
+            update_budget_operation,
+            build_budget_resource_name,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_budget_amount,
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_budget_amount(amount_micros)
+
+            client = self._get_google_ads_client(connection_id)
+            budget_service = get_campaign_budget_service(client)
+
+            budget_resource_name = build_budget_resource_name(customer_id, budget_id)
+
+            budget_operation = update_budget_operation(
+                client,
+                budget_resource_name,
+                amount_micros,
+            )
+
+            return execute_mutation(
+                budget_service.mutate_campaign_budgets,
+                customer_id,
+                [budget_operation],
+                "Budget update",
+            )
+
+        except Exception as e:
+            print(f"❌ Budget update failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    # === Bidding Strategy Management ===
+
+    async def update_campaign_bidding_strategy(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_id: str,
+        bidding_strategy_type: str,
+        bidding_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update campaign's bidding strategy."""
+        from app.services.google_ads_validators import validate_bidding_strategy
+
+        try:
+            validate_bidding_strategy(bidding_strategy_type, bidding_config)
+
+            # Build updates dict for bidding strategy
+            updates = {}
+            if bidding_strategy_type == "TARGET_CPA":
+                updates["target_cpa_micros"] = bidding_config.get("target_cpa_micros")
+            elif bidding_strategy_type == "TARGET_ROAS":
+                updates["target_roas"] = bidding_config.get("target_roas")
+
+            return await self.update_campaign(
+                connection_id,
+                customer_id,
+                campaign_id,
+                updates,
+            )
+
+        except Exception as e:
+            print(f"❌ Bidding strategy update failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    # === Asset Management ===
+
+    async def upload_image_asset(
+        self,
+        connection_id: int,
+        customer_id: str,
+        asset_name: str,
+        image_data: bytes,
+        mime_type: str = "IMAGE_PNG",
+    ) -> Dict[str, Any]:
+        """Upload an image asset."""
+        from app.services.google_ads_mutations import (
+            get_asset_service,
+            create_image_asset_operation,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_asset_name,
+            validate_image_data,
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_asset_name(asset_name)
+            validate_image_data(image_data)
+
+            client = self._get_google_ads_client(connection_id)
+            asset_service = get_asset_service(client)
+
+            asset_operation = create_image_asset_operation(
+                client,
+                asset_name,
+                image_data,
+                mime_type,
+            )
+
+            return execute_mutation(
+                asset_service.mutate_assets,
+                customer_id,
+                [asset_operation],
+                "Asset upload",
+            )
+
+        except Exception as e:
+            print(f"❌ Asset upload failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def link_asset_to_campaign(
+        self,
+        connection_id: int,
+        customer_id: str,
+        asset_resource_name: str,
+        campaign_id: str,
+        field_type: str,
+    ) -> Dict[str, Any]:
+        """Link an asset to a campaign."""
+        from app.services.google_ads_mutations import (
+            get_campaign_asset_service,
+            create_campaign_asset_link_operation,
+            build_campaign_resource_name,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_asset_field_type,
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_asset_field_type(field_type)
+
+            client = self._get_google_ads_client(connection_id)
+            campaign_asset_service = get_campaign_asset_service(client)
+
+            campaign_resource_name = build_campaign_resource_name(customer_id, campaign_id)
+
+            link_operation = create_campaign_asset_link_operation(
+                client,
+                asset_resource_name,
+                campaign_resource_name,
+                field_type,
+            )
+
+            return execute_mutation(
+                campaign_asset_service.mutate_campaign_assets,
+                customer_id,
+                [link_operation],
+                "Asset linking",
+            )
+
+        except Exception as e:
+            print(f"❌ Asset linking failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def unlink_asset_from_campaign(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_asset_resource_name: str,
+    ) -> Dict[str, Any]:
+        """Remove asset link from campaign."""
+        from app.services.google_ads_mutations import (
+            get_campaign_asset_service,
+            remove_campaign_asset_link_operation,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import validate_customer_id
+
+        try:
+            validate_customer_id(customer_id)
+
+            client = self._get_google_ads_client(connection_id)
+            campaign_asset_service = get_campaign_asset_service(client)
+
+            remove_operation = remove_campaign_asset_link_operation(
+                client,
+                campaign_asset_resource_name,
+            )
+
+            return execute_mutation(
+                campaign_asset_service.mutate_campaign_assets,
+                customer_id,
+                [remove_operation],
+                "Asset unlinking",
+            )
+
+        except Exception as e:
+            print(f"❌ Asset unlinking failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    # === Ad Management ===
+
+    async def create_ad_group(
+        self,
+        connection_id: int,
+        customer_id: str,
+        campaign_id: str,
+        ad_group_name: str,
+        cpc_bid_micros: int = None,
+    ) -> Dict[str, Any]:
+        """Create a new ad group."""
+        from app.services.google_ads_mutations import (
+            get_ad_group_service,
+            create_ad_group_operation,
+            build_campaign_resource_name,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_ad_group_name,
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_ad_group_name(ad_group_name)
+
+            client = self._get_google_ads_client(connection_id)
+            ad_group_service = get_ad_group_service(client)
+
+            campaign_resource_name = build_campaign_resource_name(customer_id, campaign_id)
+
+            ad_group_operation = create_ad_group_operation(
+                client,
+                ad_group_name,
+                campaign_resource_name,
+                cpc_bid_micros,
+            )
+
+            return execute_mutation(
+                ad_group_service.mutate_ad_groups,
+                customer_id,
+                [ad_group_operation],
+                "Ad group creation",
+            )
+
+        except Exception as e:
+            print(f"❌ Ad group creation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def create_responsive_search_ad(
+        self,
+        connection_id: int,
+        customer_id: str,
+        ad_group_id: str,
+        headlines: List[str],
+        descriptions: List[str],
+        final_urls: List[str],
+        path1: str = None,
+        path2: str = None,
+    ) -> Dict[str, Any]:
+        """Create a responsive search ad."""
+        from app.services.google_ads_mutations import (
+            get_ad_group_ad_service,
+            create_responsive_search_ad_operation,
+            build_ad_group_resource_name,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_headlines,
+            validate_descriptions,
+            validate_final_urls,
+            validate_display_path,
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_headlines(headlines)
+            validate_descriptions(descriptions)
+            validate_final_urls(final_urls)
+
+            if path1:
+                validate_display_path(path1, "path1")
+            if path2:
+                validate_display_path(path2, "path2")
+
+            client = self._get_google_ads_client(connection_id)
+            ad_group_ad_service = get_ad_group_ad_service(client)
+
+            ad_group_resource_name = build_ad_group_resource_name(customer_id, ad_group_id)
+
+            ad_operation = create_responsive_search_ad_operation(
+                client,
+                ad_group_resource_name,
+                headlines,
+                descriptions,
+                final_urls,
+                path1,
+                path2,
+            )
+
+            return execute_mutation(
+                ad_group_ad_service.mutate_ad_group_ads,
+                customer_id,
+                [ad_operation],
+                "Ad creation",
+            )
+
+        except Exception as e:
+            print(f"❌ Ad creation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def update_ad_status(
+        self,
+        connection_id: int,
+        customer_id: str,
+        ad_group_ad_resource_name: str,
+        status: str,
+    ) -> Dict[str, Any]:
+        """Update ad status."""
+        from app.services.google_ads_mutations import (
+            get_ad_group_ad_service,
+            update_ad_status_operation,
+            execute_mutation,
+        )
+        from app.services.google_ads_validators import (
+            validate_customer_id,
+            validate_campaign_status,  # Same enum values
+        )
+
+        try:
+            validate_customer_id(customer_id)
+            validate_campaign_status(status)  # Reuse validation
+
+            client = self._get_google_ads_client(connection_id)
+            ad_group_ad_service = get_ad_group_ad_service(client)
+
+            status_operation = update_ad_status_operation(
+                client,
+                ad_group_ad_resource_name,
+                status,
+            )
+
+            return execute_mutation(
+                ad_group_ad_service.mutate_ad_group_ads,
+                customer_id,
+                [status_operation],
+                "Ad status update",
+            )
+
+        except Exception as e:
+            print(f"❌ Ad status update failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }

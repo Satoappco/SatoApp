@@ -5,7 +5,7 @@ Handles CRUD operations for customers with full initialization
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlmodel import select, and_, func 
 from pydantic import BaseModel, Field, EmailStr
 
@@ -379,7 +379,9 @@ async def get_customer(
 
 @router.post("")
 async def create_customer(
-    request: CustomerCreate, current_user: Campaigner = Depends(require_admin())
+    request: CustomerCreate,
+    background_tasks: BackgroundTasks,
+    current_user: Campaigner = Depends(require_admin())
 ):
     """
     Create a new customer with initialization of related tables.
@@ -487,6 +489,46 @@ async def create_customer(
                 resource_id=new_customer.id,
                 allowed=True,
             )
+
+            # Trigger customer analysis if auto-analysis is enabled
+            async def trigger_customer_analysis():
+                """Background task to trigger customer analysis if enabled."""
+                try:
+                    from app.models.customer_analysis import AnalysisSettings
+                    from app.services.customer_analysis_service import CustomerAnalysisService
+
+                    with get_session() as bg_session:
+                        # Check if auto-analysis is enabled
+                        settings = bg_session.exec(
+                            select(AnalysisSettings).where(
+                                AnalysisSettings.campaigner_id == current_user.id
+                            )
+                        ).first()
+
+                        if settings and settings.auto_analysis_on_create:
+                            logger.info(
+                                f"Triggering automatic customer analysis for customer {new_customer.id}"
+                            )
+
+                            service = CustomerAnalysisService(bg_session)
+                            await service.conduct_analysis(
+                                campaigner_id=current_user.id,
+                                customer_id=new_customer.id,
+                                analysis_type="initial",
+                                trigger_source="auto_onboarding",
+                                streaming=False
+                            )
+
+                            logger.info(
+                                f"Completed automatic customer analysis for customer {new_customer.id}"
+                            )
+                except Exception as e:
+                    logger.error(
+                        f"Error in automatic customer analysis for customer {new_customer.id}: {str(e)}",
+                        exc_info=True
+                    )
+
+            background_tasks.add_task(trigger_customer_analysis)
 
             return {
                 "success": True,

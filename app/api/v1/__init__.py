@@ -41,6 +41,7 @@ from .routes import (
     tasks,
     qa,
     deep_research,
+    customer_analysis,
 )
 from app.api.v1.routes.chat import router as chat_router
 
@@ -84,6 +85,7 @@ api_router.include_router(database_management.router, tags=["database-management
 api_router.include_router(customer_data.router, tags=["customer-data"])
 api_router.include_router(chat_router, tags=["chat"])
 api_router.include_router(deep_research.router, tags=["deep-research"])
+api_router.include_router(customer_analysis.router, tags=["customer-analysis"])
 api_router.include_router(
     countries_currencies.router, prefix="/constants", tags=["constants"]
 )
