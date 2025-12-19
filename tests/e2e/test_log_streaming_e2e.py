@@ -9,13 +9,14 @@ import requests
 import json
 from typing import Generator
 
-from app.config.settings import settings
+from app.config.settings import get_settings
 
 
 @pytest.fixture
 def auth_headers():
     """Create auth headers with a valid token for testing."""
     import jwt
+    settings = get_settings()
     token = jwt.encode(
         {"sub": "test_user", "exp": int(time.time()) + 3600},
         settings.secret_key,

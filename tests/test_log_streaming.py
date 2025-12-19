@@ -12,13 +12,14 @@ import io
 import jwt
 
 from app.main import app
-from app.config.settings import settings
+from app.config.settings import get_settings
 
 client = TestClient(app)
 
 
 def create_test_token(user_id: str = "test_user") -> str:
     """Create a valid JWT token for testing."""
+    settings = get_settings()
     return jwt.encode(
         {"sub": user_id, "exp": 9999999999},  # Far future expiry
         settings.secret_key,
