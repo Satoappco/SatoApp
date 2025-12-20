@@ -972,8 +972,6 @@ async def create_campaign(
 async def update_campaign(
     campaign_id: str,
     request: "UpdateCampaignRequest",
-    connection_id: int = Query(..., description="Connection ID"),
-    customer_id: str = Query(..., description="Google Ads customer ID"),
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
@@ -984,7 +982,7 @@ async def update_campaign(
     try:
         # Validate connection ownership
         with get_session() as session:
-            connection = session.get(Connection, connection_id)
+            connection = session.get(Connection, request.connection_id)
             if not connection or connection.campaigner_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -1011,8 +1009,8 @@ async def update_campaign(
 
         # Update campaign using service
         result = await google_ads_service.update_campaign(
-            connection_id=connection_id,
-            customer_id=customer_id,
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
             campaign_id=campaign_id,
             updates=updates,
         )
@@ -1038,8 +1036,6 @@ async def update_campaign(
 async def update_campaign_budget(
     campaign_id: str,
     request: "UpdateBudgetRequest",
-    connection_id: int = Query(..., description="Connection ID"),
-    customer_id: str = Query(..., description="Google Ads customer ID"),
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
@@ -1050,7 +1046,7 @@ async def update_campaign_budget(
     try:
         # Validate connection ownership
         with get_session() as session:
-            connection = session.get(Connection, connection_id)
+            connection = session.get(Connection, request.connection_id)
             if not connection or connection.campaigner_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -1078,8 +1074,8 @@ async def update_campaign_budget(
         """
 
         result = await service.execute_query(
-            connection_id=connection_id,
-            customer_id=customer_id,
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
             query=query,
         )
 
@@ -1101,8 +1097,8 @@ async def update_campaign_budget(
 
         # Update budget using service
         update_result = await google_ads_service.update_campaign_budget(
-            connection_id=connection_id,
-            customer_id=customer_id,
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
             budget_id=budget_id,
             amount_micros=request.new_daily_budget_micros,
         )
@@ -1128,8 +1124,6 @@ async def update_campaign_budget(
 async def update_campaign_bidding(
     campaign_id: str,
     request: "UpdateBiddingRequest",
-    connection_id: int = Query(..., description="Connection ID"),
-    customer_id: str = Query(..., description="Google Ads customer ID"),
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
@@ -1140,7 +1134,7 @@ async def update_campaign_bidding(
     try:
         # Validate connection ownership
         with get_session() as session:
-            connection = session.get(Connection, connection_id)
+            connection = session.get(Connection, request.connection_id)
             if not connection or connection.campaigner_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -1167,8 +1161,8 @@ async def update_campaign_bidding(
 
         # Update bidding using service
         result = await google_ads_service.update_campaign_bidding_strategy(
-            connection_id=connection_id,
-            customer_id=customer_id,
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
             campaign_id=campaign_id,
             bidding_strategy_type=request.bidding_strategy.value,
             bidding_config=bidding_config if bidding_config else None,
@@ -1195,8 +1189,6 @@ async def update_campaign_bidding(
 async def update_campaign_status(
     campaign_id: str,
     request: "UpdateStatusRequest",
-    connection_id: int = Query(..., description="Connection ID"),
-    customer_id: str = Query(..., description="Google Ads customer ID"),
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
@@ -1207,7 +1199,7 @@ async def update_campaign_status(
     try:
         # Validate connection ownership
         with get_session() as session:
-            connection = session.get(Connection, connection_id)
+            connection = session.get(Connection, request.connection_id)
             if not connection or connection.campaigner_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -1223,8 +1215,8 @@ async def update_campaign_status(
 
         # Update status using service
         result = await google_ads_service.update_campaign_status(
-            connection_id=connection_id,
-            customer_id=customer_id,
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
             campaign_id=campaign_id,
             status=request.status.value,
         )

@@ -93,27 +93,58 @@ class CreateCampaignRequest(BaseModel):
 
 class UpdateCampaignRequest(BaseModel):
     """Request to update campaign settings."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
+    customer_id: str = Field(..., description="Google Ads customer ID")
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     status: Optional[CampaignStatus] = None
     start_date: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
     end_date: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
 
+    @field_validator('customer_id')
+    @classmethod
+    def validate_customer_id(cls, v):
+        clean_id = ''.join(c for c in v if c.isdigit())
+        if len(clean_id) != 10:
+            raise ValueError('Customer ID must be 10 digits')
+        return clean_id
+
 
 class UpdateBudgetRequest(BaseModel):
     """Request to update campaign budget."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
+    customer_id: str = Field(..., description="Google Ads customer ID")
     new_daily_budget_micros: int = Field(..., gt=0, description="New daily budget in micros")
+
+    @field_validator('customer_id')
+    @classmethod
+    def validate_customer_id(cls, v):
+        clean_id = ''.join(c for c in v if c.isdigit())
+        if len(clean_id) != 10:
+            raise ValueError('Customer ID must be 10 digits')
+        return clean_id
 
 
 class UpdateBiddingRequest(BaseModel):
     """Request to update bidding strategy."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
+    customer_id: str = Field(..., description="Google Ads customer ID")
     bidding_strategy: BiddingStrategyType
     target_cpa_micros: Optional[int] = Field(None, gt=0, description="Target CPA in micros (for TARGET_CPA)")
     target_roas: Optional[float] = Field(None, gt=0, description="Target ROAS (for TARGET_ROAS)")
     target_spend_cpc_bid_ceiling_micros: Optional[int] = Field(None, gt=0, description="CPC ceiling (for TARGET_SPEND)")
 
+    @field_validator('customer_id')
+    @classmethod
+    def validate_customer_id(cls, v):
+        clean_id = ''.join(c for c in v if c.isdigit())
+        if len(clean_id) != 10:
+            raise ValueError('Customer ID must be 10 digits')
+        return clean_id
+
 
 class CreateBudgetRequest(BaseModel):
     """Request to create a campaign budget."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
     customer_id: str = Field(..., description="Google Ads customer ID")
     budget_name: str = Field(..., min_length=1, max_length=255)
     amount_micros: int = Field(..., gt=0)
@@ -188,6 +219,7 @@ class CreateAdRequest(BaseModel):
 
 class UploadAssetRequest(BaseModel):
     """Request to upload an asset."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
     customer_id: str = Field(..., description="Google Ads customer ID")
     asset_name: str = Field(..., min_length=1, max_length=255)
     # Note: image_data will be handled separately as file upload
@@ -203,6 +235,7 @@ class UploadAssetRequest(BaseModel):
 
 class LinkAssetRequest(BaseModel):
     """Request to link asset to campaign."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
     customer_id: str = Field(..., description="Google Ads customer ID")
     campaign_id: str = Field(..., description="Campaign ID")
     asset_resource_name: str = Field(..., description="Asset resource name")
@@ -219,7 +252,17 @@ class LinkAssetRequest(BaseModel):
 
 class UpdateStatusRequest(BaseModel):
     """Request to update campaign/ad status."""
+    connection_id: int = Field(..., description="Connection ID for authentication")
+    customer_id: str = Field(..., description="Google Ads customer ID")
     status: CampaignStatus = Field(..., description="New status")
+
+    @field_validator('customer_id')
+    @classmethod
+    def validate_customer_id(cls, v):
+        clean_id = ''.join(c for c in v if c.isdigit())
+        if len(clean_id) != 10:
+            raise ValueError('Customer ID must be 10 digits')
+        return clean_id
 
 
 # === Response Models ===
