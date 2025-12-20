@@ -903,3 +903,453 @@ async def get_available_google_ads_accounts(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch available Google Ads accounts: {str(e)}",
         )
+
+
+# ========================================
+# Google Ads Mutation Endpoints
+# ========================================
+
+
+@router.post("/campaigns/create")
+async def create_campaign(
+    request: "CreateCampaignRequest",
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Create a new Google Ads campaign with budget and bidding strategy.
+    """
+    from app.models.google_ads import CreateCampaignRequest, CampaignCreationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, request.connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Create campaign using service
+        result = await google_ads_service.create_campaign(
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
+            campaign_name=request.campaign_name,
+            budget_amount_micros=request.daily_budget_micros,
+            campaign_type=request.campaign_type.value,
+            bidding_strategy_type=request.bidding_strategy.value,
+            bidding_config=request.bidding_config,
+            network_settings=request.network_settings,
+            start_date=request.start_date,
+            end_date=request.end_date,
+        )
+
+        if result.get("success"):
+            return CampaignCreationResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to create campaign"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create campaign: {str(e)}",
+        )
+
+
+@router.patch("/campaigns/{campaign_id}")
+async def update_campaign(
+    campaign_id: str,
+    request: "UpdateCampaignRequest",
+    connection_id: int = Query(..., description="Connection ID"),
+    customer_id: str = Query(..., description="Google Ads customer ID"),
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Update campaign settings (name, status, dates).
+    """
+    from app.models.google_ads import UpdateCampaignRequest, MutationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Build updates dict from request
+        updates = {}
+        if request.name is not None:
+            updates["name"] = request.name
+        if request.status is not None:
+            updates["status"] = request.status.value
+        if request.start_date is not None:
+            updates["start_date"] = request.start_date
+        if request.end_date is not None:
+            updates["end_date"] = request.end_date
+
+        # Update campaign using service
+        result = await google_ads_service.update_campaign(
+            connection_id=connection_id,
+            customer_id=customer_id,
+            campaign_id=campaign_id,
+            updates=updates,
+        )
+
+        if result.get("success"):
+            return MutationResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to update campaign"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update campaign: {str(e)}",
+        )
+
+
+@router.post("/campaigns/{campaign_id}/budget")
+async def update_campaign_budget(
+    campaign_id: str,
+    request: "UpdateBudgetRequest",
+    connection_id: int = Query(..., description="Connection ID"),
+    customer_id: str = Query(..., description="Google Ads customer ID"),
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Update campaign budget amount.
+    """
+    from app.models.google_ads import UpdateBudgetRequest, MutationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Get campaign to find budget ID
+        # For now, we'll need to query the campaign to get the budget resource name
+        # This is a simplified version - in production you'd want to cache this
+        from app.services.google_ads_service import GoogleAdsService
+
+        service = GoogleAdsService()
+        # Query campaign to get budget
+        query = f"""
+            SELECT campaign.id, campaign.campaign_budget
+            FROM campaign
+            WHERE campaign.id = {campaign_id}
+        """
+
+        result = await service.execute_query(
+            connection_id=connection_id,
+            customer_id=customer_id,
+            query=query,
+        )
+
+        if not result.get("success") or not result.get("data"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Campaign not found",
+            )
+
+        budget_resource_name = result["data"][0].get("campaign.campaign_budget")
+        if not budget_resource_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Campaign has no budget",
+            )
+
+        # Extract budget ID from resource name
+        budget_id = budget_resource_name.split("/")[-1]
+
+        # Update budget using service
+        update_result = await google_ads_service.update_campaign_budget(
+            connection_id=connection_id,
+            customer_id=customer_id,
+            budget_id=budget_id,
+            amount_micros=request.new_daily_budget_micros,
+        )
+
+        if update_result.get("success"):
+            return MutationResponse(**update_result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=update_result.get("error", "Failed to update budget"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update budget: {str(e)}",
+        )
+
+
+@router.post("/campaigns/{campaign_id}/bidding")
+async def update_campaign_bidding(
+    campaign_id: str,
+    request: "UpdateBiddingRequest",
+    connection_id: int = Query(..., description="Connection ID"),
+    customer_id: str = Query(..., description="Google Ads customer ID"),
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Update campaign bidding strategy and configuration.
+    """
+    from app.models.google_ads import UpdateBiddingRequest, MutationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Build bidding config from request
+        bidding_config = {}
+        if request.target_cpa_micros is not None:
+            bidding_config["target_cpa_micros"] = request.target_cpa_micros
+        if request.target_roas is not None:
+            bidding_config["target_roas"] = request.target_roas
+        if request.target_spend_cpc_bid_ceiling_micros is not None:
+            bidding_config["target_spend_cpc_bid_ceiling_micros"] = (
+                request.target_spend_cpc_bid_ceiling_micros
+            )
+
+        # Update bidding using service
+        result = await google_ads_service.update_campaign_bidding_strategy(
+            connection_id=connection_id,
+            customer_id=customer_id,
+            campaign_id=campaign_id,
+            bidding_strategy_type=request.bidding_strategy.value,
+            bidding_config=bidding_config if bidding_config else None,
+        )
+
+        if result.get("success"):
+            return MutationResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to update bidding strategy"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update bidding strategy: {str(e)}",
+        )
+
+
+@router.post("/campaigns/{campaign_id}/status")
+async def update_campaign_status(
+    campaign_id: str,
+    request: "UpdateStatusRequest",
+    connection_id: int = Query(..., description="Connection ID"),
+    customer_id: str = Query(..., description="Google Ads customer ID"),
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Update campaign status (ENABLED, PAUSED, REMOVED).
+    """
+    from app.models.google_ads import UpdateStatusRequest, MutationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Update status using service
+        result = await google_ads_service.update_campaign_status(
+            connection_id=connection_id,
+            customer_id=customer_id,
+            campaign_id=campaign_id,
+            status=request.status.value,
+        )
+
+        if result.get("success"):
+            return MutationResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to update campaign status"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update campaign status: {str(e)}",
+        )
+
+
+@router.post("/ad-groups/create")
+async def create_ad_group(
+    request: "CreateAdGroupRequest",
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Create a new ad group in a campaign.
+    """
+    from app.models.google_ads import CreateAdGroupRequest, AdGroupCreationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, request.connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Create ad group using service
+        result = await google_ads_service.create_ad_group(
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
+            campaign_id=request.campaign_id,
+            ad_group_name=request.ad_group_name,
+            cpc_bid_micros=request.cpc_bid_micros,
+        )
+
+        if result.get("success"):
+            return AdGroupCreationResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to create ad group"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create ad group: {str(e)}",
+        )
+
+
+@router.post("/ads/create")
+async def create_responsive_search_ad(
+    request: "CreateAdRequest",
+    current_user: Campaigner = Depends(get_current_user),
+):
+    """
+    Create a responsive search ad in an ad group.
+    """
+    from app.models.google_ads import CreateAdRequest, AdCreationResponse
+
+    try:
+        # Validate connection ownership
+        with get_session() as session:
+            connection = session.get(Connection, request.connection_id)
+            if not connection or connection.campaigner_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Connection not found",
+                )
+
+            # Validate customer access
+            if not user_can_access_customer(current_user, connection.customer_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this customer",
+                )
+
+        # Create ad using service
+        result = await google_ads_service.create_responsive_search_ad(
+            connection_id=request.connection_id,
+            customer_id=request.customer_id,
+            ad_group_id=request.ad_group_id,
+            headlines=request.headlines,
+            descriptions=request.descriptions,
+            final_urls=request.final_urls,
+            path1=request.path1,
+            path2=request.path2,
+        )
+
+        if result.get("success"):
+            return AdCreationResponse(**result)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("error", "Failed to create ad"),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create ad: {str(e)}",
+        )
