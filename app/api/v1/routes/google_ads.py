@@ -15,6 +15,13 @@ from app.core.rbac import user_can_access_customer
 from app.models.users import Campaigner
 from app.models.analytics import DigitalPlatform, Connection, AssetType
 from app.config.database import get_session
+from app.models.google_ads import UpdateCampaignRequest, MutationResponse
+from app.models.google_ads import UpdateBudgetRequest, MutationResponse
+from app.models.google_ads import CreateCampaignRequest, CampaignCreationResponse
+from app.models.google_ads import UpdateBiddingRequest, MutationResponse
+from app.models.google_ads import UpdateStatusRequest, MutationResponse
+from app.models.google_ads import CreateAdGroupRequest, AdGroupCreationResponse
+from app.models.google_ads import CreateAdRequest, AdCreationResponse
 
 router = APIRouter(prefix="/google-ads", tags=["Google Ads Data"])
 
@@ -912,14 +919,12 @@ async def get_available_google_ads_accounts(
 
 @router.post("/campaigns/create")
 async def create_campaign(
-    request: "CreateCampaignRequest",
+    request: CreateCampaignRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Create a new Google Ads campaign with budget and bidding strategy.
     """
-    from app.models.google_ads import CreateCampaignRequest, CampaignCreationResponse
-
     try:
         # Validate connection ownership
         with get_session() as session:
@@ -971,13 +976,12 @@ async def create_campaign(
 @router.patch("/campaigns/{campaign_id}")
 async def update_campaign(
     campaign_id: str,
-    request: "UpdateCampaignRequest",
+    request: UpdateCampaignRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Update campaign settings (name, status, dates).
     """
-    from app.models.google_ads import UpdateCampaignRequest, MutationResponse
 
     try:
         # Validate connection ownership
@@ -1035,14 +1039,12 @@ async def update_campaign(
 @router.post("/campaigns/{campaign_id}/budget")
 async def update_campaign_budget(
     campaign_id: str,
-    request: "UpdateBudgetRequest",
+    request: UpdateBudgetRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Update campaign budget amount.
     """
-    from app.models.google_ads import UpdateBudgetRequest, MutationResponse
-
     try:
         # Validate connection ownership
         with get_session() as session:
@@ -1123,14 +1125,12 @@ async def update_campaign_budget(
 @router.post("/campaigns/{campaign_id}/bidding")
 async def update_campaign_bidding(
     campaign_id: str,
-    request: "UpdateBiddingRequest",
+    request: UpdateBiddingRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Update campaign bidding strategy and configuration.
     """
-    from app.models.google_ads import UpdateBiddingRequest, MutationResponse
-
     try:
         # Validate connection ownership
         with get_session() as session:
@@ -1188,14 +1188,12 @@ async def update_campaign_bidding(
 @router.post("/campaigns/{campaign_id}/status")
 async def update_campaign_status(
     campaign_id: str,
-    request: "UpdateStatusRequest",
+    request: UpdateStatusRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Update campaign status (ENABLED, PAUSED, REMOVED).
     """
-    from app.models.google_ads import UpdateStatusRequest, MutationResponse
-
     try:
         # Validate connection ownership
         with get_session() as session:
@@ -1240,14 +1238,12 @@ async def update_campaign_status(
 
 @router.post("/ad-groups/create")
 async def create_ad_group(
-    request: "CreateAdGroupRequest",
+    request: CreateAdGroupRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Create a new ad group in a campaign.
     """
-    from app.models.google_ads import CreateAdGroupRequest, AdGroupCreationResponse
-
     try:
         # Validate connection ownership
         with get_session() as session:
@@ -1293,14 +1289,12 @@ async def create_ad_group(
 
 @router.post("/ads/create")
 async def create_responsive_search_ad(
-    request: "CreateAdRequest",
+    request: CreateAdRequest,
     current_user: Campaigner = Depends(get_current_user),
 ):
     """
     Create a responsive search ad in an ad group.
     """
-    from app.models.google_ads import CreateAdRequest, AdCreationResponse
-
     try:
         # Validate connection ownership
         with get_session() as session:

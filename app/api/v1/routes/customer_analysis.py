@@ -14,7 +14,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from sqlmodel import Session
 
-from app.api.deps import get_db, get_current_user
+from app.config.database import get_session
+from app.core.auth import get_current_user
 from app.models.users import Campaigner
 from app.api.schemas.customer_analysis import (
     AnalysisRequest,
@@ -44,7 +45,7 @@ router = APIRouter(prefix="/customer-analysis", tags=["customer-analysis"])
 
 @router.get("/settings", response_model=AnalysisSettingsResponse)
 async def get_analysis_settings(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -85,7 +86,7 @@ async def get_analysis_settings(
 @router.put("/settings", response_model=AnalysisSettingsResponse)
 async def update_analysis_settings(
     settings_update: AnalysisSettingsUpdate,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -136,7 +137,7 @@ async def update_analysis_settings(
 # Health Check Endpoint
 
 @router.get("/health")
-async def customer_analysis_health_check(db: Session = Depends(get_db)):
+async def customer_analysis_health_check(db: Session = Depends(get_session)):
     """
     Check the health of the customer analysis system.
 
@@ -201,7 +202,7 @@ async def customer_analysis_health_check(db: Session = Depends(get_db)):
 async def start_customer_analysis(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -274,7 +275,7 @@ async def list_analysis_sessions(
     status: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -332,7 +333,7 @@ async def list_analysis_sessions(
 @router.get("/{session_id}", response_model=AnalysisSessionDetail)
 async def get_analysis_session(
     session_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -394,7 +395,7 @@ async def get_analysis_session(
 @router.get("/{session_id}/report")
 async def get_analysis_report(
     session_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -446,7 +447,7 @@ async def get_analysis_report(
 @router.get("/work-plans/active", response_model=WorkPlanSummary)
 async def get_active_work_plan(
     customer_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -502,7 +503,7 @@ async def get_work_plan_tasks(
     plan_id: str,
     week_number: Optional[int] = None,
     status: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -581,7 +582,7 @@ async def get_work_plan_tasks(
 async def update_work_plan_task(
     task_id: str,
     task_update: WorkPlanTaskUpdate,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -655,7 +656,7 @@ async def update_work_plan_task(
 @router.get("/sessions/{session_id}/reviews", response_model=WeeklyReviewList)
 async def list_weekly_reviews(
     session_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
@@ -723,7 +724,7 @@ async def list_weekly_reviews(
 @router.get("/reviews/{review_id}", response_model=WeeklyReviewDetail)
 async def get_weekly_review(
     review_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_session),
     current_user: Campaigner = Depends(get_current_user)
 ):
     """
