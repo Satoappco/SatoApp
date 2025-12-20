@@ -152,6 +152,7 @@ class TestBudgetOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_delivery_enum = Mock()
         mock_delivery_enum.STANDARD = "STANDARD"
         mock_client.enums.BudgetDeliveryMethodEnum = mock_delivery_enum
@@ -179,6 +180,7 @@ class TestBudgetOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_delivery_enum = Mock()
         mock_delivery_enum.ACCELERATED = "ACCELERATED"
         mock_client.enums.BudgetDeliveryMethodEnum = mock_delivery_enum
@@ -234,6 +236,7 @@ class TestCampaignOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enums
+        mock_client.enums = Mock()
         mock_campaign_type_enum = Mock()
         mock_campaign_type_enum.SEARCH = "SEARCH"
         mock_client.enums.AdvertisingChannelTypeEnum = mock_campaign_type_enum
@@ -259,18 +262,16 @@ class TestCampaignOperations:
         """Test applying network settings to campaign."""
         from app.services.google_ads_mutations import apply_network_settings
 
-        mock_client = Mock(spec=GoogleAdsClient)
         mock_campaign = Mock()
         mock_network_settings = Mock()
         mock_campaign.network_settings = mock_network_settings
 
-        network_config = {
-            "target_google_search": True,
-            "target_search_network": True,
-            "target_content_network": False,
-        }
-
-        apply_network_settings(mock_client, mock_campaign, network_config)
+        apply_network_settings(
+            mock_campaign,
+            target_google_search=True,
+            target_search_network=True,
+            target_content_network=False
+        )
 
         assert mock_network_settings.target_google_search is True
         assert mock_network_settings.target_search_network is True
@@ -345,6 +346,7 @@ class TestAdOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_status_enum = Mock()
         mock_status_enum.ENABLED = "ENABLED"
         mock_client.enums.AdGroupStatusEnum = mock_status_enum
@@ -390,6 +392,7 @@ class TestAdOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_status_enum = Mock()
         mock_status_enum.ENABLED = "ENABLED"
         mock_client.enums.AdGroupAdStatusEnum = mock_status_enum
@@ -500,6 +503,7 @@ class TestAssetOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_mime_enum = Mock()
         mock_mime_enum.IMAGE_PNG = "IMAGE_PNG"
         mock_client.enums.MimeTypeEnum = mock_mime_enum
@@ -529,20 +533,21 @@ class TestAssetOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_field_enum = Mock()
         mock_field_enum.MARKETING_IMAGE = "MARKETING_IMAGE"
         mock_client.enums.AssetFieldTypeEnum = mock_field_enum
 
         result = create_campaign_asset_link_operation(
             mock_client,
-            "customers/1234567890/campaigns/12345",
             "customers/1234567890/assets/11111",
+            "customers/1234567890/campaigns/12345",
             "MARKETING_IMAGE",
         )
 
         assert result == mock_operation
-        assert mock_campaign_asset.campaign == "customers/1234567890/campaigns/12345"
         assert mock_campaign_asset.asset == "customers/1234567890/assets/11111"
+        assert mock_campaign_asset.campaign == "customers/1234567890/campaigns/12345"
         assert mock_campaign_asset.field_type == "MARKETING_IMAGE"
 
     def test_remove_campaign_asset_link_operation(self):
@@ -578,6 +583,7 @@ class TestUpdateOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_status_enum = Mock()
         mock_status_enum.PAUSED = "PAUSED"
         mock_client.enums.CampaignStatusEnum = mock_status_enum
@@ -637,6 +643,7 @@ class TestUpdateOperations:
         mock_client.get_type.return_value = mock_operation
 
         # Mock enum
+        mock_client.enums = Mock()
         mock_status_enum = Mock()
         mock_status_enum.PAUSED = "PAUSED"
         mock_client.enums.AdGroupAdStatusEnum = mock_status_enum
